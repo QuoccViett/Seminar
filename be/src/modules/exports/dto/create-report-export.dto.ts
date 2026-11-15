@@ -20,7 +20,7 @@ export type ReportType = (typeof REPORT_TYPES)[number];
 export type ReportFormat = (typeof REPORT_FORMATS)[number];
 
 @ValidatorConstraint({ name: "reportEvaluationScope", async: false })
-class ReportEvaluationScopeConstraint 
+class ReportEvaluationScopeConstraint
   implements ValidatorConstraintInterface
 {
   validate(evaluationId: unknown, args: ValidationArguments): boolean {

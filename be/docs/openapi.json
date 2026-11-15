@@ -924,7 +924,151 @@
         ]
       }
     },
-    "/api/v1/admin/exports": {
+    "/api/v1/admin/dashboard": {
+      "get": {
+        "operationId": "DashboardController_getOverview",
+        "parameters": [
+          {
+            "name": "periodId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardOverviewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Tổng quan dashboard của một đợt đánh giá",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/criteria-deductions": {
+      "get": {
+        "operationId": "DashboardController_getDeductions",
+        "parameters": [
+          {
+            "name": "periodId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardDeductionsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Danh sách tiêu chí bị Admin trừ điểm",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/leaderboard": {
+      "get": {
+        "operationId": "DashboardController_getLeaderboard",
+        "parameters": [
+          {
+            "name": "periodId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardLeaderboardDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Bảng xếp hạng thời gian thực của một đợt đánh giá",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/dashboard/score-distribution": {
+      "get": {
+        "operationId": "DashboardController_getScoreDistribution",
+        "parameters": [
+          {
+            "name": "periodId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardScoreDistributionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Phân bố xếp loại của các hồ sơ đã chốt",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/exports": {
       "post": {
         "operationId": "ExportsController_create",
         "parameters": [],
@@ -981,7 +1125,7 @@
         ]
       }
     },
-    "/api/v1/admin/exports/{id}/download": {
+    "/api/v1/admin/reports/exports/{id}/download": {
       "get": {
         "operationId": "ExportsController_download",
         "parameters": [],
@@ -1001,7 +1145,7 @@
         ]
       }
     },
-    "/api/v1/admin/exports/{id}": {
+    "/api/v1/admin/reports/exports/{id}": {
       "get": {
         "operationId": "ExportsController_findOne",
         "parameters": [],
@@ -1238,6 +1382,385 @@
             "type": "boolean"
           }
         }
+      },
+      "DashboardPeriodDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "year": {
+            "type": "number",
+            "example": 2026
+          },
+          "name": {
+            "type": "string",
+            "example": "Đợt thi đua năm 2026"
+          },
+          "phase": {
+            "type": "string",
+            "example": "FIRST_REVIEW"
+          },
+          "maxTotalScore": {
+            "type": "number",
+            "example": 300
+          }
+        },
+        "required": [
+          "id",
+          "year",
+          "name",
+          "phase",
+          "maxTotalScore"
+        ]
+      },
+      "EvaluationStatusCountsDto": {
+        "type": "object",
+        "properties": {
+          "DRAFT": {
+            "type": "number",
+            "example": 4
+          },
+          "PENDING_REVIEW": {
+            "type": "number",
+            "example": 12
+          },
+          "SUPPLEMENT_REQUESTED": {
+            "type": "number",
+            "example": 3
+          },
+          "SUPPLEMENT_SUBMITTED": {
+            "type": "number",
+            "example": 2
+          },
+          "SUPPLEMENT_EXPIRED": {
+            "type": "number",
+            "example": 1
+          },
+          "FINALIZED": {
+            "type": "number",
+            "example": 12
+          }
+        },
+        "required": [
+          "DRAFT",
+          "PENDING_REVIEW",
+          "SUPPLEMENT_REQUESTED",
+          "SUPPLEMENT_SUBMITTED",
+          "SUPPLEMENT_EXPIRED",
+          "FINALIZED"
+        ]
+      },
+      "OfficialResultsDto": {
+        "type": "object",
+        "properties": {
+          "totalFinalScore": {
+            "type": "number",
+            "example": 2550
+          },
+          "averageFinalScore": {
+            "type": "number",
+            "example": 255
+          },
+          "averageFinalPercent": {
+            "type": "number",
+            "example": 85
+          }
+        },
+        "required": [
+          "totalFinalScore",
+          "averageFinalScore",
+          "averageFinalPercent"
+        ]
+      },
+      "ScoreDistributionItemDto": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "string",
+            "example": "EXCELLENT"
+          },
+          "label": {
+            "type": "string",
+            "example": "Hoàn thành xuất sắc nhiệm vụ"
+          },
+          "color": {
+            "type": "string",
+            "example": "#16a34a",
+            "nullable": true
+          },
+          "count": {
+            "type": "number",
+            "example": 5
+          },
+          "percent": {
+            "type": "number",
+            "example": 41.67
+          }
+        },
+        "required": [
+          "rating",
+          "label",
+          "count",
+          "percent"
+        ]
+      },
+      "ScoreDistributionDto": {
+        "type": "object",
+        "properties": {
+          "finalizedCount": {
+            "type": "number",
+            "example": 12
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScoreDistributionItemDto"
+            }
+          }
+        },
+        "required": [
+          "finalizedCount",
+          "items"
+        ]
+      },
+      "DashboardOverviewDto": {
+        "type": "object",
+        "properties": {
+          "periodId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "period": {
+            "$ref": "#/components/schemas/DashboardPeriodDto"
+          },
+          "totalUnits": {
+            "type": "number",
+            "example": 34
+          },
+          "statusCounts": {
+            "$ref": "#/components/schemas/EvaluationStatusCountsDto"
+          },
+          "submittedCount": {
+            "type": "number",
+            "example": 30
+          },
+          "notSubmittedCount": {
+            "type": "number",
+            "example": 4
+          },
+          "supplementPendingCount": {
+            "type": "number",
+            "example": 5
+          },
+          "progressPercent": {
+            "type": "number",
+            "example": 88.24
+          },
+          "finalizedCount": {
+            "type": "number",
+            "example": 12
+          },
+          "notFinalizedCount": {
+            "type": "number",
+            "example": 22
+          },
+          "officialResults": {
+            "$ref": "#/components/schemas/OfficialResultsDto"
+          },
+          "scoreDistribution": {
+            "$ref": "#/components/schemas/ScoreDistributionDto"
+          }
+        },
+        "required": [
+          "periodId",
+          "period",
+          "totalUnits",
+          "statusCounts",
+          "submittedCount",
+          "notSubmittedCount",
+          "supplementPendingCount",
+          "progressPercent",
+          "finalizedCount",
+          "notFinalizedCount",
+          "officialResults",
+          "scoreDistribution"
+        ]
+      },
+      "CriterionDeductionDto": {
+        "type": "object",
+        "properties": {
+          "criterionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "A1"
+          },
+          "name": {
+            "type": "string",
+            "example": "Tổ chức học tập nghị quyết, chủ trương"
+          },
+          "unitsDeducted": {
+            "type": "number",
+            "example": 15
+          },
+          "totalPointsDeducted": {
+            "type": "number",
+            "example": 25.5
+          }
+        },
+        "required": [
+          "criterionId",
+          "code",
+          "name",
+          "unitsDeducted",
+          "totalPointsDeducted"
+        ]
+      },
+      "DashboardDeductionsDto": {
+        "type": "object",
+        "properties": {
+          "periodId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CriterionDeductionDto"
+            }
+          }
+        },
+        "required": [
+          "periodId",
+          "items"
+        ]
+      },
+      "LeaderboardItemDto": {
+        "type": "object",
+        "properties": {
+          "rank": {
+            "type": "number",
+            "example": 1
+          },
+          "scoreRank": {
+            "type": "number",
+            "example": 1
+          },
+          "evaluationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unitCode": {
+            "type": "string",
+            "example": "DV001"
+          },
+          "unitName": {
+            "type": "string",
+            "example": "Đơn vị A"
+          },
+          "status": {
+            "type": "string",
+            "example": "PENDING_REVIEW"
+          },
+          "submittedAt": {
+            "type": "string",
+            "example": "2026-01-15T08:00:00.000Z",
+            "format": "date-time",
+            "nullable": true
+          },
+          "maxTotalScore": {
+            "type": "number",
+            "example": 300
+          },
+          "selfTotal": {
+            "type": "number",
+            "example": 280
+          },
+          "currentTotal": {
+            "type": "number",
+            "example": 285
+          },
+          "currentPercent": {
+            "type": "number",
+            "example": 95
+          },
+          "suggestedRating": {
+            "type": "string",
+            "example": "EXCELLENT",
+            "nullable": true
+          }
+        },
+        "required": [
+          "rank",
+          "scoreRank",
+          "evaluationId",
+          "unitId",
+          "unitCode",
+          "unitName",
+          "status",
+          "submittedAt",
+          "maxTotalScore",
+          "selfTotal",
+          "currentTotal",
+          "currentPercent",
+          "suggestedRating"
+        ]
+      },
+      "DashboardLeaderboardDto": {
+        "type": "object",
+        "properties": {
+          "periodId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "totalUnits": {
+            "type": "number",
+            "example": 34
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardItemDto"
+            }
+          }
+        },
+        "required": [
+          "periodId",
+          "totalUnits",
+          "items"
+        ]
+      },
+      "DashboardScoreDistributionDto": {
+        "type": "object",
+        "properties": {
+          "finalizedCount": {
+            "type": "number",
+            "example": 12
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScoreDistributionItemDto"
+            }
+          },
+          "periodId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "finalizedCount",
+          "items",
+          "periodId"
+        ]
       },
       "ReportType": {
         "type": "string",

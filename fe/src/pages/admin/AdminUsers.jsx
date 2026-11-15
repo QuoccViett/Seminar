@@ -4,7 +4,7 @@ import { EditOutlined, LockOutlined, UnlockOutlined, UploadOutlined } from "@ant
 import { userService } from "../../services/userService";
 import PageHeader from "../../components/common/PageHeader";
 import UserStatusTag from "../../components/common/UserStatusTag";
-import styles from "./AdminUsers.module.css"; 
+import styles from "./AdminUsers.module.css";
 import ExcelJS from "exceljs";
 
 export default function AdminUsers() {
@@ -13,7 +13,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20); 
+  const [pageSize, setPageSize] = useState(20);
   const [searchText, setSearchText] = useState("");
 
   // --- STATE QUẢN LÝ MODAL ---
@@ -24,10 +24,10 @@ export default function AdminUsers() {
   const fetchUsers = async (currentPage = page, currentPageSize = pageSize, search = searchText) => {
     try {
       setLoading(true);
-      const res = await userService.getUsers({ 
-        page: currentPage, 
-        pageSize: currentPageSize, 
-        search 
+      const res = await userService.getUsers({
+        page: currentPage,
+        pageSize: currentPageSize,
+        search
       });
       setUsers(res.items || []);
       setTotal(res.total || 0);
@@ -88,10 +88,10 @@ export default function AdminUsers() {
       setLoading(true);
       // Đọc file dưới dạng ArrayBuffer
       const arrayBuffer = await file.arrayBuffer();
-      
+
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(arrayBuffer);
-      
+
       // Lấy sheet đầu tiên trong file
       const worksheet = workbook.worksheets[0];
       if (!worksheet) {
@@ -103,7 +103,7 @@ export default function AdminUsers() {
 
       // Lấy tên các cột ở hàng đầu tiên (VD: username, fullName, role...)
       worksheet.getRow(1).eachCell((cell, colNumber) => {
-        headers[colNumber] = cell.value; 
+        headers[colNumber] = cell.value;
       });
 
       // Duyệt từ hàng thứ 2 trở đi để lấy dữ liệu
@@ -134,48 +134,48 @@ export default function AdminUsers() {
 
       // Gửi mảng dữ liệu lên API Backend
       const res = await userService.importUsers(jsonData);
-      
+
       message.success(res.message || `Đã import thành công ${jsonData.length} tài khoản!`);
       fetchUsers(1, pageSize, ""); // Tải lại bảng danh sách
-      
+
     } catch (error) {
       console.error(error);
       message.error("Lỗi khi đọc file Excel. Vui lòng kiểm tra lại định dạng file!");
     } finally {
       setLoading(false);
     }
-    
+
     return false; // Chặn Ant Design tự động upload file lên server
   };
 
   // --- CẤU HÌNH CỘT CHO BẢNG ---
   const columns = [
-    { 
-      title: "Tên đăng nhập", 
-      dataIndex: "username", 
-      key: "username", 
-      render: (text) => <strong>{text}</strong> 
+    {
+      title: "Tên đăng nhập",
+      dataIndex: "username",
+      key: "username",
+      render: (text) => <strong>{text}</strong>
     },
-    { 
-      title: "Họ và Tên", 
-      dataIndex: "fullName", 
-      key: "fullName" 
+    {
+      title: "Họ và Tên",
+      dataIndex: "fullName",
+      key: "fullName"
     },
-    { 
-      title: "Quyền", 
-      dataIndex: "role", 
+    {
+      title: "Quyền",
+      dataIndex: "role",
       key: "role",
       render: (role) => role === "ADMIN" ? <Tag color="blue">ADMIN</Tag> : <Tag color="purple">UNIT</Tag>
     },
-    { 
-      title: "Đơn vị trực thuộc", 
-      dataIndex: "unitName", 
-      key: "unitName", 
-      render: (val) => val || <span style={{ color: "#888" }}>Toàn hệ thống</span> 
+    {
+      title: "Đơn vị trực thuộc",
+      dataIndex: "unitName",
+      key: "unitName",
+      render: (val) => val || <span style={{ color: "#888" }}>Toàn hệ thống</span>
     },
-    { 
-      title: "Trạng thái", 
-      dataIndex: "isActive", 
+    {
+      title: "Trạng thái",
+      dataIndex: "isActive",
       key: "isActive",
       render: (isActive) => <UserStatusTag isActive={isActive} />
     },
@@ -187,17 +187,17 @@ export default function AdminUsers() {
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="Sửa thông tin">
-            <Button 
-              type="text" 
-              icon={<EditOutlined style={{ color: "#1677ff" }} />} 
-              onClick={() => message.info("Tính năng sửa đang được phát triển")} 
+            <Button
+              type="text"
+              icon={<EditOutlined style={{ color: "#1677ff" }} />}
+              onClick={() => message.info("Tính năng sửa đang được phát triển")}
             />
           </Tooltip>
           <Tooltip title={record.isActive ? "Khóa tài khoản" : "Mở khóa"}>
-            <Button 
-              type="text" 
-              danger={record.isActive} 
-              icon={record.isActive ? <LockOutlined /> : <UnlockOutlined style={{ color: "#52c41a" }} />} 
+            <Button
+              type="text"
+              danger={record.isActive}
+              icon={record.isActive ? <LockOutlined /> : <UnlockOutlined style={{ color: "#52c41a" }} />}
               onClick={() => handleToggleStatus(record)}
             />
           </Tooltip>
@@ -208,11 +208,11 @@ export default function AdminUsers() {
 
   return (
     <div className={styles.pageContainer}>
-      
+
       {/* 1. THANH CÔNG CỤ (TÌM KIẾM + THÊM MỚI) */}
       <div className={styles.toolbar}>
-        <PageHeader 
-          title="Quản lý Tài khoản" 
+        <PageHeader
+          title="Quản lý Tài khoản"
           searchPlaceholder="Tìm theo tên đăng nhập, họ tên..."
           onSearch={handleSearch}
           onAdd={() => setIsModalOpen(true)}
@@ -232,9 +232,9 @@ export default function AdminUsers() {
 
       {/* 2. BẢNG DỮ LIỆU */}
       <div className={styles.tableContainer}>
-        <Table 
-          columns={columns} 
-          dataSource={users} 
+        <Table
+          columns={columns}
+          dataSource={users}
           rowKey="id"
           loading={loading}
           pagination={{
@@ -265,32 +265,32 @@ export default function AdminUsers() {
         okText="Lưu tài khoản"
         cancelText="Hủy"
       >
-        <Form 
-          form={form} 
-          layout="vertical" 
-          onFinish={handleSaveUser} 
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSaveUser}
           style={{ marginTop: 20 }}
         >
-          <Form.Item 
-            name="username" 
-            label="Tên đăng nhập" 
+          <Form.Item
+            name="username"
+            label="Tên đăng nhập"
             rules={[{ required: true, message: "Vui lòng nhập tên đăng nhập!" }]}
           >
             <Input placeholder="VD: coso02" />
           </Form.Item>
-          
-          <Form.Item 
-            name="fullName" 
-            label="Họ và tên / Tên đơn vị" 
+
+          <Form.Item
+            name="fullName"
+            label="Họ và tên / Tên đơn vị"
             rules={[{ required: true, message: "Vui lòng nhập họ tên!" }]}
           >
             <Input placeholder="VD: Cơ sở Đoàn 02" />
           </Form.Item>
-          
-          <Form.Item 
-            name="role" 
-            label="Phân quyền" 
-            initialValue="UNIT" 
+
+          <Form.Item
+            name="role"
+            label="Phân quyền"
+            initialValue="UNIT"
             rules={[{ required: true }]}
           >
             <Select>

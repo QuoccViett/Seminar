@@ -29,7 +29,7 @@ import { ExportsService } from "./exports.service.js";
 
 @ApiTags("Report Exports")
 @ApiBearerAuth("access-token")
-@Controller("api/v1/admin/exports")
+@Controller("api/v1/admin/reports/exports")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN")
 export class ExportsController {

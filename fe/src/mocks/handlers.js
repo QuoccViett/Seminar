@@ -36,7 +36,7 @@ const USERS = {
       fullName: "Cơ sở demo 01",
       role: "UNIT",
       unitId: "unit-01",
-      mustChangePassword: true, 
+      mustChangePassword: true,
     },
   },
 };
@@ -137,8 +137,8 @@ export const handlers = [
 
   http.get("*/api/v1/admin/dashboard", ({ request }) => {
     const url = new URL(request.url);
-    const periodId = url.searchParams.get("periodId") || "period-2026"; 
-    
+    const periodId = url.searchParams.get("periodId") || "period-2026";
+
     return HttpResponse.json({
       periodId: periodId,
       totalUnits: 34,
@@ -149,7 +149,7 @@ export const handlers = [
     });
   }),
 
-  http.get("*/api/v1/admin/dashboard/deductions", ({ request }) => {
+  http.get("*/api/v1/admin/dashboard/criteria-deductions", ({ request }) => {
     return HttpResponse.json({
       items: [
         { criterionId: "c1", code: "1.1", name: "Công tác tuyên truyền", unitsDeducted: 15, totalPointsDeducted: 25.5 },
@@ -178,8 +178,8 @@ export const handlers = [
     }));
 
     // Lọc theo search
-    const filtered = allUsers.filter(u => 
-      u.username.toLowerCase().includes(search.toLowerCase()) || 
+    const filtered = allUsers.filter(u =>
+      u.username.toLowerCase().includes(search.toLowerCase()) ||
       u.fullName.toLowerCase().includes(search.toLowerCase())
     );
 
@@ -215,8 +215,8 @@ export const handlers = [
       };
     });
 
-    const filtered = allUnits.filter(u => 
-      u.name.toLowerCase().includes(search.toLowerCase()) || 
+    const filtered = allUnits.filter(u =>
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.code.toLowerCase().includes(search.toLowerCase())
     );
 
@@ -235,7 +235,7 @@ export const handlers = [
     // Tạo giả 50 dòng lịch sử
     const actions = ["Cập nhật điểm", "Thêm tài khoản", "Xóa đơn vị", "Đổi trạng thái"];
     const entities = ["Hồ sơ Đoàn A", "Tài khoản coso01", "Đơn vị Quận 1", "Hồ sơ Đoàn B"];
-    
+
     const allLogs = Array.from({ length: 50 }).map((_, i) => ({
       id: `log-${i}`,
       actorName: i % 2 === 0 ? "Quản trị viên" : "Admin cấp 2",
@@ -282,7 +282,7 @@ export const handlers = [
   // ---------- CREATE EVALUATION PERIOD ----------
   http.post("*/api/v1/evaluation-periods", async ({ request }) => {
     const body = await request.json();
-    
+
     const newPeriod = {
       id: `period-${Date.now()}`,
       year: body.year,
@@ -336,7 +336,7 @@ export const handlers = [
     // ---------- IMPORT USERS ----------
   http.post("*/api/v1/users/import", async ({ request }) => {
     const body = await request.json();
-    
+
     // Giả lập Backend nhận 10 user và trả về thành công
     return HttpResponse.json({
       success: true,

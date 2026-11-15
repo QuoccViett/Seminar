@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import PDFDocument from "pdfkit";
 import type {
@@ -12,7 +12,10 @@ const PDF_CONTENT_TYPE = "application/pdf";
 
 @Injectable()
 export class PdfReportGenerator {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @Inject(ConfigService)
+    private readonly configService: ConfigService,
+  ) {}
 
   async generateSummary(data: SummaryReportData): Promise<GeneratedReport> {
     const doc = this.createDocument();
@@ -118,7 +121,7 @@ export class PdfReportGenerator {
       bufferPages: true,
       info: { Title: "Seminar KPI Report", Author: "Seminar KPI" },
     });
-    const fontPath = this.configService.get<string>("REPORT_PDF_FONT_PATH");
+    const fontPath = this.configService.get<string>("REPORT_EXPORT_FONT_PATH");
     if (fontPath) {
       doc.font(fontPath);
     }
