@@ -65,7 +65,7 @@ export class ExcelReportGenerator {
     sheet.getColumn(4).numFmt = "dd/mm/yyyy hh:mm";
     sheet.getColumn(6).numFmt = "0.00";
 
-    return this.toGeneratedReport(workbook, "summary-all-units");
+    return this.toGeneratedReport(workbook);
   }
 
   async generateAppraisal(data: AppraisalReportData): Promise<GeneratedReport> {
@@ -138,12 +138,11 @@ export class ExcelReportGenerator {
     sheet.getColumn(6).numFmt = "0.00";
     sheet.views = [{ state: "frozen", ySplit: 12 }];
 
-    return this.toGeneratedReport(workbook, "unit-appraisal-minutes");
+    return this.toGeneratedReport(workbook);
   }
 
   private async toGeneratedReport(
     workbook: ExcelJS.Workbook,
-    _name: string,
   ): Promise<GeneratedReport> {
     const output = await workbook.xlsx.writeBuffer();
     return {
