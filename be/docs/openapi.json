@@ -56,8 +56,533 @@
             "description": ""
           }
         },
+        "summary": "Đăng nhập",
         "tags": [
           "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "AuthController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN, UNIT] Xem tài khoản đang đăng nhập",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Làm mới access token (refresh token xoay vòng)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Đăng xuất và thu hồi refresh token",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/change-password": {
+      "post": {
+        "operationId": "AuthController_changePassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN, UNIT] Đổi mật khẩu khi được cấp tài khoản (chỉ được đổi ở tài khoản của chính mình)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "operationId": "UsersController_findAll",
+        "parameters": [
+          {
+            "name": "isActive",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "unitId",
+            "required": false,
+            "in": "query",
+            "schema": {}
+          },
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "ADMIN",
+                "UNIT"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 20
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN] Danh sách tài khoản, lọc và phân trang",
+        "tags": [
+          "Users"
+        ]
+      },
+      "post": {
+        "operationId": "UsersController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN] Tạo tài khoản ADMIN hoặc UNIT (trả mật khẩu tạm một lần)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "get": {
+        "operationId": "UsersController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID của TÀI KHOẢN: lấy từ GET /users, ở trường id của từng dòng (không phải unitId)",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN, UNIT] Xem thông tin tài khoản (UNIT chỉ xem chính mình)",
+        "tags": [
+          "Users"
+        ]
+      },
+      "patch": {
+        "operationId": "UsersController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID của TÀI KHOẢN: lấy từ GET /users, ở trường id của từng dòng (không phải unitId)",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN, UNIT] Cập nhật thông tin tài khoản (UNIT chỉ sửa chính mình)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/users/{id}/reset-password": {
+      "post": {
+        "operationId": "UsersController_resetPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID của TÀI KHOẢN: lấy từ GET /users, ở trường id của từng dòng (không phải unitId",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN] Đặt lại mật khẩu cho UNIT nếu quên mật khẩu và thu hồi phiên cũ",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/users/{id}/status": {
+      "patch": {
+        "operationId": "UsersController_updateStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID của TÀI KHOẢN: lấy từ GET /users, ở trường id của từng dòng (không phải unitId",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN] Khóa hoặc kích hoạt tài khoản",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/units": {
+      "get": {
+        "operationId": "UnitsController_findAll",
+        "parameters": [
+          {
+            "name": "isActive",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "unitType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "CONG_AN_QUAN_HUYEN",
+                "PHONG_NGHIEP_VU",
+                "DON_VI_TRUC_THUOC"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 20
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN, UNIT] Danh sách đơn vị (UNIT chỉ thấy đơn vị của mình)",
+        "tags": [
+          "Units"
+        ]
+      },
+      "post": {
+        "operationId": "UnitsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUnitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN] Tạo đơn vị",
+        "tags": [
+          "Units"
+        ]
+      }
+    },
+    "/api/v1/units/{id}/users": {
+      "get": {
+        "operationId": "UnitsController_findUsers",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID của đơn vị, lấy từ GET /units (trường id)",
+            "schema": {
+              "format": "uuid",
+              "example": "00000000-0000-4000-8000-000000000101"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN, UNIT] Danh sách tài khoản thuộc đơn vị (UNIT chỉ xem đơn vị của mình)",
+        "tags": [
+          "Units"
+        ]
+      }
+    },
+    "/api/v1/units/{id}": {
+      "get": {
+        "operationId": "UnitsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID của đơn vị, lấy từ GET /units (trường id)",
+            "schema": {
+              "format": "uuid",
+              "example": "00000000-0000-4000-8000-000000000101"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN, UNIT] Chi tiết đơn vị (UNIT chỉ xem đơn vị của mình)",
+        "tags": [
+          "Units"
+        ]
+      },
+      "patch": {
+        "operationId": "UnitsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID của đơn vị, lấy từ GET /units (trường id)",
+            "schema": {
+              "format": "uuid",
+              "example": "00000000-0000-4000-8000-000000000101"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUnitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "[ADMIN] Cập nhật đơn vị",
+        "tags": [
+          "Units"
         ]
       }
     },
@@ -435,7 +960,7 @@
         ]
       }
     },
-    "/api/v1/admin/dashboard/deductions": {
+    "/api/v1/admin/dashboard/criteria-deductions": {
       "get": {
         "operationId": "DashboardController_getDeductions",
         "parameters": [
@@ -542,6 +1067,103 @@
           "Dashboard"
         ]
       }
+    },
+    "/api/v1/admin/reports/exports": {
+      "post": {
+        "operationId": "ExportsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReportExportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Thông tin báo cáo vừa tạo"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Tạo báo cáo Excel, PDF hoặc Word",
+        "tags": [
+          "Report Exports"
+        ]
+      },
+      "get": {
+        "operationId": "ExportsController_findAll",
+        "parameters": [
+          {
+            "name": "periodId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Danh sách lịch sử xuất báo cáo",
+        "tags": [
+          "Report Exports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/exports/{id}/download": {
+      "get": {
+        "operationId": "ExportsController_download",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Tải tệp báo cáo",
+        "tags": [
+          "Report Exports"
+        ]
+      }
+    },
+    "/api/v1/admin/reports/exports/{id}": {
+      "get": {
+        "operationId": "ExportsController_findOne",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Xem metadata của một lần xuất báo cáo",
+        "tags": [
+          "Report Exports"
+        ]
+      }
     }
   },
   "info": {
@@ -558,7 +1180,7 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "type": "http",
-        "description": "Dán accessToken nhận được từ POST /api/v1/auth/login."
+        "description": "Dán accessToken nhận được từ POST /api/v1/auth/login (không cần gõ chữ Bearer)."
       }
     },
     "schemas": {
@@ -572,7 +1194,7 @@
           },
           "password": {
             "type": "string",
-            "example": "123456",
+            "example": "your-password",
             "description": "Mật khẩu"
           }
         },
@@ -580,6 +1202,186 @@
           "username",
           "password"
         ]
+      },
+      "RefreshTokenDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "example": "dán-refreshToken-nhận-được-khi-đăng-nhập",
+            "description": "Refresh token nhận được khi đăng nhập"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "ChangePasswordDto": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "example": "current-password",
+            "description": "Mật khẩu hiện tại"
+          },
+          "newPassword": {
+            "type": "string",
+            "example": "new-password-123",
+            "description": "Mật khẩu mới, 8-72 ký tự (bcrypt chỉ xét 72 byte đầu)",
+            "minLength": 8,
+            "maxLength": 72
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ]
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "coso35"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Cơ sở Đoàn demo 35"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "UNIT"
+            ],
+            "example": "UNIT"
+          },
+          "unitId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Bắt buộc với role UNIT (lấy id từ GET /units); bỏ trống với ADMIN."
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "example": "coso35@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "0901234567"
+          }
+        },
+        "required": [
+          "username",
+          "fullName",
+          "role"
+        ]
+      },
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "UNIT"
+            ],
+            "description": "Chỉ ADMIN được đổi."
+          },
+          "unitId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Chỉ ADMIN được đổi."
+          }
+        }
+      },
+      "UpdateUserStatusDto": {
+        "type": "object",
+        "properties": {
+          "isActive": {
+            "type": "boolean",
+            "example": false,
+            "description": "false = khóa, true = kích hoạt"
+          }
+        },
+        "required": [
+          "isActive"
+        ]
+      },
+      "CreateUnitDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "COSO-001"
+          },
+          "name": {
+            "type": "string",
+            "example": "Cơ sở Đoàn 01"
+          },
+          "unitType": {
+            "type": "string",
+            "enum": [
+              "CONG_AN_QUAN_HUYEN",
+              "PHONG_NGHIEP_VU",
+              "DON_VI_TRUC_THUOC"
+            ],
+            "nullable": true,
+            "example": "DON_VI_TRUC_THUOC"
+          },
+          "sortOrder": {
+            "type": "number",
+            "example": 1,
+            "minimum": 0
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ]
+      },
+      "UpdateUnitDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unitType": {
+            "type": "string",
+            "enum": [
+              "CONG_AN_QUAN_HUYEN",
+              "PHONG_NGHIEP_VU",
+              "DON_VI_TRUC_THUOC"
+            ],
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "minimum": 0
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
       },
       "DashboardPeriodDto": {
         "type": "object",
@@ -960,6 +1762,55 @@
           "periodId"
         ]
       },
+      "ReportType": {
+        "type": "string",
+        "enum": [
+          "SUMMARY_ALL_UNITS",
+          "UNIT_APPRAISAL_MINUTES"
+        ]
+      },
+      "ReportFormat": {
+        "type": "string",
+        "enum": [
+          "XLSX",
+          "PDF",
+          "DOCX"
+        ]
+      },
+      "CreateReportExportDto": {
+        "type": "object",
+        "properties": {
+          "periodId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID đợt đánh giá"
+          },
+          "evaluationId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Bắt buộc với UNIT_APPRAISAL_MINUTES; không được gửi với SUMMARY_ALL_UNITS"
+          },
+          "reportType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReportType"
+              }
+            ]
+          },
+          "format": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReportFormat"
+              }
+            ]
+          }
+        },
+        "required": [
+          "periodId",
+          "reportType",
+          "format"
+        ]
+      },
       "ApiError": {
         "type": "object",
         "required": [
@@ -978,7 +1829,7 @@
           },
           "message": {
             "type": "string",
-            "example": "Yêu cầu không hợp lệ"
+            "example": "Dữ liệu gửi lên không hợp lệ."
           },
           "details": {
             "nullable": true,
@@ -986,7 +1837,7 @@
               {
                 "field": "username",
                 "messages": [
-                  "Tên đăng nhập là bắt buộc"
+                  "Tên đăng nhập là bắt buộc."
                 ]
               }
             ]
@@ -994,10 +1845,5 @@
         }
       }
     }
-  },
-  "security": [
-    {
-      "access-token": []
-    }
-  ]
+  }
 }

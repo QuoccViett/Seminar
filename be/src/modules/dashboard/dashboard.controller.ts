@@ -40,7 +40,7 @@ export class DashboardController {
     return this.dashboardService.getOverview(periodId);
   }
 
-  @Get("deductions")
+  @Get("criteria-deductions")
   @ApiOperation({ summary: "Danh sách tiêu chí bị Admin trừ điểm" })
   @ApiQuery({ name: "periodId", required: true, format: "uuid" })
   @ApiOkResponse({ type: DashboardDeductionsDto })
