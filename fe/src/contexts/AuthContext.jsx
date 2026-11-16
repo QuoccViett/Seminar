@@ -90,12 +90,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ---------- Logout ----------
+  /** Thu hồi phiên trên máy chủ khi có token và luôn xóa phiên cục bộ sau đó
+   * Lỗi mạng không ghi đối tượng lỗi vì đối tượng đó có thể chứa thông tin xác thực
+   */
   const logout = useCallback(async () => {
     const refreshToken = getRefreshToken();
     try {
       if (refreshToken) await authService.logout(refreshToken);
-    } catch (e) {
-      console.warn("Logout API failed, clearing local session anyway", e);
+    } catch {
+      console.warn("Không thể thu hồi phiên trên máy chủ, phiên cục bộ đã được xóa");
     } finally {
       clearSession();
       setUser(null);
@@ -146,8 +149,9 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/** Trả ngữ cảnh đăng nhập cho component và báo lỗi rõ ràng khi thiếu provider */
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  if (!ctx) throw new Error("Cần dùng useAuth bên trong AuthProvider");
   return ctx;
 };

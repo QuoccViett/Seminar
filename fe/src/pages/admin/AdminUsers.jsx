@@ -83,6 +83,10 @@ export default function AdminUsers() {
   };
 
     // Hàm xử lý đọc file Excel bằng exceljs
+  /** Đọc tệp Excel người dùng chọn và gửi dữ liệu tới API nhập tài khoản hiện tại
+   * Tệp rỗng hoặc lỗi đọc được báo bằng tiếng Việt, không ghi đối tượng lỗi có thể chứa dữ liệu nhập
+   * Hàm trả false để Ant Design không tự tải tệp lần thứ hai
+   */
   const handleImportExcel = async (file) => {
     try {
       setLoading(true);
@@ -138,8 +142,7 @@ export default function AdminUsers() {
       message.success(res.message || `Đã import thành công ${jsonData.length} tài khoản!`);
       fetchUsers(1, pageSize, ""); // Tải lại bảng danh sách
 
-    } catch (error) {
-      console.error(error);
+    } catch {
       message.error("Lỗi khi đọc file Excel. Vui lòng kiểm tra lại định dạng file!");
     } finally {
       setLoading(false);

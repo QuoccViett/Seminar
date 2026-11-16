@@ -3,16 +3,21 @@ import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module.js";
 import { ConfigService } from "@nestjs/config";
-import { BadRequestException, ValidationPipe } from "@nestjs/common";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter.js";
-import { ERROR_CODES } from "./common/constants/error-codes.js";
+import { createApiValidationPipe } from "./common/pipes/api-validation.pipe.js";
+import { ApiSerializationInterceptor } from "./common/interceptors/api-serialization.interceptor.js";
 import helmet from "helmet";
 import express from "express";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+/** Khởi động ứng dụng, đăng ký lớp bảo vệ HTTP và mở cổng đã cấu hình
+ * Cố định múi giờ tiến trình trước khi kết nối DB để dữ liệu timestamp được diễn giải nhất quán
+ * Nếu cấu hình hoặc DB lỗi thì dừng khởi động và không in thông tin nhạy cảm
+ */
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  process.env.TZ = "UTC";
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
   const config = app.get(ConfigService);
 
   // Helmet mặc định có "upgrade-insecure-requests" -> Swagger UI trên http://localhost
@@ -31,22 +36,9 @@ async function bootstrap(): Promise<void> {
   app.use(express.json({ limit: "10mb" }));
   app.getHttpAdapter().getInstance().set("trust proxy", 1);
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      exceptionFactory: (errors) =>
-        new BadRequestException({
-          statusCode: 400,
-          code: ERROR_CODES.VALIDATION_ERROR,
-          message: "Dữ liệu gửi lên không hợp lệ.",
-          details: errors.map((error) => ({
-            field: error.property,
-            messages: Object.values(error.constraints ?? {}),
-          })),
-        }),
-    }),
-  );
+  app.useGlobalInterceptors(new ApiSerializationInterceptor());
+  // Giới hạn parser được cài trước bộ lọc và pipe để lỗi đầu vào vẫn theo contract
+  app.useGlobalPipes(createApiValidationPipe());
 
   const allowedOrigins = (
     config.get<string>("CORS_ORIGINS") ??
@@ -91,13 +83,14 @@ async function bootstrap(): Promise<void> {
   swaggerDocument.components.schemas ??= {};
   swaggerDocument.components.schemas.ApiError = {
     type: "object",
-    required: ["statusCode", "code", "message"],
+    required: ["statusCode", "code", "message", "details"],
     properties: {
       statusCode: { type: "integer", example: 400 },
       code: { type: "string", example: "VALIDATION_ERROR" },
       message: { type: "string", example: "Dữ liệu gửi lên không hợp lệ." },
       details: {
-        nullable: true,
+        type: "array",
+        items: { type: "object" },
         example: [{ field: "username", messages: ["Tên đăng nhập là bắt buộc."] }],
       },
     },
@@ -123,24 +116,23 @@ async function bootstrap(): Promise<void> {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  // Xuất openapi.json; lỗi ghi file (ví dụ filesystem chỉ đọc) không được làm sập app.
-  try {
-    const docsDir = resolve(process.cwd(), "docs");
-    await mkdir(docsDir, { recursive: true });
-    await writeFile(
-      resolve(docsDir, "openapi.json"),
-      JSON.stringify(swaggerDocument, null, 2),
-      "utf8",
-    );
-  } catch (error) {
-    console.warn("Không ghi được docs/openapi.json:", error);
+  // Chỉ xuất tệp khi có đích được chỉ định để không ghi đè tài liệu sẵn có lúc khởi động
+  const outputFile = config.get<string>("OPENAPI_OUTPUT_FILE");
+  if (outputFile) {
+    try {
+      const outputPath = resolve(outputFile);
+      await mkdir(resolve(outputPath, ".."), { recursive: true });
+      await writeFile(outputPath, JSON.stringify(swaggerDocument, null, 2), "utf8");
+    } catch {
+      console.warn("Không ghi được tài liệu OpenAPI");
+    }
   }
 
   app.enableShutdownHooks();
   await app.listen(config.get<number>("PORT", 3000));
 }
 
-bootstrap().catch((error: unknown) => {
-  console.error("Không thể khởi động ứng dụng NestJS.", error);
+bootstrap().catch(() => {
+  console.error("Không thể khởi động ứng dụng NestJS.");
   process.exitCode = 1;
 });

@@ -1,170 +1,104 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from "@nestjs/common";
-import { ERROR_CODES, type ErrorCode } from "../constants/error-codes.js";
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from "@nestjs/common";
+import { ERROR_CODES } from "../constants/error-codes.js";
+import { ERROR_MESSAGES } from "../constants/error-messages.js";
 
-type ErrorDetail = { field: string; messages: string[] };
-type ErrorResponse = {
-  statusCode: number;
-  code: ErrorCode;
-  message: string;
-  details?: unknown;
-};
-type UnknownRecord = Record<string, unknown>;
-type HttpResponse = { status(code: number): HttpResponse; json(body: ErrorResponse): void };
-type HttpRequest = { method: string; url: string };
+type Detail = { field: string; messages: string[] };
+type ApiError = { statusCode: number; code: string; message: string; details: Detail[] };
+type RecordValue = Record<string, unknown>;
 
-/** Chuẩn hóa mọi ngoại lệ thành một định dạng phản hồi API thống nhất */
+/** Chuyển ngoại lệ HTTP và cơ sở dữ liệu thành hợp đồng công khai bốn trường
+ * Không phản chiếu lỗi SQL, provider, URL hay stack vì chúng có thể chứa bí mật
+ * Các mã chưa nhận diện trả 500, còn lỗi trường đã chuẩn hóa được giữ nguyên
+ */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  /** Nhận ngoại lệ và ngữ cảnh HTTP, gửi đúng một phản hồi đã loại thông tin nhạy cảm
+   * Ưu tiên mã Prisma, sau đó HTTP của Nest, cuối cùng dùng lỗi hệ thống chung
+   */
   catch(exception: unknown, host: ArgumentsHost): void {
-    const context = host.switchToHttp();
-    const response = context.getResponse<HttpResponse>();
-    const request = context.getRequest<HttpRequest>();
-    const prismaError = this.getPrismaError(exception);
-
-    if (prismaError) {
-      response.status(prismaError.statusCode).json(prismaError);
-      return;
-    }
-
-    if (exception instanceof HttpException) {
-      const statusCode = exception.getStatus();
-      const payload = exception.getResponse();
-      const errorBody = this.asRecord(payload);
-      const validationDetails = statusCode === HttpStatus.BAD_REQUEST
-        ? this.getValidationDetails(errorBody?.message)
-        : undefined;
-      const message = validationDetails
-        ? "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại thông tin đã nhập"
-        : this.getHttpMessage(statusCode, errorBody?.message);
-      const body: ErrorResponse = {
-        statusCode,
-        code: this.getHttpCode(statusCode, errorBody?.code),
-        message,
-        ...(validationDetails ? { details: validationDetails } : errorBody?.details !== undefined ? { details: errorBody.details } : {}),
-      };
-      response.status(statusCode).json(body);
-      return;
-    }
-
-    const error = exception instanceof Error ? exception : new Error(String(exception));
-    this.logger.error(`Unhandled exception for ${request.method} ${request.url}`, error.stack);
-    response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      code: ERROR_CODES.INTERNAL_ERROR,
-      message: "Lỗi hệ thống nội bộ",
-    } satisfies ErrorResponse);
+    const response = host.switchToHttp().getResponse<{ status(code: number): { json(body: ApiError): void } }>();
+    const error = this.databaseError(exception) ?? this.httpError(exception);
+    if (error.statusCode >= 500) this.logger.error("Không thể hoàn tất yêu cầu do lỗi hệ thống");
+    response.status(error.statusCode).json(error);
   }
 
-  private getPrismaError(exception: unknown): ErrorResponse | undefined {
-    const error = this.asRecord(exception);
-    if (!error || typeof error.code !== "string") return undefined;
-
-    if (error.code === "P2002") {
-      const target = this.getUniqueTarget(error.meta);
-      const modelName = this.asRecord(error.meta)?.modelName;
-      const code = target.includes("username")
-        ? ERROR_CODES.USERNAME_TAKEN
-        : target.includes("unitcode") || (target === "code" && modelName === "Unit")
-          ? ERROR_CODES.UNIT_CODE_TAKEN
-          : ERROR_CODES.CONFLICT;
-      const messages: Record<string, string> = {
-        [ERROR_CODES.USERNAME_TAKEN]: "Tên đăng nhập đã được sử dụng",
-        [ERROR_CODES.UNIT_CODE_TAKEN]: "Mã đơn vị đã được sử dụng",
-        [ERROR_CODES.CONFLICT]: "Dữ liệu bị trùng",
-      };
-      return { statusCode: HttpStatus.CONFLICT, code, message: messages[code] };
+  /** Ánh xạ mã Prisma và SQLSTATE đã biết sang trạng thái công khai an toàn
+   * Unique và khóa ngoại là xung đột, CHECK và trigger là vi phạm quy tắc
+   * SQLSTATE lạ không được đoán thành lỗi nghiệp vụ để tránh che lỗi hệ thống
+   */
+  private databaseError(exception: unknown): ApiError | undefined {
+    const error = this.record(exception);
+    const code = error?.code;
+    const meta = this.record(error?.meta);
+    if (code === "P2002") {
+      const target = Array.isArray(meta?.target) ? meta.target.join(" ") : String(meta?.target ?? "");
+      const key = target.toLowerCase().replace(/[_\s]/g, "");
+      const publicCode = key.includes("username") ? ERROR_CODES.USERNAME_TAKEN
+        : key.includes("unitcode") || (key === "code" && meta?.modelName === "Unit")
+          ? ERROR_CODES.UNIT_CODE_TAKEN : ERROR_CODES.CONFLICT;
+      return this.make(409, publicCode);
     }
-
-    if (error.code === "P2025") {
-      return { statusCode: HttpStatus.NOT_FOUND, code: ERROR_CODES.NOT_FOUND, message: "Không tìm thấy dữ liệu" };
+    if (code === "P2003") return this.make(409, ERROR_CODES.REFERENCE_IN_USE);
+    if (code === "P2025") return this.make(404, ERROR_CODES.NOT_FOUND);
+    if (code === "P2010" || code === "P2039") {
+      // Adapter PostgreSQL đặt SQLSTATE trong cause, Prisma cũ có thể đặt trực tiếp trong meta
+      const cause = this.record(this.record(meta?.driverAdapterError)?.cause);
+      const state = typeof meta?.code === "string" ? meta.code : typeof cause?.originalCode === "string" ? cause.originalCode : "";
+      if (state === "23505") return this.make(409, ERROR_CODES.CONFLICT);
+      if (state === "23503") return this.make(409, ERROR_CODES.REFERENCE_IN_USE);
+      if (state === "23514" || state === "P0001" || state === "23502") return this.make(422, ERROR_CODES.DB_RULE_VIOLATION);
+      return this.make(500, ERROR_CODES.INTERNAL_ERROR);
     }
-
-    if (error.code === "P2003") {
-      return { statusCode: HttpStatus.CONFLICT, code: ERROR_CODES.REFERENCE_IN_USE, message: "Không thể thực hiện vì dữ liệu đang được tham chiếu" };
-    }
-
-    if (error.code === "P2010") {
-      const meta = this.asRecord(error.meta);
-      const databaseCode = typeof meta?.code === "string" ? meta.code : "";
-      const message = this.extractDatabaseMessage(meta?.message) ?? "Quy tắc dữ liệu không cho phép thao tác này";
-      const statusCode = databaseCode.startsWith("23") ? HttpStatus.CONFLICT : HttpStatus.UNPROCESSABLE_ENTITY;
-      return { statusCode, code: ERROR_CODES.DB_RULE_VIOLATION, message };
-    }
-
     return undefined;
   }
 
-  private getValidationDetails(value: unknown): ErrorDetail[] | undefined {
-    if (!Array.isArray(value) || value.length === 0 || !value.every((item) => typeof item === "string")) {
-      return undefined;
-    }
-
-    const details = new Map<string, string[]>();
-    for (const item of value) {
-      const match = item.match(/^([\w.]+):\s*(.+)$/);
-      const field = match?.[1] ?? "request";
-      const message = match?.[2] ?? item;
-      const messages = details.get(field) ?? [];
-      messages.push(message);
-      details.set(field, messages);
-    }
-    return [...details].map(([field, messages]) => ({ field, messages }));
-  }
-
-  private getHttpMessage(statusCode: number, value: unknown): string {
-    const message = typeof value === "string"
-      ? value
-      : Array.isArray(value) && value.every((item) => typeof item === "string")
-        ? value.join("; ")
-        : undefined;
-    if (message) return message;
-
+  /** Chuẩn hóa ngoại lệ HTTP, giữ status và mã dự án nhưng không tin thông điệp framework
+   * Chỉ payload có code do ứng dụng đặt mới được giữ câu tiếng Việt và details hợp lệ
+   * Lỗi parser, pipe và route mặc định dùng câu cố định không chứa dữ liệu request
+   */
+  private httpError(exception: unknown): ApiError {
+    // Parser Express và Multer có mã riêng, chỉ nhận dạng các mã đã biết thay vì tin status tùy ý
+    const parser = this.record(exception);
+    if (parser?.type === "entity.too.large" || parser?.code === "LIMIT_FILE_SIZE") return this.make(413, ERROR_CODES.FILE_TOO_LARGE);
+    if (parser?.type === "entity.parse.failed" || parser?.code === "LIMIT_UNEXPECTED_FILE") return this.make(400, ERROR_CODES.VALIDATION_ERROR);
+    if (!(exception instanceof HttpException)) return this.make(500, ERROR_CODES.INTERNAL_ERROR);
+    const status = exception.getStatus();
+    const payload = this.record(exception.getResponse());
     const defaults: Record<number, string> = {
-      [HttpStatus.BAD_REQUEST]: "Yêu cầu không hợp lệ",
-      [HttpStatus.UNAUTHORIZED]: "Bạn cần đăng nhập để thực hiện thao tác này",
-      [HttpStatus.FORBIDDEN]: "Bạn không có quyền thực hiện thao tác này",
-      [HttpStatus.NOT_FOUND]: "Không tìm thấy dữ liệu",
-      [HttpStatus.CONFLICT]: "Dữ liệu bị xung đột",
-      [HttpStatus.UNPROCESSABLE_ENTITY]: "Dữ liệu không thể xử lý",
+      400: ERROR_CODES.VALIDATION_ERROR, 401: ERROR_CODES.UNAUTHORIZED,
+      403: ERROR_CODES.FORBIDDEN, 404: ERROR_CODES.NOT_FOUND, 405: ERROR_CODES.METHOD_NOT_ALLOWED, 409: ERROR_CODES.CONFLICT,
+      413: ERROR_CODES.FILE_TOO_LARGE, 415: ERROR_CODES.UNSUPPORTED_MEDIA_TYPE,
+      422: ERROR_CODES.BUSINESS_RULE_VIOLATION, 429: ERROR_CODES.TOO_MANY_REQUESTS,
+      503: ERROR_CODES.DATABASE_UNAVAILABLE,
     };
-    return defaults[statusCode] ?? "Đã xảy ra lỗi khi xử lý yêu cầu";
+    const custom = typeof payload?.code === "string" && /^[A-Z][A-Z0-9_]*$/.test(payload.code) ? payload.code : undefined;
+    const code = custom ?? defaults[status] ?? ERROR_CODES.INTERNAL_ERROR;
+    const result = this.make(status, code);
+    if (custom && status < 500 && typeof payload?.message === "string" && /[À-ỹ]/u.test(payload.message)) {
+      result.message = payload.message;
+      if (Array.isArray(payload.details)) {
+        result.details = payload.details.flatMap((item: unknown) => {
+          const detail = this.record(item);
+          return typeof detail?.field === "string" && Array.isArray(detail.messages)
+            && detail.messages.every((message: unknown) => typeof message === "string" && /[À-ỹ]/u.test(message))
+            ? [{ field: detail.field, messages: detail.messages as string[] }] : [];
+        });
+      }
+    }
+    return result;
   }
 
-  private getHttpCode(statusCode: number, customCode: unknown): ErrorCode {
-    if (typeof customCode === "string") return customCode;
-    const codes: Record<number, ErrorCode> = {
-      [HttpStatus.BAD_REQUEST]: ERROR_CODES.VALIDATION_ERROR,
-      [HttpStatus.UNAUTHORIZED]: ERROR_CODES.UNAUTHORIZED,
-      [HttpStatus.FORBIDDEN]: ERROR_CODES.FORBIDDEN,
-      [HttpStatus.NOT_FOUND]: ERROR_CODES.NOT_FOUND,
-      [HttpStatus.CONFLICT]: ERROR_CODES.CONFLICT,
-      [HttpStatus.UNPROCESSABLE_ENTITY]: ERROR_CODES.BUSINESS_RULE_VIOLATION,
-    };
-    return codes[statusCode] ?? ERROR_CODES.INTERNAL_ERROR;
+  /** Tạo đủ bốn trường cho mọi nhánh và dùng câu chung khi mã chưa có trong danh mục
+   * Mã kỹ thuật không bị thay đổi để client tiếp tục xử lý các trường hợp nghiệp vụ
+   */
+  private make(statusCode: number, code: string): ApiError {
+    return { statusCode, code, message: ERROR_MESSAGES[code] ?? "Không thể thực hiện yêu cầu.", details: [] };
   }
 
-  private getUniqueTarget(meta: unknown): string {
-    const target = this.asRecord(meta)?.target;
-    return (Array.isArray(target) ? target.join(" ") : typeof target === "string" ? target : "").toLowerCase().replace(/[_\s]/g, "");
-  }
-
-  private extractDatabaseMessage(value: unknown): string | undefined {
-    if (typeof value !== "string") return undefined;
-    const match = value.match(/(?:ERROR:\s*)?((?:[\w]+:\s*)?[^\n]+?)(?:\s+at\s+PL\/pgSQL|\n|$)/i);
-    const message = match?.[1]?.trim();
-    return message && !/^PL\/pgSQL/i.test(message) ? message : undefined;
-  }
-
-  private asRecord(value: unknown): UnknownRecord | undefined {
-    return typeof value === "object" && value !== null ? value as UnknownRecord : undefined;
+  /** Chỉ ép kiểu object khác null, tránh đọc thuộc tính từ dữ liệu ngoại lệ bất kỳ */
+  private record(value: unknown): RecordValue | undefined {
+    return typeof value === "object" && value !== null ? value as RecordValue : undefined;
   }
 }

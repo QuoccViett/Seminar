@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "start": "node dist/main.js",
-    "start:dev": "tsx watch src/main.ts",
+    "start:dev": "node scripts/watch-dev.mjs",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:migrate:dev": "prisma migrate dev",

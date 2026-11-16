@@ -8,12 +8,12 @@ import { PrismaClient } from "../src/generated/prisma/client.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  throw new Error("DATABASE_URL must be set before running the seed.");
+  throw new Error("Cần cấu hình DATABASE_URL trước khi tạo dữ liệu mẫu");
 }
 
 const adminPassword = process.env.SEED_ADMIN_PASSWORD;
 if (!adminPassword) {
-  throw new Error("SEED_ADMIN_PASSWORD must be set before creating the seed admin.");
+  throw new Error("Cần cấu hình SEED_ADMIN_PASSWORD trước khi tạo quản trị viên mẫu");
 }
 const seedAdminPassword: string = adminPassword;
 
@@ -115,6 +115,10 @@ function statusChain(status: EvaluationStatus): EvaluationStatus[] {
   }
 }
 
+/** Tạo dữ liệu minh họa trong DB được cấu hình và lưu credential mới vào tệp riêng
+ * Mật khẩu cũ chỉ thay khi bật tùy chọn xoay vòng, lỗi DB được xử lý tại biên script
+ * Không chạy trên DB dùng chung khi chưa chỉ định đích seed an toàn
+ */
 async function main(): Promise<void> {
   const generatedCredentials: { username: string; password: string }[] = [];
   const existingUsers = await prisma.user.findMany({
@@ -125,7 +129,7 @@ async function main(): Promise<void> {
 
   if ((!credentialsFile && (rotatePasswords || existingUsernames.size < units.length + 1))) {
     throw new Error(
-      "SEED_CREDENTIALS_FILE must point to a secure local file before creating or rotating account passwords.",
+      "Cần cấu hình SEED_CREDENTIALS_FILE an toàn trước khi tạo hoặc đổi mật khẩu tài khoản mẫu",
     );
   }
 
@@ -331,20 +335,25 @@ async function main(): Promise<void> {
   }, { maxWait: 10_000, timeout: 120_000 });
 
   if (generatedCredentials.length > 0) {
-    if (!credentialsFile) throw new Error("SEED_CREDENTIALS_FILE is required to save newly generated credentials.");
+    if (!credentialsFile) throw new Error("Cần cấu hình SEED_CREDENTIALS_FILE để lưu thông tin tài khoản mẫu");
     const filePath = resolve(credentialsFile);
     await writeFile(filePath, `${JSON.stringify(generatedCredentials, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    console.info(`Credentials written to ${filePath}. Store them securely and delete the file after use.`);
+    console.info("Đã lưu thông tin tài khoản mẫu, cần bảo quản an toàn và xóa sau khi sử dụng");
   }
-  console.info(`Seeded ${units.length} units, ${unitUsersCount()} unit accounts, 2 periods, evaluations and all schema tables.`);
+  console.info(`Đã tạo dữ liệu mẫu cho ${units.length} đơn vị, ${unitUsersCount()} tài khoản và 2 kỳ đánh giá`);
 }
 
 function unitUsersCount(): number {
   return units.length;
 }
 
+// Bắt lỗi tại biên script để không in chi tiết DB hoặc đường dẫn có thể chứa thông tin nhạy cảm
 try {
   await main();
+} catch (error) {
+  const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" && /^P\d{4}$/.test(error.code) ? ` (${error.code})` : "";
+  console.error(`Không thể tạo dữ liệu mẫu, vui lòng kiểm tra cấu hình và cơ sở dữ liệu${code}`);
+  process.exitCode = 1;
 } finally {
   await prisma.$disconnect();
 }

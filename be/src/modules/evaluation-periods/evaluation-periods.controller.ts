@@ -26,6 +26,7 @@ import { CreateEvaluationPeriodDto } from "./dto/create-evaluation-period.dto.js
 import { UpdateEvaluationPeriodDto } from "./dto/update-evaluation-period.dto.js";
 import { UpsertRatingThresholdDto } from "./dto/upsert-rating-threshold.dto.js";
 import { EvaluationPeriodsService } from "./evaluation-periods.service.js";
+import { ApiArrayValidationPipe } from "../../common/pipes/api-validation.pipe.js";
 
 @ApiTags("Đợt đánh giá")
 @ApiBearerAuth()
@@ -85,9 +86,12 @@ export class EvaluationPeriodsController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "Tạo hoặc cập nhật ngưỡng xếp loại" })
   @ApiResponse({ status: 200, description: "Cập nhật ngưỡng xếp loại thành công" })
+  /** Kiểm từng ngưỡng trong mảng trước khi lưu, giữ chỉ số khi báo lỗi trường
+   * Không thay hình dạng body để các client đang gửi mảng tiếp tục hoạt động
+   */
   upsertThresholds(
     @Param("id", ParseUUIDPipe) id: string,
-    @Body() thresholds: UpsertRatingThresholdDto[],
+    @Body(new ApiArrayValidationPipe(UpsertRatingThresholdDto)) thresholds: UpsertRatingThresholdDto[],
   ) {
     return this.evaluationPeriodsService.upsertThresholds(id, thresholds);
   }
