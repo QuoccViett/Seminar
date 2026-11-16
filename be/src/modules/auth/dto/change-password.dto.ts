@@ -1,6 +1,9 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { IsNotEmpty, IsString, MaxLength, MinLength } from "class-validator";
 
+/** Kiểm tra kiểu và độ dài sơ bộ trước khi service áp dụng chính sách mật khẩu và giới hạn byte
+ * Mật khẩu hiện tại vẫn cho phép giá trị demo ngắn để người dùng có thể đổi lần đầu
+ */
 export class ChangePasswordDto {
   @ApiProperty({
     type: String,
@@ -14,7 +17,7 @@ export class ChangePasswordDto {
   @ApiProperty({
     type: String,
     example: "new-password-123",
-    description: "Mật khẩu mới, 8-72 ký tự (bcrypt chỉ xét 72 byte đầu)",
+    description: "Mật khẩu mới tối thiểu 8 ký tự và tối đa 72 byte UTF-8",
     minLength: 8,
     maxLength: 72,
   })

@@ -138,7 +138,7 @@ Request:
 }
 ```
 
-`200 OK` trả cặp access/refresh token mới cùng `tokenType`, `expiresIn` và `user` theo response đăng nhập. Token không hợp lệ, hết hạn hoặc đã dùng trả `401 INVALID_REFRESH_TOKEN`.
+`200 OK` trả cặp access/refresh token mới cùng `tokenType`, `expiresIn` và `user` theo response đăng nhập. Token không hợp lệ, hết hạn hoặc đã dùng trả `401 INVALID_REFRESH_TOKEN`; dùng lại token đã thu hồi sẽ thu hồi mọi refresh token của tài khoản sau khi giao dịch được commit. Tài khoản còn bắt đổi mật khẩu nhận `403 PASSWORD_CHANGE_REQUIRED`.
 
 ### Đăng xuất
 
@@ -173,9 +173,9 @@ Request:
 }
 ```
 
-Backend xác minh mật khẩu hiện tại, áp chính sách độ dài/độ mạnh đã thống nhất, đặt `mustChangePassword` thành `false` và thu hồi các refresh token cũ của user. Request sai mật khẩu trả `401 INVALID_CREDENTIALS`; mật khẩu mới không đạt chính sách trả `400 VALIDATION_ERROR`. Thành công trả hồ sơ user an toàn theo shape `/auth/me`; client cần đăng nhập lại nếu session hiện tại bị thu hồi.
+Backend xác minh mật khẩu hiện tại, áp chính sách tối thiểu 8 ký tự Unicode và tối đa 72 byte UTF-8, phải có chữ và số, khác tên đăng nhập, mật khẩu cũ và mật khẩu phổ biến. Sai mật khẩu hiện tại trả `400 VALIDATION_ERROR` tại `currentPassword`; mật khẩu mới không đạt trả cùng mã tại `newPassword`. Thành công tăng phiên bản xác thực, thu hồi phiên cũ và trả cặp token mới cùng `user` theo response đăng nhập trong một giao dịch. Access token cũ hoặc thiếu phiên bản không còn hợp lệ.
 
-> **Trạng thái triển khai:** `POST /auth/login` và `GET /auth/me` đã được triển khai bước đầu, gồm Bearer-token guard và kiểm tra role dùng được cho các module khác. `POST /auth/refresh`, `POST /auth/logout` và `POST /auth/change-password` vẫn là contract cho các bước tiếp theo, chưa được coi là đã triển khai cho đến khi endpoint tương ứng được hoàn tất và kiểm thử.
+> Giao ước VC02 quy định cả năm endpoint; việc nghiệm thu phụ thuộc kiểm thử backend, cơ sở dữ liệu và trình duyệt thực tế
 
 ### Các API tài khoản/đơn vị
 

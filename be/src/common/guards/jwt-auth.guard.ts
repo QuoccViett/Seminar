@@ -23,6 +23,8 @@ interface AuthenticatedRequest {
 interface AccessTokenPayload {
   sub?: unknown;
   tokenUse?: unknown;
+  ver?: unknown;
+  exp?: unknown;
 }
 
 function unauthorized(): UnauthorizedException {
@@ -41,6 +43,10 @@ export class JwtAuthGuard implements CanActivate {
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
+  /** Xác minh chữ ký và trạng thái tài khoản trước khi kiểm tra quyền đổi mật khẩu
+   * Chỉ các handler được đánh dấu rõ mới cho phép phiên bắt buộc đổi mật khẩu tiếp tục
+   * Phiên bản thiếu hoặc khác cơ sở dữ liệu bị từ chối để vô hiệu hóa access token cũ
+   */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const authorization = request.headers.authorization;
@@ -59,7 +65,8 @@ export class JwtAuthGuard implements CanActivate {
 
     if (
       typeof payload.sub !== "string" ||
-      payload.tokenUse !== "access"
+      payload.tokenUse !== "access" ||
+      !Number.isInteger(payload.ver) || typeof payload.exp !== "number"
     ) {
       throw unauthorized();
     }
@@ -71,12 +78,18 @@ export class JwtAuthGuard implements CanActivate {
         role: true,
         unitId: true,
         isActive: true,
+        mustChangePassword: true,
+        credentialVersion: true,
         unit: { select: { isActive: true } },
       },
     });
 
-    if (!user?.isActive) {
+    if (!user?.isActive || user.credentialVersion !== payload.ver) {
       throw unauthorized();
+    }
+
+    if (user.mustChangePassword && !Reflect.getMetadata("auth:allow-password-change", context.getHandler())) {
+      throw new ForbiddenException({ statusCode: 403, code: "PASSWORD_CHANGE_REQUIRED", message: "Bạn phải đổi mật khẩu trước khi tiếp tục." });
     }
 
     if (user.role === "ADMIN" && user.unitId === null) {

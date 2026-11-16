@@ -66,14 +66,15 @@ function httpCodeOf(handler: object): number | undefined {
 
 // ---------- Chuyển tiếp xuống service ----------
 
+/** Chuyển dữ liệu và IP từ controller sang service để audit ghi đúng nguồn đăng nhập */
 test("login forwards the body to AuthService.login", async () => {
   const { controller, calls } = makeController();
   const body = { username: "admin", password: "secret" } as LoginDto;
 
-  const result = await controller.login(body);
+  const result = await controller.login(body, "127.0.0.1");
 
   assert.deepEqual(result, { handledBy: "login" });
-  assert.deepEqual(calls.login?.[0], [body]);
+  assert.deepEqual(calls.login?.[0], [body, "127.0.0.1"]);
 });
 
 test("getMe passes the current user's id", async () => {
@@ -102,6 +103,7 @@ test("logout forwards the body to AuthService.logout", async () => {
   assert.deepEqual(calls.logout?.[0], [body]);
 });
 
+/** Giữ định danh phiên và IP khi chuyển yêu cầu đổi mật khẩu để audit không mất nguồn */
 test("changePassword passes the current user and the body", async () => {
   const { controller, calls } = makeController();
   const body = {
@@ -109,9 +111,9 @@ test("changePassword passes the current user and the body", async () => {
     newPassword: "new-password-123",
   } as ChangePasswordDto;
 
-  await controller.changePassword(CURRENT_USER, body);
+  await controller.changePassword(CURRENT_USER, body, "127.0.0.1");
 
-  assert.deepEqual(calls.changePassword?.[0], [CURRENT_USER, body]);
+  assert.deepEqual(calls.changePassword?.[0], [CURRENT_USER, body, "127.0.0.1"]);
 });
 
 // ---------- Bảo vệ route ----------
