@@ -31,10 +31,12 @@ export default function AdminAuditLog() {
   };
 
   // --- HÀM GỌI API LẤY BIỂU ĐỒ ---
+  /** Tải số liệu biểu đồ theo khoảng thời gian và cập nhật giao diện khi thành công
+   * Khi API lỗi chỉ ghi câu chung, không in dữ liệu nhật ký hoặc phản hồi thô
+   */
   const fetchChartData = async (range) => {
     try {
       const res = await auditLogService.getAuditLogStats({ range });
-    console.log("Dữ liệu biểu đồ nhận được:", res.items);
       setChartData(res.items || []);
     } catch (error) {
       console.error("Lỗi tải biểu đồ");

@@ -14,7 +14,10 @@ function findTestFiles(directory, suffix) {
   });
 }
 
-/** Chạy Node test runner qua tsx với danh sách tệp tìm được */
+/** Tìm và chạy các tệp kiểm thử bằng Node cùng tsx theo thư mục và hậu tố đầu vào
+ * Nếu thư mục không đọc được hoặc không có tệp thì trả mã lỗi và câu tiếng Việt
+ * Không in ngoại lệ filesystem vì đường dẫn hoặc nội dung hệ thống có thể nhạy cảm
+ */
 function runTests() {
   const [root, suffix, ...options] = process.argv.slice(2);
   if (!root || !suffix) {
@@ -23,7 +26,14 @@ function runTests() {
     return;
   }
 
-  const files = findTestFiles(resolve(root), suffix);
+  let files;
+  try {
+    files = findTestFiles(resolve(root), suffix);
+  } catch {
+    error("Không thể đọc thư mục kiểm thử đã chỉ định");
+    process.exitCode = 1;
+    return;
+  }
   if (files.length === 0) {
     error(`Không tìm thấy tệp kiểm thử ${suffix} trong ${root}`);
     process.exitCode = 1;

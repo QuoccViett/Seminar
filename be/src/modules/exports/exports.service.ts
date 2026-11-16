@@ -170,6 +170,9 @@ export class ExportsService {
     return this.toMetadata(record);
   }
 
+  /** Lấy nội dung tệp báo cáo theo mã và chỉ trả tệp thường trong thư mục lưu trữ
+   * Tệp thiếu, sai loại hoặc không đọc được đều trả 404 để không lộ đường dẫn máy chủ
+   */
   async getDownload(id: string) {
     const record = await this.findRecordOrThrow(id);
     const absolutePath = this.resolveStoragePath(record.storagePath);
@@ -177,7 +180,7 @@ export class ExportsService {
     try {
       const fileStat = await stat(absolutePath);
       if (!fileStat.isFile()) {
-        throw new Error("Stored path is not a file");
+        throw new Error("Đường dẫn lưu trữ không phải là tệp");
       }
       const buffer = await readFile(absolutePath);
       return {

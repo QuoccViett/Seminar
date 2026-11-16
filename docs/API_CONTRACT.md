@@ -52,13 +52,15 @@ Tất cả lỗi API dùng cấu trúc thống nhất:
   "details": [
     {
       "field": "selfScore",
-      "message": "Điểm phải nằm trong khoảng cho phép."
+      "messages": ["Điểm phải nằm trong khoảng cho phép."]
     }
   ]
 }
 ```
 
-`details` có thể là mảng rỗng. FE dựa vào `code`/`field`, không dựa vào nội dung câu tiếng Việt để điều khiển logic.
+`details` luôn là mảng, kể cả khi không có lỗi trường. Mỗi phần tử có `field` và `messages` là mảng câu tiếng Việt. Trường ngoài DTO bị từ chối; đường dẫn trường lồng nhau gồm cả chỉ số mảng. Lỗi cú pháp JSON, upload và giới hạn kích thước giữ mã HTTP phù hợp và không trả thông tin thô từ cơ sở dữ liệu hay dịch vụ bên ngoài. FE dựa vào `code`/`field`, không dựa vào nội dung câu tiếng Việt để điều khiển logic.
+
+Giá trị Decimal trong JSON được làm tròn hai chữ số thập phân; BigInt trong khoảng số nguyên an toàn được trả thành number, ngoài khoảng đó trả thành chuỗi thập phân để giữ chính xác. Thời gian được trả ở định dạng ISO UTC.
 
 | HTTP | Dùng khi |
 |---|---|
