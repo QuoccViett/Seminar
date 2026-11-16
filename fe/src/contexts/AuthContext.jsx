@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../services/authService";
 import {
@@ -15,12 +15,10 @@ export function AuthProvider({ children }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const restoredRef = useRef(false);
 
   useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
-
+    // Mỗi lần effect chạy đều khôi phục phiên riêng để StrictMode có thể hủy lần đầu và chạy lại
+    // Cờ hủy ngăn phản hồi cũ cập nhật trạng thái sau khi effect đã dọn dẹp
     let cancelled = false;
 
     async function restore() {
@@ -38,7 +36,7 @@ export function AuthProvider({ children }) {
         if (cancelled) return;
         setUser(fresh);
         setSession({
-          accessToken,
+          accessToken: getAccessToken(),
           refreshToken: getRefreshToken(),
           user: fresh,
         });
@@ -106,35 +104,18 @@ export function AuthProvider({ children }) {
     }
   }, [navigate]);
 
-  // ---------- Change password ----------
-  // contract: thành công trả hồ sơ user an toàn (shape /auth/me)
-  // và thu hồi refresh token cũ → client cần đăng nhập lại nếu session bị thu hồi
-  const changePassword = useCallback(
-    async (currentPassword, newPassword) => {
-      const updatedUser = await authService.changePassword(
-        currentPassword,
-        newPassword
-      );
-
-      // cập nhật user mới + giữ nguyên token hiện tại (nếu backend còn cho dùng)
-      if (updatedUser?.id) {
-        setUser(updatedUser);
-        setSession({
-          accessToken: getAccessToken(),
-          refreshToken: getRefreshToken(),
-          user: updatedUser,
-        });
-      }
-
-      // Nếu backend thu hồi luôn access token hiện tại → phải login lại.
-      // clearSession(); setUser(null);
-      // navigate("/login", { replace: true, state: { message: "Đổi mật khẩu thành công. Vui lòng đăng nhập lại." } });
-
-      return updatedUser;
-    },
-    [navigate]
-  );
-
+  /** Lưu nguyên cặp token thay thế do backend cấp sau khi đổi mật khẩu thành công
+   * Phiên cũ đã bị thu hồi nên không được giữ access hoặc refresh token trước đó
+   */
+  const changePassword = useCallback(async (currentPassword, newPassword) => {
+    const result = await authService.changePassword(currentPassword, newPassword);
+    if (!result?.accessToken || !result?.refreshToken || !result?.user) {
+      throw { message: "Phản hồi đổi mật khẩu không hợp lệ." };
+    }
+    setSession(result);
+    setUser(result.user);
+    return result.user;
+  }, []);
   const value = {
     user,
     loading,

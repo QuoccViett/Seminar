@@ -413,7 +413,7 @@ test("creating a user always sets mustChangePassword and returns a temporary pas
   const data = calls.create[0]?.data ?? {};
   assert.equal(data.mustChangePassword, true);
   assert.equal(typeof result.temporaryPassword, "string");
-  assert.ok(result.temporaryPassword.length >= 12);
+  assert.equal(result.temporaryPassword, "123456");
   // DB chỉ lưu bản băm, không lưu mật khẩu tạm.
   assert.notEqual(data.passwordHash, result.temporaryPassword);
   assert.match(String(data.passwordHash), /^\$2[aby]\$/);
@@ -449,13 +449,13 @@ test("listing users rejects an unknown role filter", async () => {
   );
 });
 
-test("resetPassword returns a fresh temporary password and forces a password change", async () => {
+test("resetPassword returns the configured demo password and forces a password change", async () => {
   const { service, calls } = makeService();
 
   const result = await service.resetPassword(USER.id);
 
   assert.equal(result.mustChangePassword, true);
-  assert.ok(result.temporaryPassword.length >= 12);
+  assert.equal(result.temporaryPassword, "123456");
   assert.equal(calls.update[0]?.data?.mustChangePassword, true);
   assert.match(String(calls.update[0]?.data?.passwordHash), /^\$2[aby]\$/);
 });

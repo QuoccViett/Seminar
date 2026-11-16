@@ -5,7 +5,9 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Ip,
   Post,
+  SetMetadata,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -34,10 +36,13 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Đăng nhập" })
   @ApiBody({ type: LoginDto })
-  login(@Body() body: LoginDto) {
-    return this.authService.login(body);
+  /** Ghi nhận địa chỉ kết nối cùng kết quả đăng nhập, không đưa mật khẩu vào audit */
+  login(@Body() body: LoginDto, @Ip() ip?: string) {
+    return this.authService.login(body, ip);
   }
 
+  // Cho phép xem hồ sơ khi phiên vẫn đang yêu cầu đổi mật khẩu
+  @SetMetadata("auth:allow-password-change", true)
   @Get("me")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
@@ -62,16 +67,22 @@ export class AuthController {
     return this.authService.logout(body);
   }
 
+  // Cho phép chính chủ đổi mật khẩu trước khi truy cập các nghiệp vụ khác
+  @SetMetadata("auth:allow-password-change", true)
   @Post("change-password")
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
   @ApiOperation({ summary: "[ADMIN, UNIT] Đổi mật khẩu khi được cấp tài khoản (chỉ được đổi ở tài khoản của chính mình)" })
   @ApiBody({ type: ChangePasswordDto })
+  /** Chuyển mật khẩu và địa chỉ kết nối cho service để đổi phiên và ghi audit
+   * Chỉ guard xác thực được phép gọi đường này, service không lưu mật khẩu dạng rõ
+   */
   changePassword(
     @GetCurrentUser() user: CurrentUser,
     @Body() body: ChangePasswordDto,
+    @Ip() ip?: string,
   ) {
-    return this.authService.changePassword(user, body);
+    return this.authService.changePassword(user, body, ip);
   }
 }

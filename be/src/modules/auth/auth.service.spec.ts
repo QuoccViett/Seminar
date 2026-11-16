@@ -24,7 +24,8 @@ async function makeService(overrides: Overrides = {}) {
     role: "ADMIN",
     unitId: null,
     isActive: true,
-    mustChangePassword: true,
+    mustChangePassword: false,
+    credentialVersion: 0,
     unit: null,
   };
   const createdRefreshTokens: Row[] = [];
@@ -42,7 +43,7 @@ async function makeService(overrides: Overrides = {}) {
           create: async ({ data }: { data: Row }) => createdRefreshTokens.push(data),
         },
         user: {
-          update: async ({ data }: { data: Row }) => updatedUsers.push(data),
+          updateMany: async ({ data }: { data: Row }) => { updatedUsers.push(data); return { count: 1 }; },
         },
       }),
     ...overrides.prisma,
@@ -71,7 +72,7 @@ test("login returns safe user data and stores only a hash of the refresh token",
   });
 
   assert.equal(result.user.id, user.id);
-  assert.equal(result.user.mustChangePassword, true);
+  assert.equal(result.user.mustChangePassword, false);
   assert.equal("passwordHash" in result.user, false);
   assert.equal(result.tokenType, "Bearer");
   assert.equal(result.expiresIn, 900);
@@ -90,7 +91,7 @@ test("login rejects invalid credentials without creating a session", async () =>
   await assert.rejects(
     service.login({ username: "admin", password: "wrong-password" }),
     (error: unknown) => http(error).getStatus() === 401 &&
-      http(error).getResponse().code === "UNAUTHORIZED",
+      http(error).getResponse().code === "INVALID_CREDENTIALS",
   );
   assert.equal(createdRefreshTokens.length, 0);
 });
@@ -138,7 +139,7 @@ test("login rejects inactive accounts", async () => {
   await assert.rejects(
     service.login({ username: "admin", password: "correct-password" }),
     (error: unknown) => http(error).getStatus() === 401 &&
-      http(error).getResponse().code === "UNAUTHORIZED",
+      http(error).getResponse().code === "INVALID_CREDENTIALS",
   );
 });
 
@@ -265,6 +266,7 @@ test("refresh rejects an already revoked refresh token", async () => {
           expiresAt: new Date(Date.now() + 60_000),
           revokedAt: new Date(),
         }),
+        updateMany: async () => ({ count: 1 }),
       },
     },
   });
@@ -298,8 +300,9 @@ test("change password updates the hash, clears mustChangePassword and revokes re
     prisma: {
       $transaction: async (callback: (tx: unknown) => unknown) =>
         callback({
-          user: { update: async ({ data }: { data: Row }) => userUpdates.push(data) },
+          user: { updateMany: async ({ data }: { data: Row }) => { userUpdates.push(data); return { count: 1 }; } },
           refreshToken: {
+            create: async () => ({}),
             updateMany: async (args: unknown) => {
               revokeCalls.push(args);
               return { count: 1 };
@@ -372,7 +375,7 @@ test("login rejects a UNIT account whose unit is deactivated", async () => {
   await assert.rejects(
     service.login({ username: "coso01", password: "correct-password" }),
     (error: unknown) => http(error).getStatus() === 401 &&
-      http(error).getResponse().code === "UNAUTHORIZED",
+      http(error).getResponse().code === "INVALID_CREDENTIALS",
   );
   assert.equal(createdRefreshTokens.length, 0);
 });
@@ -385,7 +388,7 @@ test("login returns the same 401 for an unknown username", async () => {
   await assert.rejects(
     service.login({ username: "ghost", password: "whatever-123" }),
     (error: unknown) => http(error).getStatus() === 401 &&
-      http(error).getResponse().code === "UNAUTHORIZED",
+      http(error).getResponse().code === "INVALID_CREDENTIALS",
   );
 });
 
@@ -413,4 +416,28 @@ test("change password rejects a new password longer than 72 characters", async (
     ),
     (error: unknown) => http(error).getStatus() === 400,
   );
+});
+/** Yêu cầu dùng lại refresh token phải thu hồi phiên đang hoạt động trước khi báo lỗi
+ * Bộ nhớ giả ghi nhận điều kiện cập nhật để kiểm tra tác dụng phụ không bị bỏ qua
+ */
+test("dùng lại refresh token thu hồi các phiên khác", async () => {
+  const updates: Row[] = [];
+  const { service } = await makeService({ prisma: { refreshToken: {
+    findUnique: async () => ({ id: "token-cu", userId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 60000), revokedAt: new Date() }),
+    updateMany: async ({ where }: { where: Row }) => { updates.push(where); return { count: 1 }; },
+  } } });
+  await assert.rejects(service.refresh({ refreshToken: "da-dung" }), (error: unknown) => http(error).getResponse().code === "INVALID_REFRESH_TOKEN");
+  assert.equal(updates[0]?.userId, "11111111-1111-4111-8111-111111111111");
+  assert.equal(updates[0]?.revokedAt, null);
+});
+
+/** Mật khẩu Unicode có thể ít ký tự nhưng vượt giới hạn byte của bcrypt
+ * Kiểm tra nhánh từ chối trước khi ghi dữ liệu để tránh hai chuỗi có cùng phần đầu 72 byte
+ */
+test("từ chối mật khẩu mới vượt 72 byte UTF-8", async () => {
+  const { service } = await makeService();
+  await assert.rejects(service.changePassword(
+    { id: "11111111-1111-4111-8111-111111111111", role: "ADMIN", unitId: null },
+    { currentPassword: "correct-password", newPassword: "ấ".repeat(25) + "1a" },
+  ), (error: unknown) => http(error).getResponse().code === "VALIDATION_ERROR");
 });

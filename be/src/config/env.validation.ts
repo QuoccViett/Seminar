@@ -11,6 +11,10 @@ export const envValidationSchema = Joi.object({
   CORS_ORIGINS: Joi.string().optional(),
   DATABASE_URL: Joi.string().required(),
   JWT_SECRET: Joi.string().min(32).required(),
+  JWT_ACCESS_TTL_SECONDS: Joi.number().integer().min(1).default(900),
+  JWT_REFRESH_TTL_SECONDS: Joi.number().integer().min(1).default(604800),
+  JWT_ISSUER: Joi.string().default("seminar"),
+  JWT_AUDIENCE: Joi.string().default("seminar-client"),
   INITIAL_ACCOUNT_PASSWORD: Joi.when("NODE_ENV", {
     is: "production", then: Joi.string().min(6).required(), otherwise: Joi.string().min(6).default("123456"),
   }),

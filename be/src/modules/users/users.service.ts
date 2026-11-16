@@ -5,10 +5,12 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ERROR_CODES } from "../../common/constants/error-codes.js";
 import type { CurrentUser } from "../../common/decorators/current-user.js";
@@ -134,6 +136,7 @@ function suppliedKeys(dto: object): string[] {
 export class UsersService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(ConfigService) private readonly config?: ConfigService,
   ) {}
 
   async findAll(query: {
@@ -212,6 +215,9 @@ export class UsersService {
     return user;
   }
 
+  /** Tạo tài khoản từ thông tin hợp lệ và băm mật khẩu ban đầu lấy từ cấu hình
+   * Tài khoản mới luôn phải đổi mật khẩu và mật khẩu tạm chỉ xuất hiện trong phản hồi cấp mới
+   */
   async create(dto: CreateUserDto) {
     const username = dto.username?.trim();
     const fullName = dto.fullName?.trim();
@@ -250,7 +256,7 @@ export class UsersService {
       if (assignedUser) throw unitAccountExists();
     }
 
-    // Kiểm tra trước để trả mã lỗi rõ ràng (P2002 với driver adapter có thể không kèm tên cột).
+    // Kiểm tra trước để trả mã lỗi rõ ràng khi driver không kèm tên cột
     const sameUsername = await this.prisma.user.findUnique({
       where: { username },
       select: { id: true },
@@ -266,7 +272,8 @@ export class UsersService {
       if (sameEmail) throw emailTaken();
     }
 
-    const temporaryPassword = randomBytes(12).toString("base64url");
+    // Dùng mật khẩu ban đầu được cấu hình để luồng cấp và đặt lại thống nhất với demo
+    const temporaryPassword = this.config?.get<string>("INITIAL_ACCOUNT_PASSWORD") ?? "123456";
     const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
     const now = new Date();
 
@@ -289,7 +296,7 @@ export class UsersService {
         select: USER_SELECT,
       });
 
-      // Mật khẩu tạm chỉ hiển thị đúng một lần, không lưu dạng rõ.
+      // Mật khẩu tạm chỉ hiển thị đúng một lần, không lưu dạng rõ
       return { ...user, temporaryPassword };
     } catch (error) {
       if (isUniqueError(error)) throw userAlreadyExists();
@@ -425,6 +432,9 @@ export class UsersService {
     }
   }
 
+  /** Đặt lại mật khẩu về giá trị cấu hình, thu hồi refresh và tăng phiên bản access trong giao dịch
+   * Tài khoản không tồn tại trả lỗi, tài khoản thành công phải đổi mật khẩu khi đăng nhập lại
+   */
   async resetPassword(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -433,7 +443,8 @@ export class UsersService {
 
     if (!user) throw userNotFound();
 
-    const temporaryPassword = randomBytes(12).toString("base64url");
+    // Dùng mật khẩu ban đầu được cấu hình để luồng cấp và đặt lại thống nhất với demo
+    const temporaryPassword = this.config?.get<string>("INITIAL_ACCOUNT_PASSWORD") ?? "123456";
     const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
     const now = new Date();
 
@@ -443,6 +454,8 @@ export class UsersService {
         data: {
           passwordHash,
           mustChangePassword: true,
+          // Tăng phiên bản để access token phát trước khi đặt lại bị từ chối ngay
+          credentialVersion: { increment: 1 },
           passwordChangedAt: now,
           updatedAt: now,
         },

@@ -36,6 +36,8 @@ model User {
   isActive              Boolean             @default(true) @map("is_active")
   lastLoginAt           DateTime?           @map("last_login_at") @db.Timestamp(6)
   credentialsSentAt     DateTime?           @map("credentials_sent_at") @db.Timestamp(6)
+  /// Phiên bản tăng khi mật khẩu đổi hoặc đặt lại để thu hồi access token đã cấp
+  credentialVersion     Int                 @default(0) @map("credential_version")
   passwordChangedAt     DateTime?           @map("password_changed_at") @db.Timestamp(6)
   createdAt             DateTime            @map("created_at") @db.Timestamp(6)
   updatedAt             DateTime            @map("updated_at") @db.Timestamp(6)

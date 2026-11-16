@@ -12,8 +12,12 @@ import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js"
     PrismaModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
+      // Dùng cùng issuer và audience khi ký và xác minh để token từ hệ thống khác không được chấp nhận
+      // Giới hạn HS256 ở cả hai chiều, giá trị mặc định chỉ áp dụng khi chưa cấu hình
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>("JWT_SECRET"),
+        signOptions: { algorithm: "HS256", issuer: config.get<string>("JWT_ISSUER") ?? "seminar", audience: config.get<string>("JWT_AUDIENCE") ?? "seminar-client" },
+        verifyOptions: { algorithms: ["HS256"], issuer: config.get<string>("JWT_ISSUER") ?? "seminar", audience: config.get<string>("JWT_AUDIENCE") ?? "seminar-client" },
       }),
     }),
   ],

@@ -106,6 +106,8 @@ export const handlers = [
     return HttpResponse.json({ success: true });
   }),
 
+  // Mô phỏng giao ước đổi mật khẩu để kiểm thử giao diện, không thay thế bằng chứng backend thật
+  // Khi thành công thu hồi phiên giả cũ và trả cặp mới cùng hồ sơ đã bỏ cờ bắt buộc
   http.post("*/api/v1/auth/change-password", async ({ request }) => {
     const username = usernameFromAuth(request);
     const record = username && USERS[username];
@@ -115,13 +117,13 @@ export const handlers = [
 
     if (currentPassword !== record.password) {
       return HttpResponse.json(
-        { statusCode: 401, code: "INVALID_CREDENTIALS", message: "Mật khẩu hiện tại không đúng", details: [] },
-        { status: 401 }
+        { statusCode: 400, code: "VALIDATION_ERROR", message: "Dữ liệu không hợp lệ", details: [{ field: "currentPassword", messages: ["Mật khẩu hiện tại không chính xác."] }] },
+        { status: 400 }
       );
     }
-    if (!newPassword || newPassword.length < 6) {
+    if (!newPassword || [...newPassword].length < 8) {
       return HttpResponse.json(
-        { statusCode: 400, code: "VALIDATION_ERROR", message: "Dữ liệu không hợp lệ", details: [{ field: "newPassword", message: "Mật khẩu tối thiểu 6 ký tự" }] },
+        { statusCode: 400, code: "VALIDATION_ERROR", message: "Dữ liệu không hợp lệ", details: [{ field: "newPassword", messages: ["Mật khẩu tối thiểu 8 ký tự"] }] },
         { status: 400 }
       );
     }
@@ -130,7 +132,7 @@ export const handlers = [
     record.user.mustChangePassword = false;
     for (const [k, v] of REFRESH_STORE) if (v === username) REFRESH_STORE.delete(k);
 
-    return HttpResponse.json(record.user);
+    return HttpResponse.json({ ...issueTokens(username), user: record.user });
   }),
 
   // ---------- DASHBOARD ----------

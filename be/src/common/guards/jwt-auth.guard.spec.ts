@@ -10,7 +10,7 @@ type FakeRequest = {
 
 function createContext(request: unknown) {
   return {
-    getHandler: () => "handler",
+    getHandler: () => function handler() {},
     getClass: () => "controller",
     switchToHttp: () => ({
       getRequest: () => request,
@@ -23,7 +23,7 @@ test("JWT guard resolves current role and unit from the database", async () => {
   const jwtService = {
     verifyAsync: async () => ({
       sub: "user-id",
-      tokenUse: "access",
+      tokenUse: "access", ver: 0, exp: 9999999999,
       role: "ADMIN",
       unitId: "forged-unit",
     }),
@@ -35,6 +35,7 @@ test("JWT guard resolves current role and unit from the database", async () => {
         role: "UNIT",
         unitId: "db-unit",
         isActive: true,
+        credentialVersion: 0, mustChangePassword: false,
         unit: { isActive: true },
       }),
     },
@@ -118,4 +119,25 @@ test("roles guard allows a request when no roles are required", () => {
   const guard = new RolesGuard({ getAllAndOverride: () => undefined } as never);
 
   assert.equal(guard.canActivate(createContext({ headers: {} })), true);
+});
+/** Phiên bản cũ không được dùng sau khi mật khẩu đã thay đổi
+ * Dữ liệu giả kiểm tra quyết định guard, không thay thế kiểm thử cơ sở dữ liệu thật
+ */
+test("JWT guard từ chối phiên bản xác thực cũ", async () => {
+  const guard = new JwtAuthGuard(
+    { verifyAsync: async () => ({ sub: "user-id", tokenUse: "access", ver: 0, exp: 9999999999 }) } as never,
+    { user: { findUnique: async () => ({ id: "user-id", role: "ADMIN", unitId: null, isActive: true, credentialVersion: 1, mustChangePassword: false }) } } as never,
+  );
+  await assert.rejects(guard.canActivate(createContext({ headers: { authorization: "Bearer old" } })), UnauthorizedException);
+});
+
+/** Tài khoản còn cờ bắt buộc đổi mật khẩu bị chặn tại API nghiệp vụ dù JWT hợp lệ
+ * Quyền được quyết định bởi backend thay vì trạng thái giao diện
+ */
+test("JWT guard chặn nghiệp vụ khi chưa đổi mật khẩu", async () => {
+  const guard = new JwtAuthGuard(
+    { verifyAsync: async () => ({ sub: "user-id", tokenUse: "access", ver: 1, exp: 9999999999 }) } as never,
+    { user: { findUnique: async () => ({ id: "user-id", role: "ADMIN", unitId: null, isActive: true, credentialVersion: 1, mustChangePassword: true }) } } as never,
+  );
+  await assert.rejects(guard.canActivate(createContext({ headers: { authorization: "Bearer valid" } })), ForbiddenException);
 });
