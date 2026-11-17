@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { HttpException } from "@nestjs/common";
 import ExcelJS from "exceljs";
 import { UserImportService } from "./user-import.service.js";
 
@@ -44,7 +45,7 @@ test("parse rejects a workbook whose headers differ from the import contract", a
 
   await assert.rejects(
     makeParser().parse({ buffer, size: buffer.length, originalname: "sai.xlsx" }),
-    (error: unknown) => typeof error === "object" && error !== null && "getStatus" in error && error.getStatus() === 422,
+    (error: unknown) => error instanceof HttpException && error.getStatus() === 422,
   );
 });
 
@@ -61,7 +62,7 @@ test("parse rejects formula cells without evaluating them", async () => {
 
   await assert.rejects(
     makeParser().parse({ buffer, size: buffer.length, originalname: "cong-thuc.xlsx" }),
-    (error: unknown) => typeof error === "object" && error !== null && "getResponse" in error && JSON.stringify(error.getResponse()).includes("FORMULA_NOT_ALLOWED"),
+    (error: unknown) => error instanceof HttpException && JSON.stringify(error.getResponse()).includes("FORMULA_NOT_ALLOWED"),
   );
 });
 

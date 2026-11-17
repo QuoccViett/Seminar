@@ -46,7 +46,8 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
   process.env.PUBLIC_APP_URL = "http://127.0.0.1:5173";
   process.env.NODE_ENV = "test";
   process.env.TZ = "UTC";
-  process.env.INITIAL_ACCOUNT_PASSWORD = "123456";
+  const initialPassword = randomBytes(12).toString("hex");
+  process.env.INITIAL_ACCOUNT_PASSWORD = initialPassword;
   process.env.EMAIL_ENABLED = "true";
   process.env.SMTP_HOST = "127.0.0.1";
   process.env.SMTP_PORT = "1026";
@@ -57,11 +58,12 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
   process.env.WEB_PUSH_ENABLED = "false";
   process.env.ZALO_ZNS_ENABLED = "false";
 
-  const { AppModule } = await import("../../dist/app.module.js");
-  const { PrismaService } = await import("../../dist/prisma/prisma.service.js");
-  const { CredentialDispatchService } = await import("../../dist/modules/notifications/credential-dispatch.service.js");
-  const { AllExceptionsFilter } = await import("../../dist/common/filters/all-exceptions.filter.js");
-  const { createApiValidationPipe } = await import("../../dist/common/pipes/api-validation.pipe.js");
+  const distUrl = new URL("../../dist/", import.meta.url);
+  const { AppModule } = await import(new URL("app.module.js", distUrl).href);
+  const { PrismaService } = await import(new URL("prisma/prisma.service.js", distUrl).href);
+  const { CredentialDispatchService } = await import(new URL("modules/notifications/credential-dispatch.service.js", distUrl).href);
+  const { AllExceptionsFilter } = await import(new URL("common/filters/all-exceptions.filter.js", distUrl).href);
+  const { createApiValidationPipe } = await import(new URL("common/pipes/api-validation.pipe.js", distUrl).href);
   const app = await NestFactory.create(AppModule, { logger: false });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(createApiValidationPipe());
@@ -154,12 +156,12 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
     const passwordAccount = accounts[1]!;
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: passwordAccount.userId as string } });
     assert.equal(stored.mustChangePassword, true);
-    assert.equal(await bcrypt.compare("123456", stored.passwordHash), true);
-    assert.notEqual(stored.passwordHash, "123456");
-    const importedLogin = await request("POST", "auth/login", undefined, { username: passwordAccount.username, password: "123456" });
+    assert.equal(await bcrypt.compare(initialPassword, stored.passwordHash), true);
+    assert.notEqual(stored.passwordHash, initialPassword);
+    const importedLogin = await request("POST", "auth/login", undefined, { username: passwordAccount.username, password: initialPassword });
     assert.equal(importedLogin.status, 200);
     assert.equal((await request("GET", `users/${passwordAccount.userId}`, importedLogin.body.accessToken as string)).status, 403);
-    assert.equal((await request("POST", "auth/change-password", importedLogin.body.accessToken as string, { currentPassword: "123456", newPassword: "MatkhauVC07Moi9" })).status, 200);
+    assert.equal((await request("POST", "auth/change-password", importedLogin.body.accessToken as string, { currentPassword: initialPassword, newPassword: "MatkhauVC07Moi9" })).status, 200);
     const repeatedConfirm = await request("POST", `users/import/${importId}/confirm`, adminToken, {});
     assert.deepEqual(repeatedConfirm.body, confirmed.body);
     assert.equal(await prisma.user.count({ where: { username: { startsWith: `vc07-${suffix}-` } } }), 34);
@@ -167,7 +169,7 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
     const wrongFile = Buffer.from("không phải file Excel");
     assert.equal((await preview(wrongFile, adminToken, `bad-${suffix}`)).status, 422);
     const dispatch = await prisma.credentialDispatch.findUniqueOrThrow({ where: { userId_credentialVersion: { userId: firstAccount.userId as string, credentialVersion: 0 } }, include: { deliveries: true } });
-    assert.ok(dispatch.ciphertext && !dispatch.ciphertext.includes("123456"));
+    assert.ok(dispatch.ciphertext && !dispatch.ciphertext.includes(initialPassword));
     assert.equal(dispatch.emailConfirmedAt, null);
     assert.equal(dispatch.deliveries.find((delivery) => delivery.channel === "EMAIL")?.errorCode, "EMAIL_UNCONFIRMED");
     assert.equal(await prisma.auditLog.count({ where: { entity: "User", action: "USER_IMPORTED", entityId: { in: accounts.map((account) => account.userId as string) } } }), 34);
