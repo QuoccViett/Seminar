@@ -179,7 +179,20 @@ Backend xác minh mật khẩu hiện tại, áp chính sách tối thiểu 8 k�
 
 ### Các API tài khoản/đơn vị
 
-Các route `GET/PATCH /users/:id`, `GET/POST/PATCH /units`, `GET /units/:id/users` dùng JSON field theo schema và theo allowlist của từng vai trò. `POST /users` không nhận `passwordHash`; response chỉ trả dữ liệu hồ sơ được phép hiển thị. UNIT không được thay đổi role hoặc unit của chính mình. Request/response chi tiết cần được chốt khi nhóm thiết kế từng màn quản trị; không tự map toàn bộ cột DB thành API.
+VC04 dùng các route sau, đều cần access token và tài khoản đã đổi mật khẩu ban đầu:
+
+| Route | Quyền | Dữ liệu vào và phản hồi |
+|---|---|---|
+| `GET /units` | ADMIN, UNIT | `page`, `pageSize`, `q` tìm mã/tên, `unitType`, `isActive`; UNIT chỉ nhận đơn vị của mình; trả `{items,page,pageSize,total}`; thứ tự `sortOrder,name,id` tăng dần |
+| `GET /units/:id`, `GET /units/:id/users` | ADMIN, UNIT của đơn vị | Chi tiết an toàn hoặc `{items,total}`; đơn vị khác trả `404` |
+| `POST /units`, `PATCH /units/:id` | ADMIN | `code`, `name`, `unitType`, `sortOrder`, `isActive` theo DTO; khóa đơn vị từ chối phiên UNIT nhưng giữ lịch sử hồ sơ |
+| `GET /users` | ADMIN | `page`, `pageSize`, `q` tìm username/họ tên/email, `role`, `unitId`, `isActive`; trả `{items,page,pageSize,total}`; thứ tự `createdAt` giảm dần, `id` giảm dần |
+| `GET /users/:id`, `PATCH /users/:id` | ADMIN, chính UNIT | ADMIN sửa `fullName,email,phone,role,unitId`; UNIT chỉ sửa `fullName,email,phone`; không nhận `isActive` tại route này |
+| `POST /users` | ADMIN | Tạo với `username,fullName,role,unitId,email,phone`; dùng `INITIAL_ACCOUNT_PASSWORD`, bắt đổi khi đăng nhập; trả hồ sơ an toàn và `temporaryPassword` một lần, `credentialsSentAt: null` biểu thị chưa gửi |
+| `PATCH /users/:id/status` | ADMIN | Body `{ "isActive": false }` hoặc `true`; khóa tài khoản thu hồi refresh và tăng `credentialVersion` để access token cũ hết hiệu lực |
+| `POST /users/:id/reset-password` | ADMIN | Trả `{userId,temporaryPassword,mustChangePassword:true,credentialsSentAt:null}`; tăng phiên bản và thu hồi các phiên cũ; chưa có gửi thông tin đăng nhập ở VC04 |
+
+`q` được trim, tối đa 100 ký tự, chuỗi rỗng tương đương không lọc. Email được trim và chuyển chữ thường, username được trim và chuyển chữ thường lúc tạo; phone được trim, chỉ nhận 9–15 chữ số với dấu `+` đầu chuỗi tùy chọn. Username không được sửa. Mọi phản hồi hồ sơ chọn trường công khai rõ ràng, không có `passwordHash`, `credentialVersion` hoặc mật khẩu cũ. Đổi vai trò/hạ trạng thái ADMIN cuối cùng trả `422 LAST_ADMIN`; tự khóa/hạ quyền trả `422 BUSINESS_RULE_VIOLATION`; trùng mã/tên đăng nhập/email/unit trả `409`, ID không thuộc quyền xem trả `404`. Audit thay đổi cùng giao dịch và chỉ lưu các trường công khai. `temporaryPassword` chỉ phục vụ cấp tay trong VC04; trạng thái chưa gửi phải hiển thị rõ. Gửi credential qua các kênh thuộc VC06/VC07.
 
 ## 3. Đợt thi đua, ngưỡng và tiêu chí
 
@@ -438,6 +451,7 @@ Response `items` có một phần tử tương ứng cho mỗi item trong reques
   "criterionIds": [
     "55555555-5555-4555-8555-555555555555"
   ],
+  "supplementStartAt": "2026-11-17T00:00:00.000Z",
   "content": "Vui lòng bổ sung minh chứng cho tiêu chí được nêu."
 }
 ```
@@ -448,12 +462,13 @@ Response `items` có một phần tử tương ứng cho mỗi item trong reques
 {
   "evaluationId": "44444444-4444-4444-8444-444444444444",
   "status": "SUPPLEMENT_REQUESTED",
-  "supplementDeadline": "2026-10-19T08:30:00.000Z",
+  "supplementStartAt": "2026-11-17T00:00:00.000Z",
+  "supplementDeadline": "2026-11-18T17:00:00.000Z",
   "feedbackId": "88888888-8888-4888-8888-888888888888"
 }
 ```
 
-Thời hạn được tính bởi server theo cấu hình kỳ, không tin giờ deadline do client tự truyền. Luồng gửi bổ sung dùng `POST /evaluations/:evaluationId/supplement-submit` với body `{}`; backend xác thực deadline, đổi trạng thái, ghi lịch sử và phản hồi.
+Admin chọn `supplementStartAt`; backend xác thực ngày mở theo phương án tạm mục 1.4, tự tính và lưu snapshot `supplementDeadline` tới 00:00 sau ngày kết thúc. Mọi API, job và thông báo dùng hai mốc đã lưu; không nhận deadline do client truyền và không tính thời hạn từ `supplementHours`. Luồng gửi bổ sung dùng `POST /evaluations/:evaluationId/supplement-submit` với body `{}`; backend xác thực cửa sổ `[supplementStartAt, supplementDeadline)`, đổi trạng thái, ghi lịch sử và phản hồi. Lịch bổ sung này đang chờ giảng viên xác nhận và chưa có API runtime.
 
 ### State machine hồ sơ
 

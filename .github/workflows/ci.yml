@@ -82,6 +82,15 @@ jobs:
       - name: Apply database migrations
         run: npx prisma migrate deploy
 
+      - name: Verify VC03 constraints on an isolated database
+        env:
+          VC03_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc03_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc03_test
+          DATABASE_URL="$VC03_TEST_DATABASE_URL" npx prisma migrate deploy
+          npm run build
+          npm run db:verify:vc03
+
       - name: Verify seed on an empty database
         env:
           SEED_ADMIN_PASSWORD: ci-only-seed-password
@@ -89,7 +98,7 @@ jobs:
         run: |
           PGPASSWORD=ci createdb -h localhost -U ci ci_seed
           DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npx prisma migrate deploy
-          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npx prisma db seed
+          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npm run db:seed
 
       - name: Lint backend
         run: npm run lint

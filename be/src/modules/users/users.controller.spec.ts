@@ -64,15 +64,15 @@ function rolesOf(handler: object): unknown {
   return Reflect.getMetadata(AUTHORIZED_ROLES, handler);
 }
 
-// ---------- Chuyển tiếp xuống service ----------
+// Chuyển tiếp bộ lọc và danh tính tới service để audit nhận đúng người thao tác
 
 test("findAll forwards every query filter", async () => {
   const { controller, calls } = makeController();
 
-  await controller.findAll("1", "20", "UNIT", UNIT_ID, "true");
+  await controller.findAll("1", "20", "UNIT", UNIT_ID, "true", "demo");
 
   assert.deepEqual(calls.findAll?.[0], [
-    { page: "1", pageSize: "20", role: "UNIT", unitId: UNIT_ID, isActive: "true" },
+    { page: "1", pageSize: "20", role: "UNIT", unitId: UNIT_ID, isActive: "true", q: "demo" },
   ]);
 });
 
@@ -80,9 +80,9 @@ test("create forwards the dto", async () => {
   const { controller, calls } = makeController();
   const dto = { username: "coso35", fullName: "Cơ sở 35", role: "UNIT" } as CreateUserDto;
 
-  await controller.create(dto);
+  await controller.create(dto, ADMIN);
 
-  assert.deepEqual(calls.create?.[0], [dto]);
+  assert.deepEqual(calls.create?.[0], [dto, ADMIN.id]);
 });
 
 test("findOne forwards id and current user", async () => {
@@ -102,12 +102,12 @@ test("update forwards id, current user and dto in that order", async () => {
   assert.deepEqual(calls.update?.[0], [TARGET_ID, ADMIN, dto]);
 });
 
-test("resetPassword forwards only the id", async () => {
+test("resetPassword forwards id and actor for audit", async () => {
   const { controller, calls } = makeController();
 
-  await controller.resetPassword(TARGET_ID);
+  await controller.resetPassword(TARGET_ID, ADMIN);
 
-  assert.deepEqual(calls.resetPassword?.[0], [TARGET_ID]);
+  assert.deepEqual(calls.resetPassword?.[0], [TARGET_ID, ADMIN.id]);
 });
 
 test("updateStatus forwards id, isActive and current user", async () => {

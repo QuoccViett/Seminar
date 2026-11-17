@@ -47,22 +47,30 @@ export class UsersController {
   @ApiQuery({ name: "role", required: false, enum: ["ADMIN", "UNIT"] })
   @ApiQuery({ name: "unitId", required: false })
   @ApiQuery({ name: "isActive", required: false, enum: ["true", "false"] })
+  @ApiQuery({ name: "q", required: false, description: "Tìm tên đăng nhập, họ tên hoặc email" })
+  /** Chuyển bộ lọc danh sách tới service sau khi guard đã xác nhận vai trò ADMIN
+   * Kết quả chỉ chứa các trường hồ sơ công khai và phân trang theo contract
+   */
   findAll(
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
     @Query("role") role?: string,
     @Query("unitId") unitId?: string,
     @Query("isActive") isActive?: string,
+    @Query("q") q?: string,
   ) {
-    return this.usersService.findAll({ page, pageSize, role, unitId, isActive });
+    return this.usersService.findAll({ page, pageSize, role, unitId, isActive, q });
   }
 
   @Post()
   @Roles("ADMIN")
   @ApiOperation({ summary: "[ADMIN] Tạo tài khoản ADMIN hoặc UNIT (trả mật khẩu tạm một lần)" })
   @ApiBody({ type: CreateUserDto })
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  /** Tạo tài khoản bằng mật khẩu cấu hình và gắn ADMIN hiện tại vào audit
+   * Mật khẩu tạm chỉ xuất hiện trong phản hồi cấp mới, chưa xác nhận đã gửi
+   */
+  create(@Body() dto: CreateUserDto, @GetCurrentUser() currentUser: CurrentUser) {
+    return this.usersService.create(dto, currentUser.id);
   }
 
   @Get(":id")
@@ -94,8 +102,11 @@ export class UsersController {
   @Roles("ADMIN")
   @ApiParam({ name: "id", format: "uuid", description: "UUID của TÀI KHOẢN: lấy từ GET /users, ở trường id của từng dòng (không phải unitId" })
   @ApiOperation({ summary: "[ADMIN] Đặt lại mật khẩu cho UNIT nếu quên mật khẩu và thu hồi phiên cũ" })
-  resetPassword(@Param("id", ParseUUIDPipe) id: string) {
-    return this.usersService.resetPassword(id);
+  /** Đặt lại mật khẩu bằng giá trị cấu hình và ghi người thao tác vào audit
+   * Service tăng phiên bản để token trước đó mất hiệu lực
+   */
+  resetPassword(@Param("id", ParseUUIDPipe) id: string, @GetCurrentUser() currentUser: CurrentUser) {
+    return this.usersService.resetPassword(id, currentUser.id);
   }
 
   @Patch(":id/status")

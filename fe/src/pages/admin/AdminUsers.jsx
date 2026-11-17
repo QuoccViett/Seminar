@@ -1,309 +1,199 @@
 import { useEffect, useState } from "react";
-import { Table, message, Space, Button, Tooltip, Modal, Form, Input, Select, Tag, Upload } from "antd";
-import { EditOutlined, LockOutlined, UnlockOutlined, UploadOutlined } from "@ant-design/icons";
+import { Button, Form, Input, Modal, Select, Space, Table, Tag, Upload, message } from "antd";
+import { EditOutlined, LockOutlined, UnlockOutlined, KeyOutlined, UploadOutlined } from "@ant-design/icons";
 import { userService } from "../../services/userService";
+import { unitService } from "../../services/unitService";
 import PageHeader from "../../components/common/PageHeader";
-import UserStatusTag from "../../components/common/UserStatusTag";
 import styles from "./AdminUsers.module.css";
-import ExcelJS from "exceljs";
 
+/** Hiển thị mật khẩu tạm đúng một lần và nêu rõ chưa có kênh gửi tự động ở VC04
+ * Giá trị chỉ lấy từ phản hồi vừa tạo hoặc đặt lại, không được lưu vào state danh sách
+ */
+function showTemporaryPassword(result) {
+  Modal.info({
+    title: "Thông tin đăng nhập tạm",
+    content: <Space orientation="vertical"><span>Mật khẩu tạm của tài khoản này:</span><Input.Password readOnly value={result.temporaryPassword} /><span>Chưa gửi qua Email, Web Push hoặc Zalo ZNS. Hãy bàn giao thủ công qua kênh an toàn.</span><span>Tài khoản phải đổi mật khẩu khi đăng nhập lần đầu.</span></Space>,
+    okText: "Đã ghi nhận",
+  });
+}
+
+/** Gắn lỗi từng trường từ backend lên form và dùng thông điệp tiếng Việt đã chuẩn hóa
+ * Trường không có lỗi riêng vẫn giữ dữ liệu để quản trị viên sửa mà không nhập lại
+ */
+function showFormError(error, form) {
+  const fields = error.fieldErrors?.filter((item) => item.field && Array.isArray(item.messages)) ?? [];
+  if (fields.length) form.setFields(fields.map((item) => ({ name: item.field, errors: item.messages })));
+  message.error(error.message || "Không thể lưu tài khoản. Vui lòng thử lại.");
+}
+
+/** Quản trị tài khoản bằng các API VC04 và hiển thị trạng thái cấp mật khẩu trung thực
+ * Import Excel kéo thả được giữ chỗ cho VC07, không gọi endpoint chưa tồn tại
+ */
 export default function AdminUsers() {
-  // --- STATE QUẢN LÝ DỮ LIỆU ---
+  const [form] = Form.useForm();
+  const role = Form.useWatch("role", form);
   const [users, setUsers] = useState([]);
+  const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [searchText, setSearchText] = useState("");
+  const [q, setQ] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
-  // --- STATE QUẢN LÝ MODAL ---
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form] = Form.useForm();
-
-  // --- GỌI API LẤY DANH SÁCH ---
-  const fetchUsers = async (currentPage = page, currentPageSize = pageSize, search = searchText) => {
+  /** Tải tài khoản từ backend theo trang và từ khóa, không lọc cục bộ trên một trang
+   * Khi lỗi, giữ nguyên bảng cũ và báo người dùng để họ có thể thử lại
+   */
+  async function load(nextPage = page, nextSize = pageSize, nextQ = q) {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await userService.getUsers({
-        page: currentPage,
-        pageSize: currentPageSize,
-        search
-      });
-      setUsers(res.items || []);
-      setTotal(res.total || 0);
+      const result = await userService.getUsers({ page: nextPage, pageSize: nextSize, q: nextQ });
+      setUsers(result.items ?? []);
+      setTotal(result.total ?? 0);
     } catch (error) {
-      message.error("Lỗi khi tải danh sách tài khoản");
+      message.error(error.message || "Không thể tải danh sách tài khoản.");
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  /** Tải các đơn vị hoạt động để form UNIT chỉ chọn được đơn vị đủ điều kiện
+   * Giới hạn 100 phù hợp quy mô demo; ô tìm kiếm vẫn gửi q lên backend khi gõ
+   */
+  async function loadUnits(search = "") {
+    try {
+      const result = await unitService.getUnits({ page: 1, pageSize: 100, isActive: true, q: search });
+      setUnits(result.items ?? []);
+    } catch (error) {
+      message.error(error.message || "Không thể tải đơn vị cho tài khoản.");
+    }
+  }
 
   useEffect(() => {
-    fetchUsers(1, pageSize, "");
+    // Tải trang đầu và danh sách đơn vị khi vào màn quản trị
+    load(1, 20, "");
+    loadUnits();
   }, []);
 
-  // --- XỬ LÝ TÌM KIẾM ---
-  const handleSearch = (value) => {
-    setSearchText(value);
-    setPage(1); // Reset về trang 1 khi tìm kiếm
-    fetchUsers(1, pageSize, value);
-  };
+  /** Tìm tài khoản trên backend, bắt đầu lại ở trang đầu để kết quả không bị bỏ sót
+   * q trống được backend hiểu là bỏ điều kiện tìm kiếm
+   */
+  function search(value) {
+    setQ(value);
+    setPage(1);
+    load(1, pageSize, value);
+  }
 
-  // --- XỬ LÝ KHÓA / MỞ KHÓA ---
-  const handleToggleStatus = (record) => {
+  /** Mở form tạo hoặc sửa và nạp duy nhất các trường cho phép theo API contract
+   * Username không được sửa; role ADMIN không dùng unitId
+   */
+  function openForm(user = null) {
+    setEditing(user);
+    form.resetFields();
+    form.setFieldsValue(user ? { fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, unitId: user.unitId } : { role: "UNIT" });
+    setOpen(true);
+  }
+
+  /** Lưu form qua POST hoặc PATCH, sau đó tải lại bảng và hiển thị mật khẩu tạm khi cấp mới
+   * Nếu backend từ chối thì giữ modal mở và gắn lỗi trường lên form
+   */
+  async function save(values) {
+    setSaving(true);
+    try {
+      const payload = editing
+        ? {
+            fullName: values.fullName,
+            email: values.email || null,
+            phone: values.phone || null,
+            ...(values.role !== editing.role ? { role: values.role } : {}),
+            ...(values.role !== editing.role || values.unitId !== editing.unitId ? { unitId: values.role === "ADMIN" ? null : values.unitId } : {}),
+          }
+        : { ...values, unitId: values.role === "ADMIN" ? null : values.unitId, email: values.email || null, phone: values.phone || null };
+      const result = editing ? await userService.updateUser(editing.id, payload) : await userService.createUser(payload);
+      message.success(editing ? "Đã cập nhật tài khoản." : "Đã tạo tài khoản.");
+      setOpen(false);
+      await load(editing ? page : 1, pageSize, q);
+      if (!editing) {
+        setPage(1);
+        showTemporaryPassword(result);
+      }
+    } catch (error) {
+      showFormError(error, form);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Xác nhận thay đổi trạng thái trước khi gọi route thu hồi phiên của backend
+   * Lỗi tự khóa hoặc ADMIN cuối được hiển thị nguyên văn tiếng Việt từ API
+   */
+  function toggleStatus(user) {
     Modal.confirm({
-      title: "Xác nhận đổi trạng thái",
-      content: `Bạn có chắc muốn ${record.isActive ? "khóa" : "mở khóa"} tài khoản "${record.username}"?`,
-      okText: "Đồng ý",
-      cancelText: "Hủy",
-      okButtonProps: { danger: record.isActive }, // Nút màu đỏ nếu là hành động khóa
+      title: user.isActive ? "Khóa tài khoản" : "Mở tài khoản",
+      content: `Xác nhận ${user.isActive ? "khóa" : "mở"} tài khoản ${user.username}?`,
+      okText: "Xác nhận", cancelText: "Hủy", okButtonProps: { danger: user.isActive },
       onOk: async () => {
         try {
-          await userService.toggleUserStatus(record.id, !record.isActive);
-          message.success(`${record.isActive ? "Khóa" : "Mở khóa"} tài khoản thành công`);
-          fetchUsers(); // Load lại bảng hiện tại
+          await userService.toggleUserStatus(user.id, !user.isActive);
+          message.success("Đã cập nhật trạng thái tài khoản.");
+          await load();
         } catch (error) {
-          message.error("Thao tác thất bại");
+          message.error(error.message || "Không thể đổi trạng thái tài khoản.");
         }
-      }
+      },
     });
-  };
+  }
 
-  // --- XỬ LÝ LƯU TÀI KHOẢN MỚI ---
-  const handleSaveUser = async (values) => {
-    try {
-      await userService.createUser(values);
-      message.success("Thêm tài khoản thành công");
-      setIsModalOpen(false);
-      form.resetFields();
-      fetchUsers(1, pageSize, ""); // Quay về trang 1 để xem user mới
-    } catch (error) {
-      message.error(error.message || "Thêm tài khoản thất bại");
-    }
-  };
-
-    // Hàm xử lý đọc file Excel bằng exceljs
-  /** Đọc tệp Excel người dùng chọn và gửi dữ liệu tới API nhập tài khoản hiện tại
-   * Tệp rỗng hoặc lỗi đọc được báo bằng tiếng Việt, không ghi đối tượng lỗi có thể chứa dữ liệu nhập
-   * Hàm trả false để Ant Design không tự tải tệp lần thứ hai
+  /** Xác nhận đặt lại mật khẩu vì thao tác vô hiệu hóa mọi phiên đang dùng
+   * Chỉ phản hồi thành công mới hiển thị mật khẩu tạm một lần và trạng thái chưa gửi
    */
-  const handleImportExcel = async (file) => {
-    try {
-      setLoading(true);
-      // Đọc file dưới dạng ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(arrayBuffer);
-
-      // Lấy sheet đầu tiên trong file
-      const worksheet = workbook.worksheets[0];
-      if (!worksheet) {
-        return message.error("File Excel không có dữ liệu!");
-      }
-
-      const jsonData = [];
-      const headers = [];
-
-      // Lấy tên các cột ở hàng đầu tiên (VD: username, fullName, role...)
-      worksheet.getRow(1).eachCell((cell, colNumber) => {
-        headers[colNumber] = cell.value;
-      });
-
-      // Duyệt từ hàng thứ 2 trở đi để lấy dữ liệu
-      worksheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return; // Bỏ qua hàng tiêu đề
-
-        const rowData = {};
-        let hasData = false; // Cờ kiểm tra xem hàng này có dữ liệu không
-
-        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-          const header = headers[colNumber];
-          if (header) {
-            // Lấy giá trị ô, nếu trống thì để chuỗi rỗng
-            rowData[header] = cell.value !== null ? String(cell.value).trim() : "";
-            if (rowData[header] !== "") hasData = true;
-          }
-        });
-
-        // Chỉ thêm vào mảng nếu hàng đó có ít nhất 1 ô có dữ liệu
-        if (hasData) {
-          jsonData.push(rowData);
+  function resetPassword(user) {
+    Modal.confirm({
+      title: "Đặt lại mật khẩu",
+      content: `Đặt lại mật khẩu cho ${user.username} và thu hồi các phiên hiện tại?`,
+      okText: "Đặt lại", cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          const result = await userService.resetPassword(user.id);
+          showTemporaryPassword(result);
+          await load();
+        } catch (error) {
+          message.error(error.message || "Không thể đặt lại mật khẩu.");
         }
-      });
+      },
+    });
+  }
 
-      if (jsonData.length === 0) {
-        return message.error("Không tìm thấy dữ liệu hợp lệ trong file Excel!");
-      }
-
-      // Gửi mảng dữ liệu lên API Backend
-      const res = await userService.importUsers(jsonData);
-
-      message.success(res.message || `Đã import thành công ${jsonData.length} tài khoản!`);
-      fetchUsers(1, pageSize, ""); // Tải lại bảng danh sách
-
-    } catch {
-      message.error("Lỗi khi đọc file Excel. Vui lòng kiểm tra lại định dạng file!");
-    } finally {
-      setLoading(false);
-    }
-
-    return false; // Chặn Ant Design tự động upload file lên server
-  };
-
-  // --- CẤU HÌNH CỘT CHO BẢNG ---
   const columns = [
-    {
-      title: "Tên đăng nhập",
-      dataIndex: "username",
-      key: "username",
-      render: (text) => <strong>{text}</strong>
-    },
-    {
-      title: "Họ và Tên",
-      dataIndex: "fullName",
-      key: "fullName"
-    },
-    {
-      title: "Quyền",
-      dataIndex: "role",
-      key: "role",
-      render: (role) => role === "ADMIN" ? <Tag color="blue">ADMIN</Tag> : <Tag color="purple">UNIT</Tag>
-    },
-    {
-      title: "Đơn vị trực thuộc",
-      dataIndex: "unitName",
-      key: "unitName",
-      render: (val) => val || <span style={{ color: "#888" }}>Toàn hệ thống</span>
-    },
-    {
-      title: "Trạng thái",
-      dataIndex: "isActive",
-      key: "isActive",
-      render: (isActive) => <UserStatusTag isActive={isActive} />
-    },
-    {
-      title: "Hành động",
-      key: "action",
-      align: "center",
-      width: 120,
-      render: (_, record) => (
-        <Space size="small">
-          <Tooltip title="Sửa thông tin">
-            <Button
-              type="text"
-              icon={<EditOutlined style={{ color: "#1677ff" }} />}
-              onClick={() => message.info("Tính năng sửa đang được phát triển")}
-            />
-          </Tooltip>
-          <Tooltip title={record.isActive ? "Khóa tài khoản" : "Mở khóa"}>
-            <Button
-              type="text"
-              danger={record.isActive}
-              icon={record.isActive ? <LockOutlined /> : <UnlockOutlined style={{ color: "#52c41a" }} />}
-              onClick={() => handleToggleStatus(record)}
-            />
-          </Tooltip>
-        </Space>
-      ),
-    },
+    { title: "Tên đăng nhập", dataIndex: "username", key: "username" },
+    { title: "Họ và tên", dataIndex: "fullName", key: "fullName" },
+    { title: "Quyền", dataIndex: "role", key: "role" },
+    { title: "Đơn vị", key: "unit", render: (_, user) => user.unit?.name ?? "Toàn hệ thống" },
+    { title: "Trạng thái", key: "status", render: (_, user) => <Space orientation="vertical"><Tag color={user.isActive ? "green" : "red"}>{user.isActive ? "Đang hoạt động" : "Đã khóa"}</Tag>{user.mustChangePassword && <Tag color="orange">Phải đổi mật khẩu</Tag>}{!user.credentialsSentAt && <Tag>Chưa gửi thông tin đăng nhập</Tag>}</Space> },
+    { title: "Hành động", key: "action", render: (_, user) => <Space><Button icon={<EditOutlined />} onClick={() => openForm(user)}>Sửa</Button><Button icon={user.isActive ? <LockOutlined /> : <UnlockOutlined />} onClick={() => toggleStatus(user)}>{user.isActive ? "Khóa" : "Mở"}</Button><Button icon={<KeyOutlined />} onClick={() => resetPassword(user)}>Đặt lại mật khẩu</Button></Space> },
   ];
 
-  return (
-    <div className={styles.pageContainer}>
-
-      {/* 1. THANH CÔNG CỤ (TÌM KIẾM + THÊM MỚI) */}
-      <div className={styles.toolbar}>
-        <PageHeader
-          title="Quản lý Tài khoản"
-          searchPlaceholder="Tìm theo tên đăng nhập, họ tên..."
-          onSearch={handleSearch}
-          onAdd={() => setIsModalOpen(true)}
-          addButtonText="Thêm tài khoản"
-        />
-        <Upload
-          accept=".xlsx, .xls"
-          showUploadList={false}
-          beforeUpload={handleImportExcel}
-        >
-          <Button type="default" icon={<UploadOutlined />} style={{ marginLeft: 8, height: 40, borderRadius: 8 }}>
-            Import Excel
-          </Button>
-        </Upload>
-
-      </div>
-
-      {/* 2. BẢNG DỮ LIỆU */}
-      <div className={styles.tableContainer}>
-        <Table
-          columns={columns}
-          dataSource={users}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            current: page,
-            pageSize: pageSize,
-            total: total,
-            showSizeChanger: true,
-            pageSizeOptions: ["10", "20", "50"],
-            onChange: (p, s) => {
-              setPage(p);
-              setPageSize(s);
-              fetchUsers(p, s, searchText);
-            },
-            showTotal: (total, range) => `${range[0]}-${range[1]} của ${total} tài khoản`
-          }}
-        />
-      </div>
-
-      {/* 3. MODAL THÊM TÀI KHOẢN MỚI */}
-      <Modal
-        title="Thêm tài khoản mới"
-        open={isModalOpen}
-        onCancel={() => {
-          setIsModalOpen(false);
-          form.resetFields();
-        }}
-        onOk={() => form.submit()}
-        okText="Lưu tài khoản"
-        cancelText="Hủy"
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSaveUser}
-          style={{ marginTop: 20 }}
-        >
-          <Form.Item
-            name="username"
-            label="Tên đăng nhập"
-            rules={[{ required: true, message: "Vui lòng nhập tên đăng nhập!" }]}
-          >
-            <Input placeholder="VD: coso02" />
-          </Form.Item>
-
-          <Form.Item
-            name="fullName"
-            label="Họ và tên / Tên đơn vị"
-            rules={[{ required: true, message: "Vui lòng nhập họ tên!" }]}
-          >
-            <Input placeholder="VD: Cơ sở Đoàn 02" />
-          </Form.Item>
-
-          <Form.Item
-            name="role"
-            label="Phân quyền"
-            initialValue="UNIT"
-            rules={[{ required: true }]}
-          >
-            <Select>
-              <Select.Option value="UNIT">UNIT (Đơn vị tự chấm)</Select.Option>
-              <Select.Option value="ADMIN">ADMIN (Quản trị viên)</Select.Option>
-            </Select>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-    </div>
-  );
+  return <div className={styles.pageContainer}>
+    {/* Thanh tìm kiếm dùng q trên backend và giữ chỗ Import kéo thả cho VC07 */}
+    <div className={styles.toolbar}><PageHeader title="Quản lý tài khoản" searchPlaceholder="Tìm tên đăng nhập, họ tên hoặc email" onSearch={search} onAdd={() => openForm()} addButtonText="Thêm tài khoản" /><Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>Import Excel</Button></div>
+    <div className={styles.tableContainer}><Table columns={columns} dataSource={users} rowKey="id" loading={loading} locale={{ emptyText: "Không có tài khoản phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} tài khoản` }} /></div>
+    {/* Form không gửi isActive hoặc mật khẩu cũ; backend quyết định allowlist cuối cùng */}
+    <Modal title={editing ? "Sửa tài khoản" : "Thêm tài khoản"} open={open} confirmLoading={saving} okText="Lưu" cancelText="Hủy" onOk={() => form.submit()} onCancel={() => setOpen(false)}>
+      <Form form={form} layout="vertical" onFinish={save}>
+        {!editing && <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true, message: "Vui lòng nhập tên đăng nhập." }]}><Input maxLength={64} /></Form.Item>}
+        <Form.Item name="fullName" label="Họ và tên" rules={[{ required: true, message: "Vui lòng nhập họ và tên." }]}><Input /></Form.Item>
+        <Form.Item name="email" label="Email" rules={[{ type: "email", message: "Email không hợp lệ." }]}><Input /></Form.Item>
+        <Form.Item name="phone" label="Số điện thoại" rules={[{ pattern: /^\+?[0-9]{9,15}$/, message: "Số điện thoại phải có 9 đến 15 chữ số." }]}><Input /></Form.Item>
+        <Form.Item name="role" label="Vai trò" rules={[{ required: true, message: "Vui lòng chọn vai trò." }]}><Select options={[{ value: "ADMIN", label: "Quản trị viên" }, { value: "UNIT", label: "Đơn vị tự chấm" }]} /></Form.Item>
+        {role === "UNIT" && <Form.Item name="unitId" label="Đơn vị" rules={[{ required: true, message: "Vui lòng chọn đơn vị." }]}><Select showSearch filterOption={false} onSearch={loadUnits} options={units.map((unit) => ({ value: unit.id, label: `${unit.code} — ${unit.name}` }))} placeholder="Tìm và chọn đơn vị" /></Form.Item>}
+      </Form>
+    </Modal>
+    {/* Giữ điểm vào kéo thả theo yêu cầu, báo rõ backend Import sẽ triển khai ở VC07 */}
+    <Modal title="Import Excel kéo thả" open={importOpen} footer={null} onCancel={() => setImportOpen(false)}>
+      <Upload.Dragger disabled showUploadList={false}><p>Kéo thả tệp Excel vào đây</p><p>Chức năng nhập hàng loạt chưa khả dụng trong VC04; sẽ triển khai cùng backend ở VC07.</p></Upload.Dragger>
+    </Modal>
+  </div>;
 }

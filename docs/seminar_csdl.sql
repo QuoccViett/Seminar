@@ -1,3 +1,6 @@
+-- Bản thiết kế SQL lịch sử, không dùng độc lập để tạo schema hiện hành
+-- Schema hiện hành được áp tuần tự từ các migration trong be/prisma/migrations
+-- Các bổ sung VC03 và trigger hiện hành nằm trong migration 20261117120000_vc03_database_foundation
 -- =====================================================================
 -- HỆ THỐNG ĐÁNH GIÁ, XẾP LOẠI THI ĐUA CÔNG TÁC ĐOÀN VÀ PHONG TRÀO THANH NIÊN
 -- Ban Thanh niên CATP - 34 Cơ sở Đoàn trực thuộc - Năm 2026

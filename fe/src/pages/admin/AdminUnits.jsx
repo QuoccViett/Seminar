@@ -1,160 +1,122 @@
 import { useEffect, useState } from "react";
-import { Table, message, Space, Button, Tooltip, Modal, Form, Input, Select, Tag } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Button, Form, Input, InputNumber, Modal, Select, Switch, Table, Tag, message } from "antd";
+import { EditOutlined } from "@ant-design/icons";
 import { unitService } from "../../services/unitService";
 import PageHeader from "../../components/common/PageHeader";
 import styles from "./AdminUnits.module.css";
 
-// Hàm render Tag cho Loại đơn vị
-const renderUnitType = (type) => {
-  switch (type) {
-    case "CONG_AN_QUAN_HUYEN": return <Tag color="blue">Công an Quận/Huyện</Tag>;
-    case "PHONG_NGHIEP_VU": return <Tag color="green">Phòng Nghiệp vụ</Tag>;
-    case "DON_VI_TRUC_THUOC": return <Tag color="orange">Đơn vị Trực thuộc</Tag>;
-    default: return <Tag>Khác</Tag>;
-  }
-};
+const UNIT_TYPES = [
+  { value: "CONG_AN_QUAN_HUYEN", label: "Công an quận/huyện" },
+  { value: "PHONG_NGHIEP_VU", label: "Phòng nghiệp vụ" },
+  { value: "DON_VI_TRUC_THUOC", label: "Đơn vị trực thuộc" },
+];
 
+/** Hiển thị lỗi trường từ backend trên form để người quản trị sửa đúng đầu vào
+ * Lỗi không có trường được báo bằng thông điệp tiếng Việt đã chuẩn hóa ở apiClient
+ */
+function showFormError(error, form) {
+  const fields = error.fieldErrors?.filter((item) => item.field && Array.isArray(item.messages)) ?? [];
+  if (fields.length) form.setFields(fields.map((item) => ({ name: item.field, errors: item.messages })));
+  message.error(error.message || "Không thể lưu đơn vị. Vui lòng thử lại.");
+}
+
+/** Quản trị danh sách đơn vị bằng API thật với tìm kiếm, phân trang và form tạo/sửa
+ * Trạng thái khóa chỉ đổi qua PATCH, hồ sơ cũ vẫn được backend giữ nguyên
+ */
 export default function AdminUnits() {
+  const [form] = Form.useForm();
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20); 
-  const [searchText, setSearchText] = useState("");
+  const [pageSize, setPageSize] = useState(20);
+  const [q, setQ] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [open, setOpen] = useState(false);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form] = Form.useForm();
-
-  const fetchUnits = async (currentPage = page, currentPageSize = pageSize, search = searchText) => {
+  /** Tải trang đơn vị theo bộ lọc đang chọn và giữ trạng thái lỗi rõ ràng
+   * Kết quả rỗng được Table hiển thị; các lệnh gọi đều đi qua backend thật
+   */
+  async function load(nextPage = page, nextSize = pageSize, nextQ = q) {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await unitService.getUnits({ page: currentPage, pageSize: currentPageSize, search });
-      setUnits(res.items || []);
-      setTotal(res.total || 0);
+      const result = await unitService.getUnits({ page: nextPage, pageSize: nextSize, q: nextQ });
+      setUnits(result.items ?? []);
+      setTotal(result.total ?? 0);
     } catch (error) {
-      message.error("Lỗi khi tải danh sách đơn vị");
+      message.error(error.message || "Không thể tải danh sách đơn vị.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    fetchUnits(1, pageSize, "");
+    // Tải trang đầu khi mở màn, thay đổi bộ lọc sẽ gọi load từ sự kiện tương ứng
+    load(1, 20, "");
   }, []);
 
-  const handleSearch = (value) => {
-    setSearchText(value);
-    setPage(1);
-    fetchUnits(1, pageSize, value);
-  };
+  /** Mở form với dữ liệu hiện có hoặc form trống, tránh giữ dữ liệu bản ghi trước
+   * Khi sửa, chỉ các trường trong contract được nạp lên form
+   */
+  function openForm(unit = null) {
+    setEditing(unit);
+    form.resetFields();
+    form.setFieldsValue(unit ? { code: unit.code, name: unit.name, unitType: unit.unitType, sortOrder: unit.sortOrder, isActive: unit.isActive } : { sortOrder: 0, isActive: true });
+    setOpen(true);
+  }
 
-  const handleSaveUnit = async (values) => {
+  /** Gửi form tạo hoặc sửa, báo lỗi từng trường và chỉ đóng sau khi backend xác nhận
+   * Không tự suy đoán kết quả thành công từ dữ liệu đang hiển thị trên màn
+   */
+  async function save(values) {
+    setSaving(true);
     try {
-      await unitService.createUnit(values);
-      message.success("Thêm đơn vị thành công");
-      setIsModalOpen(false);
-      form.resetFields();
-      fetchUnits(1, pageSize, ""); 
+      if (editing) await unitService.updateUnit(editing.id, values);
+      else await unitService.createUnit(values);
+      message.success(editing ? "Đã cập nhật đơn vị." : "Đã tạo đơn vị.");
+      setOpen(false);
+      await load(editing ? page : 1, pageSize, q);
+      if (!editing) setPage(1);
     } catch (error) {
-      message.error("Thêm đơn vị thất bại");
+      showFormError(error, form);
+    } finally {
+      setSaving(false);
     }
-  };
+  }
+
+  /** Tìm mã hoặc tên đơn vị từ backend và quay về trang đầu để không bỏ sót kết quả
+   * Chuỗi trống bỏ lọc theo cùng contract với service
+   */
+  function search(value) {
+    setQ(value);
+    setPage(1);
+    load(1, pageSize, value);
+  }
 
   const columns = [
-    { 
-      title: "Mã Đơn vị", 
-      dataIndex: "code", 
-      key: "code", 
-      render: (text) => <strong>{text}</strong> 
-    },
-    { 
-      title: "Tên Đơn vị", 
-      dataIndex: "name", 
-      key: "name" 
-    },
-    { 
-      title: "Loại Đơn vị", 
-      dataIndex: "unitType", 
-      key: "unitType",
-      render: (type) => renderUnitType(type)
-    },
-    {
-      title: "Hành động",
-      key: "action",
-      align: "center",
-      width: 120,
-      render: (_, record) => (
-        <Space size="small">
-          <Tooltip title="Sửa">
-            <Button type="text" icon={<EditOutlined style={{ color: "#1677ff" }} />} />
-          </Tooltip>
-          <Tooltip title="Xóa">
-            <Button type="text" danger icon={<DeleteOutlined />} />
-          </Tooltip>
-        </Space>
-      ),
-    },
+    { title: "Mã đơn vị", dataIndex: "code", key: "code" },
+    { title: "Tên đơn vị", dataIndex: "name", key: "name" },
+    { title: "Loại", dataIndex: "unitType", key: "unitType", render: (value) => UNIT_TYPES.find((item) => item.value === value)?.label ?? "Chưa phân loại" },
+    { title: "Trạng thái", dataIndex: "isActive", key: "isActive", render: (value) => <Tag color={value ? "green" : "red"}>{value ? "Đang hoạt động" : "Đã khóa"}</Tag> },
+    { title: "Hành động", key: "action", render: (_, unit) => <Button icon={<EditOutlined />} onClick={() => openForm(unit)}>Sửa</Button> },
   ];
 
-  return (
-    <div className={styles.pageContainer}>
-      <div className={styles.toolbar}>
-        <PageHeader 
-          title="Quản lý Đơn vị" 
-          searchPlaceholder="Tìm theo mã hoặc tên đơn vị..."
-          onSearch={handleSearch}
-          onAdd={() => setIsModalOpen(true)}
-          addButtonText="Thêm Đơn vị"
-        />
-      </div>
-
-      <div className={styles.tableContainer}>
-        <Table 
-          columns={columns} 
-          dataSource={units} 
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            current: page,
-            pageSize: pageSize,
-            total: total,
-            showSizeChanger: true,
-            pageSizeOptions: ["10", "20", "50"],
-            onChange: (p, s) => {
-              setPage(p);
-              setPageSize(s);
-              fetchUnits(p, s, searchText);
-            },
-            showTotal: (total, range) => `${range[0]}-${range[1]} của ${total} đơn vị`
-          }}
-        />
-      </div>
-
-      <Modal
-        title="Thêm Đơn vị mới"
-        open={isModalOpen}
-        onCancel={() => { setIsModalOpen(false); form.resetFields(); }}
-        onOk={() => form.submit()}
-        okText="Lưu đơn vị"
-        cancelText="Hủy"
-      >
-        <Form form={form} layout="vertical" onFinish={handleSaveUnit} style={{ marginTop: 20 }}>
-          <Form.Item name="code" label="Mã đơn vị" rules={[{ required: true, message: "Vui lòng nhập mã đơn vị!" }]}>
-            <Input placeholder="VD: COSO-35" />
-          </Form.Item>
-          <Form.Item name="name" label="Tên đơn vị" rules={[{ required: true, message: "Vui lòng nhập tên đơn vị!" }]}>
-            <Input placeholder="VD: Đoàn Công an Quận 1" />
-          </Form.Item>
-          <Form.Item name="unitType" label="Loại đơn vị" initialValue="CONG_AN_QUAN_HUYEN" rules={[{ required: true }]}>
-            <Select>
-              <Select.Option value="CONG_AN_QUAN_HUYEN">Công an Quận/Huyện</Select.Option>
-              <Select.Option value="PHONG_NGHIEP_VU">Phòng Nghiệp vụ</Select.Option>
-              <Select.Option value="DON_VI_TRUC_THUOC">Đơn vị Trực thuộc</Select.Option>
-            </Select>
-          </Form.Item>
-        </Form>
-      </Modal>
+  return <div className={styles.pageContainer}>
+    {/* Thanh tìm kiếm và nút tạo điều khiển dữ liệu từ API */}
+    <div className={styles.toolbar}><PageHeader title="Quản lý đơn vị" searchPlaceholder="Tìm mã hoặc tên đơn vị" onSearch={search} onAdd={() => openForm()} addButtonText="Thêm đơn vị" /></div>
+    <div className={styles.tableContainer}>
+      <Table columns={columns} dataSource={units} rowKey="id" loading={loading} locale={{ emptyText: "Không có đơn vị phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} đơn vị` }} />
     </div>
-  );
+    {/* Cùng một form tạo và sửa để giữ quy tắc kiểm tra dữ liệu nhất quán */}
+    <Modal title={editing ? "Sửa đơn vị" : "Thêm đơn vị"} open={open} confirmLoading={saving} okText="Lưu" cancelText="Hủy" onOk={() => form.submit()} onCancel={() => setOpen(false)}>
+      <Form form={form} layout="vertical" onFinish={save}>
+        <Form.Item name="code" label="Mã đơn vị" rules={[{ required: true, message: "Vui lòng nhập mã đơn vị." }]}><Input maxLength={64} /></Form.Item>
+        <Form.Item name="name" label="Tên đơn vị" rules={[{ required: true, message: "Vui lòng nhập tên đơn vị." }]}><Input maxLength={255} /></Form.Item>
+        <Form.Item name="unitType" label="Loại đơn vị"><Select allowClear options={UNIT_TYPES} placeholder="Chọn loại đơn vị" /></Form.Item>
+        <Form.Item name="sortOrder" label="Thứ tự" rules={[{ required: true, message: "Vui lòng nhập thứ tự." }]}><InputNumber min={0} precision={0} style={{ width: "100%" }} /></Form.Item>
+        <Form.Item name="isActive" label="Hoạt động" valuePropName="checked"><Switch /></Form.Item>
+      </Form>
+    </Modal>
+  </div>;
 }
