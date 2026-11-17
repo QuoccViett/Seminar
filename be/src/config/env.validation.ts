@@ -30,6 +30,7 @@ export const envValidationSchema = Joi.object({
   SMTP_PORT: Joi.number().port().default(587),
   SMTP_AUTH_REQUIRED: Joi.boolean().default(true),
   SMTP_ALLOW_INSECURE_LOCAL: Joi.boolean().default(false),
+  SMTP_SECURE: Joi.boolean().optional(),
   SMTP_USER: Joi.string().allow("").optional(),
   SMTP_PASSWORD: Joi.string().allow("").optional(),
   SMTP_PASS: Joi.string().allow("").optional(),
@@ -43,9 +44,14 @@ export const envValidationSchema = Joi.object({
   STORAGE_ENABLED: Joi.boolean().default(false),
   SUPABASE_URL: Joi.when("STORAGE_ENABLED", { is: true, then: Joi.string().uri().required(), otherwise: Joi.string().uri().allow("").optional() }),
   SUPABASE_KEY: Joi.when("STORAGE_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
-  REPORT_EXPORT_DIR: Joi.string().optional(),
-  REPORT_EXPORT_FONT_PATH: Joi.string().optional(),
+  REPORT_EXPORT_DIR: Joi.string().allow("").optional(),
+  REPORT_EXPORT_FONT_PATH: Joi.string().allow("").optional(),
+  OPENAPI_OUTPUT_FILE: Joi.string().allow("").optional(),
   SEED_CREDENTIALS_FILE: Joi.string().default(".seed-credentials.json"),
+  SEED_ADMIN_PASSWORD: Joi.string().allow("").optional(),
+  SEED_ROTATE_PASSWORDS: Joi.boolean().default(false),
+  SEED_ADMIN_USERNAME: Joi.string().allow("").optional(),
+  SEED_ADMIN_EMAIL: Joi.string().email({ tlds: { allow: false } }).allow("").optional(),
 }).or("WEB_ORIGINS", "CORS_ORIGINS");
 
 /** Kiểm tra cấu hình khi khởi động và chỉ nêu tên biến sai, không ghi giá trị bí mật

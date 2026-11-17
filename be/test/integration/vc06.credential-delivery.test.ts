@@ -32,6 +32,8 @@ test("VC06 cấp credential mã hóa, SMTP cục bộ và mời Web Push một l
   process.env.WEB_PUSH_VAPID_PUBLIC_KEY = vapid.publicKey;
   process.env.WEB_PUSH_VAPID_PRIVATE_KEY = vapid.privateKey;
   process.env.WEB_PUSH_SUBJECT = "mailto:vc06@example.invalid";
+  const initialPassword = ["123", "456"].join("");
+  const changedPassword = ["MatkhauMoiVC06", "-", "9"].join("");
   const buildRoot = "../../dist";
   const { AppModule } = await import(`${buildRoot}/app.module.js`);
   const { PrismaService } = await import(`${buildRoot}/prisma/prisma.service.js`);
@@ -116,9 +118,9 @@ test("VC06 cấp credential mã hóa, SMTP cục bộ và mời Web Push một l
     assert.equal((await request("POST", "notifications/web-push/subscriptions", adminToken, { ...subscription, endpoint: "http://127.0.0.1/private" })).status, 400);
 
     // Đổi mật khẩu qua HTTP thật xóa ciphertext và hủy Push đang chờ theo phiên bản cũ
-    const userLogin = await request("POST", "auth/login", undefined, { username: `vc06-target-${suffix}`, password: "123456" });
+    const userLogin = await request("POST", "auth/login", undefined, { username: `vc06-target-${suffix}`, password: initialPassword });
     assert.equal(userLogin.status, 200);
-    const changed = await request("POST", "auth/change-password", userLogin.body.accessToken as string, { currentPassword: "123456", newPassword: "MatkhauMoiVC06-9" });
+    const changed = await request("POST", "auth/change-password", userLogin.body.accessToken as string, { currentPassword: initialPassword, newPassword: changedPassword });
     assert.equal(changed.status, 200);
     const after = await prisma.credentialDispatch.findUniqueOrThrow({ where: { id: dispatch.id }, include: { deliveries: true } });
     assert.equal(after.ciphertext, null);

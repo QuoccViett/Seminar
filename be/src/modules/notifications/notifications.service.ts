@@ -10,6 +10,7 @@ import type { NotificationPreferencesDto } from "./dto/notification-preferences.
 type Channel = "WEB_PUSH" | "EMAIL" | "ZALO_ZNS";
 const CHANNELS: Channel[] = ["WEB_PUSH", "EMAIL", "ZALO_ZNS"];
 const MAX_ATTEMPTS = 5;
+type NotificationWithDeliveries = Prisma.NotificationGetPayload<{ include: { deliveries: true } }>;
 
 /** Chuẩn hóa lỗi nghiệp vụ đầu vào để controller không trả thông báo tiếng Anh từ thư viện */
 function invalid(field: string, message: string): BadRequestException {
@@ -61,7 +62,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
    * Khi có dedupeKey, INSERT ON CONFLICT giữ bản cũ nên retry hoặc hai transaction đồng thời không gửi lặp
    * ZNS chỉ xếp hàng khi hệ thống bật và cá nhân cho phép; Email/Push theo mặc định bật nếu chưa lưu preference
    */
-  async notifyUser(tx: Prisma.TransactionClient, input: NotifyUserInput) {
+  async notifyUser(tx: Prisma.TransactionClient, input: NotifyUserInput): Promise<NotificationWithDeliveries> {
     if (!input.userId || !input.type.trim() || !input.title.trim() || !input.body.trim()) throw invalid("notification", "Thông báo phải có người nhận, loại, tiêu đề và nội dung.");
     if (input.type.length > 100 || input.title.length > 255 || input.body.length > 4000 || (input.dedupeKey?.length ?? 0) > 255) throw invalid("notification", "Thông báo hoặc khóa chống trùng vượt quá độ dài cho phép.");
     if (input.dedupeKey !== undefined && !input.dedupeKey.trim()) throw invalid("dedupeKey", "Khóa chống trùng không được để trống.");

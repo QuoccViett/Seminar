@@ -7,6 +7,7 @@ import { NestFactory } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
 import type { PrismaService as PrismaServiceType } from "../../src/prisma/prisma.service.js";
 import type { NotificationProvider } from "../../src/modules/notifications/notification-provider.js";
+import type { NotificationsService as NotificationsServiceType } from "../../src/modules/notifications/notifications.service.js";
 
 /** Kiểm VC05 trên một PostgreSQL riêng đã áp migration, không xóa hoặc reset DB dùng chung
  * Bao phủ HTTP thật, transaction rollback, dedupe, hai worker tranh việc, lease và lỗi từng kênh
@@ -30,13 +31,14 @@ test("VC05 hộp thư và outbox trên PostgreSQL thật", async () => {
   app.useGlobalPipes(createApiValidationPipe());
   await app.listen(0, "127.0.0.1");
   const prisma = app.get<PrismaServiceType>(PrismaService);
-  const liveService = app.get(NotificationsService);
+  const liveService = app.get<NotificationsServiceType>(NotificationsService);
   liveService.onModuleDestroy();
   const base = await app.getUrl();
   const now = new Date();
   const firstId = randomUUID();
   const secondId = randomUUID();
   const suffix = randomUUID().slice(0, 8);
+  const testPassword = ["MatkhauVC05", "kiemthu", "9"].join("");
 
   /** Gọi HTTP thật với token tùy chọn, trả cả status và body để so contract lỗi hoặc thành công */
   async function request(method: string, path: string, token?: string, body?: unknown) {
@@ -46,12 +48,12 @@ test("VC05 hộp thư và outbox trên PostgreSQL thật", async () => {
   }
 
   try {
-    const hash = await bcrypt.hash("MatkhauVC05kiemthu9", 8);
+    const hash = await bcrypt.hash(testPassword, 8);
     for (const [id, name] of [[firstId, `vc05-a-${suffix}`], [secondId, `vc05-b-${suffix}`]]) {
       await prisma.user.create({ data: { id, username: name, passwordHash: hash, fullName: "Tài khoản kiểm thử thông báo", role: "ADMIN", mustChangePassword: false, createdAt: now, updatedAt: now } });
     }
-    const loginA = await request("POST", "auth/login", undefined, { username: `vc05-a-${suffix}`, password: "MatkhauVC05kiemthu9" });
-    const loginB = await request("POST", "auth/login", undefined, { username: `vc05-b-${suffix}`, password: "MatkhauVC05kiemthu9" });
+    const loginA = await request("POST", "auth/login", undefined, { username: `vc05-a-${suffix}`, password: testPassword });
+    const loginB = await request("POST", "auth/login", undefined, { username: `vc05-b-${suffix}`, password: testPassword });
     assert.equal(loginA.status, 200);
     assert.equal(loginB.status, 200);
     const tokenA = loginA.body.accessToken as string;

@@ -17,7 +17,7 @@ if (!adminPassword) {
 }
 const seedAdminPassword: string = adminPassword;
 
-const credentialsFile = process.env.SEED_CREDEadminNTIALS_FILE;
+const credentialsFile = process.env.SEED_CREDENTIALS_FILE;
 const rotatePasswords = process.env.SEED_ROTATE_PASSWORDS === "true";
 const adminUsername = process.env.SEED_ADMIN_USERNAME ?? "admin";
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@seminar.local";
