@@ -4,9 +4,11 @@
 
 **Đơn vị chủ quản:** Ban Thanh niên CATP — **34 Cơ sở Đoàn trực thuộc**
 
+Phần 2 và 3 là mô tả lịch sử, trong đó các chỗ nhắc hạn 48 giờ hoặc tính từ giờ yêu cầu không mô tả chính sách mới. Phần 4 và migration hiện hành mô tả snapshot lịch bổ sung; cách tính tạm ở mục 1.4/5.4 của kế hoạch còn chờ hỏi thầy và chưa triển khai tại API
+
 ---
 
-### PHẦN 1: TỔNG QUAN VỀ CẤU TRÚC DATABASE (15 BẢNG + 3 VIEW)
+### PHẦN 1: TỔNG QUAN VỀ CẤU TRÚC DATABASE (15 BẢNG NGHIỆP VỤ BAN ĐẦU + CÁC BỔ SUNG VC03)
 
 Cơ sở dữ liệu đạt chuẩn **3NF**, bám sát mô tả hệ thống: 2 loại tài khoản (Admin / Cơ sở), thang điểm 300 điểm (~30 tiêu chí), quy trình 4 giai đoạn có hẹn giờ tự động khóa.
 
@@ -250,3 +252,41 @@ Lịch sử xuất báo cáo: `report_type` (`SUMMARY_ALL_UNITS` — Bảng tổ
 3. **Tách biệt dữ liệu & cấu hình:** Thang điểm, mức xếp loại, số giờ bổ sung đều cấu hình theo đợt, Admin tự chỉnh mà không sửa code.
 4. **Minh bạch & truy vết:** `status_histories` (có cả thao tác tự động của hệ thống) và `audit_logs` ghi nhận mọi thay đổi điểm; `report_exports` lưu biên bản đã xuất.
 5. **Không dư thừa (3NF):** Điểm trừ, tổng điểm, xếp hạng được suy ra qua View, chỉ chốt lưu một lần khi khóa sổ.
+
+### PHẦN 4: BỔ SUNG VC03 TRÊN SCHEMA HIỆN HÀNH
+
+Migration `20261117120000_vc03_database_foundation` là nguồn triển khai cho các bổ sung dưới đây; phần mô tả 15 bảng ban đầu ở trên được giữ làm nền lịch sử và không đại diện đầy đủ schema hiện hành
+
+| Bảng/cột | Ràng buộc và mục đích |
+|---|---|
+| `import_sessions` | Gắn phiên xem trước với Admin, digest tệp SHA-256, khóa idempotency và hạn dùng; rows/result là JSON chuẩn hóa, không chứa mật khẩu; chỉ trạng thái `CONFIRMED` mới được có `confirmed_at` và result |
+| `onboarding_tokens` | Chỉ lưu token hash; purpose giới hạn `WEB_PUSH`, `EMAIL`, `ZALO_ZNS`; credential version và hạn dùng dương làm token hết hiệu lực khi tài khoản đổi credential |
+| `credential_dispatches` | Payload credential chỉ lưu ciphertext, nonce, auth tag và key id; unique theo user/version để retry không gửi lặp một lần cấp credential |
+| `credential_deliveries` | Theo dõi riêng từng kênh `WEB_PUSH`, `EMAIL`, `ZALO_ZNS`, trạng thái ổn định và lease nguyên tử; lỗi chỉ lưu error code, không lưu phản hồi thô provider |
+| `zalo_connections` | Chỉ lưu cấu hình đã mã hóa cùng version/expiry/lock metadata; bảng không kích hoạt ZNS, không gọi API và không chứa token dạng rõ |
+| `notification_deliveries` | Thêm `claimed_at`, `lease_until`, `claim_token`, `reason_code`; CHECK yêu cầu lease có đủ ba mốc/token và hạn lease sau giờ claim |
+| `evaluations` | `supplement_start_at` cùng `supplement_deadline` là snapshot lịch mở/đóng; legacy row chỉ có deadline vẫn được giữ nguyên, lịch mới phải có start nhỏ hơn deadline; `supplement_hours` không dùng tính lịch mới |
+| `criterion_scores` | `supplemented_at` chỉ được ghi khi nội dung tự chấm hoặc minh chứng trong lượt bổ sung thực sự thay đổi, không lấy `updated_at` làm bằng chứng |
+| `users` | `credential_version` giữ giá trị `0` cho tài khoản cũ khi nâng cấp và có CHECK không âm để token chỉ tham chiếu phiên bản hợp lệ |
+
+Trigger điểm và minh chứng dùng `statement_timestamp()` theo UTC của connection, cửa sổ bổ sung là `[supplement_start_at, supplement_deadline)`. Trigger trả câu tiếng Việt và mã rule ổn định trong diagnostic; dữ liệu lịch cũ không được tự backfill hoặc tính lại. Mọi FK mới dùng `NO ACTION`; lịch sử status/audit tiếp tục append-only. Migrations trước VC03 không bị chỉnh sửa.
+
+### Sơ đồ quan hệ phần mở rộng VC03
+
+```mermaid
+erDiagram
+    USERS ||--o{ IMPORT_SESSIONS : "quản lý"
+    USERS ||--o{ ONBOARDING_TOKENS : "sở hữu"
+    USERS ||--o{ CREDENTIAL_DISPATCHES : "nhận"
+    CREDENTIAL_DISPATCHES ||--o{ CREDENTIAL_DELIVERIES : "gửi qua"
+    USERS ||--o{ ZALO_CONNECTIONS : "cấu hình"
+    USERS ||--o{ NOTIFICATIONS : "nhận"
+    NOTIFICATIONS ||--o{ NOTIFICATION_DELIVERIES : "chuyển qua"
+    UNITS ||--o| USERS : "gắn với"
+    EVALUATION_PERIODS ||--o{ EVALUATIONS : "có"
+    UNITS ||--o{ EVALUATIONS : "có"
+    EVALUATIONS ||--o{ CRITERION_SCORES : "gồm"
+    CRITERION_SCORES ||--o{ EVIDENCES : "có"
+```
+
+Sơ đồ thể hiện khóa ngoại, không hàm ý xóa dây chuyền. `users.unit_id` được phép NULL và unique khi có giá trị; `evaluation_periods.year` unique. Thứ tự áp dụng SQL và định nghĩa CHECK/trigger chính xác nằm trong [các migration Prisma](../be/prisma/migrations/); [seminar_csdl.sql](./seminar_csdl.sql) là bản thiết kế lịch sử, không phải script tạo đầy đủ schema hiện hành

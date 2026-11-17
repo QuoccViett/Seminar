@@ -119,6 +119,12 @@ function statusChain(status: EvaluationStatus): EvaluationStatus[] {
  * Mật khẩu cũ chỉ thay khi bật tùy chọn xoay vòng, lỗi DB được xử lý tại biên script
  * Không chạy trên DB dùng chung khi chưa chỉ định đích seed an toàn
  */
+/** Tạo dữ liệu minh họa trong giao dịch để các bảng liên quan luôn nhất quán
+ * Đầu vào là DATABASE_URL cùng cấu hình tài khoản seed; đầu ra là kỳ, đơn vị và hồ sơ mẫu đã ghi trong DB
+ * Kỳ được mở tạm trong lúc dựng fixture vì trigger kiểm thời gian theo mốc đã lưu như môi trường thật
+ * Fixture mới và chạy lại seed đều đi cùng nhánh mở tạm, rồi khôi phục lịch gốc trước khi giao dịch hoàn tất
+ * Nếu bất kỳ ghi nhận nào thất bại, giao dịch rollback để không lưu lịch tạm hoặc dữ liệu nửa chừng
+ */
 async function main(): Promise<void> {
   const generatedCredentials: { username: string; password: string }[] = [];
   const existingUsers = await prisma.user.findMany({
@@ -203,10 +209,16 @@ async function main(): Promise<void> {
     }
 
     for (const periodSeed of periods) {
+      // Cửa sổ tạm chỉ tồn tại trong giao dịch seed để fixture có thể đi qua cùng trigger với yêu cầu thật
+      const originalSchedule = {
+        selfEvalStart: periodSeed.selfEvalStart,
+        selfEvalDeadline: periodSeed.selfEvalDeadline,
+        publishedAt: periodSeed.publishedAt,
+      };
       const period = await tx.evaluationPeriod.upsert({
         where: { year: periodSeed.year },
-        update: { name: periodSeed.name, phase: periodSeed.phase, maxTotalScore: periodSeed.maxTotalScore, selfEvalStart: periodSeed.selfEvalStart, selfEvalDeadline: periodSeed.selfEvalDeadline, supplementHours: periodSeed.supplementHours, publishedAt: periodSeed.publishedAt, finalizedAt: periodSeed.finalizedAt, updatedAt: now },
-        create: { ...periodSeed, createdById: admin.id, createdAt: now, updatedAt: now },
+        update: { name: periodSeed.name, phase: periodSeed.phase, maxTotalScore: periodSeed.maxTotalScore, selfEvalStart: new Date(now.getTime() - 60_000), selfEvalDeadline: new Date(now.getTime() + 60_000), supplementHours: periodSeed.supplementHours, publishedAt: new Date(now.getTime() - 120_000), finalizedAt: periodSeed.finalizedAt, updatedAt: now },
+        create: { ...periodSeed, selfEvalStart: new Date(now.getTime() - 60_000), selfEvalDeadline: new Date(now.getTime() + 60_000), publishedAt: new Date(now.getTime() - 120_000), createdById: admin.id, createdAt: now, updatedAt: now },
       });
 
       for (const [index, threshold] of thresholds.entries()) {
@@ -282,9 +294,11 @@ async function main(): Promise<void> {
           });
         }
 
+        const supplementStartAt = new Date(now.getTime() - 30_000);
+        const supplementDeadline = new Date(now.getTime() + 30_000);
         await tx.evaluation.update({
           where: { id: evaluation.id },
-          data: { status: dbEvaluationStatus, submittedAt, firstReviewedAt: inReview ? new Date(periodSeed.year, 1, 18 + index) : null, supplementRequestedAt: status === "NEEDS_SUPPLEMENT" ? new Date(periodSeed.year, 1, 20 + index) : null, supplementDeadline: status === "NEEDS_SUPPLEMENT" ? new Date(periodSeed.year, 2, 5 + index) : null, supplementSubmittedAt: finalized ? new Date(periodSeed.year, 2, 1 + index) : null, finalizedAt: finalized ? new Date(periodSeed.year, 3, 10 + index) : null, finalizedById: finalized ? admin.id : null, finalScore, finalPercent: finalScore ? Number(finalScore) / 3 : null, finalRating: finalScore ? (Number(finalScore) >= 255 ? "EXCELLENT" : "GOOD") : null, updatedAt: now },
+          data: { status: dbEvaluationStatus, submittedAt, firstReviewedAt: inReview ? new Date(periodSeed.year, 1, 18 + index) : null, supplementRequestedAt: status === "NEEDS_SUPPLEMENT" ? now : null, supplementStartAt: status === "NEEDS_SUPPLEMENT" ? supplementStartAt : null, supplementDeadline: status === "NEEDS_SUPPLEMENT" ? supplementDeadline : null, supplementSubmittedAt: finalized ? new Date(periodSeed.year, 2, 1 + index) : null, finalizedAt: finalized ? new Date(periodSeed.year, 3, 10 + index) : null, finalizedById: finalized ? admin.id : null, finalScore, finalPercent: finalScore ? Number(finalScore) / 3 : null, finalRating: finalScore ? (Number(finalScore) >= 255 ? "EXCELLENT" : "GOOD") : null, updatedAt: now },
         });
 
         for (const [historyIndex, toStatus] of statusChain(status).entries()) {
@@ -317,6 +331,12 @@ async function main(): Promise<void> {
           });
         }
       }
+
+      // Khôi phục đúng lịch kỳ đã cấu hình để seed không lưu lại cửa sổ kiểm thử tạm thời
+      await tx.evaluationPeriod.update({
+        where: { id: period.id },
+        data: { ...originalSchedule, updatedAt: now },
+      });
     }
 
     const tokenUsers = [admin.id, ...unitUsers.slice(0, 6).map((user) => user.userId)];

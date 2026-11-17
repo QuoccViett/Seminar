@@ -105,14 +105,20 @@ function makeService() {
     },
 
     user: {
+      findFirst: async () => null,
       findMany: async (args: MockArgs) => {
         calls.userFindMany.push(args);
         return [];
       },
     },
 
-    $transaction: async (operations: readonly Promise<unknown>[]) =>
-      Promise.all(operations),
+    $executeRaw: async () => 1,
+
+    /** Mô phỏng cả giao dịch đọc danh sách và ghi audit để kiểm tra đường gọi mới
+     * Callback dùng cùng mock Prisma, còn mảng promise trả kết quả theo thứ tự
+     */
+    $transaction: async (operations: readonly Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) =>
+      typeof operations === "function" ? operations(prismaMock) : Promise.all(operations),
   };
 
   return {
@@ -224,7 +230,7 @@ test("ADMIN can list users belonging to a unit", async () => {
 test("updating a unit ignores keys that are present but undefined", async () => {
   const { service, calls } = makeService();
 
-  // Mô phỏng DTO sau ValidationPipe: mọi field khai báo đều là key, giá trị undefined.
+  // Mô phỏng DTO sau ValidationPipe có key khai báo nhưng chưa được gửi giá trị
   await service.update(UNIT.id, {
     code: undefined,
     name: "Tên mới",

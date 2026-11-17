@@ -150,6 +150,12 @@ function makeService() {
     updateMany: async () => ({ count: 1 }),
   },
 
+  webPushSubscription: {
+    updateMany: async () => ({ count: 1 }),
+  },
+
+  $executeRaw: async () => 1,
+
   $transaction: async (operations: unknown) => {
     if (typeof operations === "function") {
       return operations(prismaMock);
@@ -296,7 +302,7 @@ test("UNIT cannot update another account (404)", async () => {
 test("update ignores keys that are present but undefined", async () => {
   const { service, calls } = makeService();
 
-  // Mô phỏng DTO sau ValidationPipe: mọi field khai báo đều là key, giá trị undefined.
+  // Mô phỏng DTO sau ValidationPipe có key khai báo nhưng chưa được gửi giá trị
   await service.update(USER.id, UNIT_USER, {
     fullName: "Tên mới",
     email: undefined,
@@ -414,7 +420,7 @@ test("creating a user always sets mustChangePassword and returns a temporary pas
   assert.equal(data.mustChangePassword, true);
   assert.equal(typeof result.temporaryPassword, "string");
   assert.equal(result.temporaryPassword, "123456");
-  // DB chỉ lưu bản băm, không lưu mật khẩu tạm.
+  // Cơ sở dữ liệu chỉ giữ bản băm và không lưu mật khẩu tạm dạng rõ
   assert.notEqual(data.passwordHash, result.temporaryPassword);
   assert.match(String(data.passwordHash), /^\$2[aby]\$/);
 });

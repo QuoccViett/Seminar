@@ -43,6 +43,10 @@ model User {
   updatedAt             DateTime            @map("updated_at") @db.Timestamp(6)
   unit                  Unit?               @relation(fields: [unitId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   refreshTokens         RefreshToken[]
+  importSessions       ImportSession[]
+  onboardingTokens     OnboardingToken[]
+  credentialDispatches CredentialDispatch[]
+  zaloConnections      ZaloConnection[]
   createdPeriods        EvaluationPeriod[]   @relation("PeriodCreator")
   finalizedEvaluations  Evaluation[]         @relation("EvaluationFinalizer")
   reviewedScores        CriterionScore[]     @relation("CriterionReviewer")
@@ -144,6 +148,7 @@ model Evaluation {
   autoLockedAt          DateTime?           @map("auto_locked_at") @db.Timestamp(6)
   firstReviewedAt       DateTime?           @map("first_reviewed_at") @db.Timestamp(6)
   supplementRequestedAt DateTime?           @map("supplement_requested_at") @db.Timestamp(6)
+  supplementStartAt     DateTime?           @map("supplement_start_at") @db.Timestamp(6)
   supplementDeadline    DateTime?           @map("supplement_deadline") @db.Timestamp(6)
   supplementSubmittedAt DateTime?           @map("supplement_submitted_at") @db.Timestamp(6)
   finalizedAt           DateTime?           @map("finalized_at") @db.Timestamp(6)
@@ -177,6 +182,7 @@ model CriterionScore {
   adminComment    String?     @map("admin_comment") @db.Text
   needsSupplement Boolean     @default(false) @map("needs_supplement")
   supplementNote  String?     @map("supplement_note") @db.Text
+  supplementedAt  DateTime?   @map("supplemented_at") @db.Timestamp(6)
   reviewedById    String?     @map("reviewed_by_id") @db.Uuid
   reviewedAt      DateTime?   @map("reviewed_at") @db.Timestamp(6)
   createdAt       DateTime    @map("created_at") @db.Timestamp(6)
@@ -327,6 +333,10 @@ model NotificationDelivery {
   status            String       @default("PENDING") @db.VarChar
   attemptCount      Int          @default(0) @map("attempt_count")
   nextAttemptAt     DateTime?    @map("next_attempt_at") @db.Timestamp(6)
+  claimedAt         DateTime?    @map("claimed_at") @db.Timestamp(6)
+  leaseUntil        DateTime?    @map("lease_until") @db.Timestamp(6)
+  claimToken        String?      @map("claim_token") @db.Uuid
+  reasonCode        String?      @map("reason_code") @db.VarChar
   lastError         String?      @map("last_error") @db.VarChar
   providerMessageId String?      @map("provider_message_id") @db.VarChar
   sentAt            DateTime?    @map("sent_at") @db.Timestamp(6)
@@ -336,6 +346,7 @@ model NotificationDelivery {
 
   @@unique([notificationId, channel])
   @@index([status, nextAttemptAt])
+  @@index([leaseUntil])
   @@map("notification_deliveries")
 }
 
@@ -373,6 +384,109 @@ model TelegramLinkToken {
 
   @@index([userId])
   @@map("telegram_link_tokens")
+}
+
+/// Lưu phiên nhập Excel tạm do Admin sở hữu, thời hạn và digest cho phép xác nhận đúng tệp đã xem trước
+/// rows chỉ chứa dữ liệu đã chuẩn hóa, không chứa mật khẩu, còn idempotencyKey/result ngăn tạo trùng khi gửi lại
+model ImportSession {
+  id               String    @id @db.Uuid
+  adminId          String    @map("admin_id") @db.Uuid
+  fileDigest       String    @map("file_digest") @db.VarChar
+  rows             Json      @db.Json
+  status           String    @default("PREVIEWED") @db.VarChar
+  idempotencyKey   String    @map("idempotency_key") @db.VarChar
+  result           Json?     @db.Json
+  expiresAt        DateTime  @map("expires_at") @db.Timestamp(6)
+  confirmedAt      DateTime? @map("confirmed_at") @db.Timestamp(6)
+  createdAt        DateTime  @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime  @map("updated_at") @db.Timestamp(6)
+  admin            User      @relation(fields: [adminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([adminId, idempotencyKey])
+  @@index([status, expiresAt])
+  @@map("import_sessions")
+}
+
+/// Lưu hash token dùng một lần cho đăng ký kênh thông báo trước khi có phiên nghiệp vụ hợp lệ
+/// purpose và credentialVersion ràng buộc token với mục đích và phiên bản thông tin đăng nhập tại lúc cấp
+model OnboardingToken {
+  id                String    @id @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  purpose           String    @db.VarChar
+  credentialVersion Int       @map("credential_version")
+  tokenHash         String    @unique @map("token_hash") @db.VarChar
+  expiresAt         DateTime  @map("expires_at") @db.Timestamp(6)
+  usedAt            DateTime? @map("used_at") @db.Timestamp(6)
+  createdAt         DateTime  @map("created_at") @db.Timestamp(6)
+  user              User      @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId, purpose, expiresAt])
+  @@map("onboarding_tokens")
+}
+
+/// Lưu payload credential đã mã hóa để có thể retry an toàn sau khi tiến trình gửi bị khởi động lại
+/// Bản ghi chỉ chứa ciphertext cùng thông tin nonce/tag/keyId, không chứa mật khẩu rõ hoặc refresh token
+model CredentialDispatch {
+  id           String               @id @db.Uuid
+  userId       String               @map("user_id") @db.Uuid
+  credentialVersion Int             @map("credential_version")
+  ciphertext   String               @db.Text
+  nonce        String               @db.VarChar
+  authTag      String               @map("auth_tag") @db.VarChar
+  keyId        String               @map("key_id") @db.VarChar
+  expiresAt    DateTime             @map("expires_at") @db.Timestamp(6)
+  canceledAt   DateTime?            @map("canceled_at") @db.Timestamp(6)
+  createdAt    DateTime             @map("created_at") @db.Timestamp(6)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  deliveries   CredentialDelivery[]
+
+  @@unique([userId, credentialVersion])
+  @@index([expiresAt, canceledAt])
+  @@map("credential_dispatches")
+}
+
+/// Theo dõi kết quả gửi credential độc lập với hộp thư để không lưu bí mật trong Notification
+/// Lease và mã lỗi ổn định cho phép worker nhận lại việc hết hạn mà không ghi lỗi thô từ nhà cung cấp
+model CredentialDelivery {
+  id                String              @id @db.Uuid
+  dispatchId        String              @map("dispatch_id") @db.Uuid
+  channel           String              @db.VarChar
+  status            String              @default("PENDING") @db.VarChar
+  attemptCount      Int                 @default(0) @map("attempt_count")
+  claimedAt         DateTime?           @map("claimed_at") @db.Timestamp(6)
+  leaseUntil        DateTime?           @map("lease_until") @db.Timestamp(6)
+  claimToken        String?             @map("claim_token") @db.Uuid
+  nextAttemptAt     DateTime?           @map("next_attempt_at") @db.Timestamp(6)
+  errorCode         String?             @map("error_code") @db.VarChar
+  messageId         String?             @map("message_id") @db.VarChar
+  sentAt            DateTime?           @map("sent_at") @db.Timestamp(6)
+  createdAt         DateTime            @map("created_at") @db.Timestamp(6)
+  updatedAt         DateTime            @map("updated_at") @db.Timestamp(6)
+  dispatch          CredentialDispatch  @relation(fields: [dispatchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([dispatchId, channel])
+  @@index([status, nextAttemptAt, leaseUntil])
+  @@map("credential_deliveries")
+}
+
+/// Lưu cấu hình kết nối Zalo đã mã hóa theo version, không yêu cầu bật ZNS hoặc liên hệ nhà cung cấp
+/// Chỉ ciphertext/key metadata được lưu để sau này tích hợp có kiểm soát khi doanh nghiệp cung cấp cấu hình
+model ZaloConnection {
+  id          String    @id @db.Uuid
+  adminId     String    @map("admin_id") @db.Uuid
+  ciphertext  String    @db.Text
+  nonce       String    @db.VarChar
+  authTag     String    @map("auth_tag") @db.VarChar
+  keyId       String    @map("key_id") @db.VarChar
+  tokenExpiry DateTime? @map("token_expiry") @db.Timestamp(6)
+  version     Int       @default(1)
+  lockedAt    DateTime? @map("locked_at") @db.Timestamp(6)
+  createdAt   DateTime  @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime  @map("updated_at") @db.Timestamp(6)
+  admin       User      @relation(fields: [adminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([version])
+  @@map("zalo_connections")
 }
 
 view EvaluationTotals {

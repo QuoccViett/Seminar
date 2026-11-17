@@ -19,14 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository (fetch full history for deep scan)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0 # Bắt buộc fetch toàn bộ git history để quét toàn bộ commit
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
   backend-ci:
     name: Backend CI
     runs-on: ubuntu-latest
@@ -58,7 +59,7 @@ jobs:
       WEB_PUSH_SUBJECT: mailto:ci@example.com
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -82,6 +83,25 @@ jobs:
       - name: Apply database migrations
         run: npx prisma migrate deploy
 
+      - name: Verify VC03 constraints on an isolated database
+        env:
+          VC03_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc03_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc03_test
+          DATABASE_URL="$VC03_TEST_DATABASE_URL" npx prisma migrate deploy
+          npm run build
+          npm run db:verify:vc03
+
+      # Dùng database mới cho VC04 để phép kiểm hai ADMIN cuối không phụ thuộc fixture của VC03
+      # Bài kiểm chạy HTTP thật với PostgreSQL CI và chỉ dùng mật khẩu giả trong môi trường thử
+      - name: Verify VC04 management on an isolated database
+        env:
+          VC04_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc04_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc04_test
+          DATABASE_URL="$VC04_TEST_DATABASE_URL" npx prisma migrate deploy
+          node --import tsx --test test/integration/vc04.management.test.ts
+
       - name: Verify seed on an empty database
         env:
           SEED_ADMIN_PASSWORD: ci-only-seed-password
@@ -89,7 +109,7 @@ jobs:
         run: |
           PGPASSWORD=ci createdb -h localhost -U ci ci_seed
           DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npx prisma migrate deploy
-          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npx prisma db seed
+          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npm run db:seed
 
       - name: Lint backend
         run: npm run lint
@@ -107,6 +127,7 @@ jobs:
         run: |
           npm start > backend.log 2>&1 &
           for attempt in {1..20}; do
+            printf 'Đang chờ backend (%s/20)\n' "$attempt"
             if curl --fail --silent http://127.0.0.1:3000/api/docs-json > /dev/null; then
               exit 0
             fi
@@ -126,7 +147,7 @@ jobs:
         working-directory: ./fe
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

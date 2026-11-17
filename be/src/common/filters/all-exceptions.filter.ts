@@ -42,6 +42,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
     if (code === "P2003") return this.make(409, ERROR_CODES.REFERENCE_IN_USE);
     if (code === "P2025") return this.make(404, ERROR_CODES.NOT_FOUND);
+    if (code === "P2004") {
+      // Thao tác model của Prisma bọc lỗi CHECK/trigger thành P2004 và không luôn giữ SQLSTATE trong meta
+      // Ánh xạ sang lỗi quy tắc chung để giữ status có nghĩa mà không đưa tên constraint hay SQL ra API
+      return this.make(422, ERROR_CODES.DB_RULE_VIOLATION);
+    }
     if (code === "P2010" || code === "P2039") {
       // Adapter PostgreSQL đặt SQLSTATE trong cause, Prisma cũ có thể đặt trực tiếp trong meta
       const cause = this.record(this.record(meta?.driverAdapterError)?.cause);

@@ -44,18 +44,24 @@ export class UnitsController {
   @ApiQuery({ name: "pageSize", required: false, example: 20 })
   @ApiQuery({ name: "unitType", required: false, enum: UNIT_TYPES })
   @ApiQuery({ name: "isActive", required: false, enum: ["true", "false"] })
+  @ApiQuery({ name: "q", required: false, description: "Tìm theo mã hoặc tên đơn vị" })
+  /** Chuyển bộ lọc và danh tính đã xác thực xuống service để giới hạn phạm vi dữ liệu
+   * UNIT luôn chỉ nhận đơn vị của mình kể cả khi có tham số lọc
+   */
   findAll(
     @GetCurrentUser() currentUser: CurrentUser,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
     @Query("unitType") unitType?: string,
     @Query("isActive") isActive?: string,
+    @Query("q") q?: string,
   ) {
     return this.unitsService.findAll(currentUser, {
       page,
       pageSize,
       unitType,
       isActive,
+      q,
     });
   }
 
@@ -63,11 +69,14 @@ export class UnitsController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "[ADMIN] Tạo đơn vị" })
   @ApiBody({ type: CreateUnitDto })
-  create(@Body() dto: CreateUnitDto) {
-    return this.unitsService.create(dto);
+  /** Tạo đơn vị và gắn ADMIN hiện tại làm người thực hiện trong audit
+   * DTO đã được pipe kiểm trước khi service ghi dữ liệu
+   */
+  create(@Body() dto: CreateUnitDto, @GetCurrentUser() currentUser: CurrentUser) {
+    return this.unitsService.create(dto, currentUser.id);
   }
 
-  // Phải khai báo trước ":id" để không bị nuốt route.
+  // Khai báo route users trước route id để Nest không nhận nhầm đường dẫn
   @Get(":id/users")
   @Roles("ADMIN", "UNIT")
   @ApiParam({ name: "id", format: "uuid", description: "UUID của đơn vị, lấy từ GET /units (trường id)", example: "00000000-0000-4000-8000-000000000101" })
@@ -95,10 +104,14 @@ export class UnitsController {
   @ApiParam({ name: "id", format: "uuid", description: "UUID của đơn vị, lấy từ GET /units (trường id)", example: "00000000-0000-4000-8000-000000000101" })
   @ApiOperation({ summary: "[ADMIN] Cập nhật đơn vị" })
   @ApiBody({ type: UpdateUnitDto })
+  /** Cập nhật đơn vị theo UUID và ghi nhận ADMIN thực hiện để truy vết thay đổi
+   * Service kiểm allowlist và trả lỗi an toàn khi mã bị trùng
+   */
   update(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdateUnitDto,
+    @GetCurrentUser() currentUser: CurrentUser,
   ) {
-    return this.unitsService.update(id, dto);
+    return this.unitsService.update(id, dto, currentUser.id);
   }
 }

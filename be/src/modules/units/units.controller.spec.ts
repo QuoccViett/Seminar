@@ -61,16 +61,16 @@ function rolesOf(handler: object): unknown {
   return Reflect.getMetadata(AUTHORIZED_ROLES, handler);
 }
 
-// ---------- Chuyển tiếp xuống service ----------
+// Chuyển tiếp bộ lọc và danh tính tới service để audit nhận đúng người thao tác
 
 test("findAll forwards the current user and all query filters", async () => {
   const { controller, calls } = makeController();
 
-  await controller.findAll(ADMIN, "2", "10", "DON_VI_TRUC_THUOC", "true");
+  await controller.findAll(ADMIN, "2", "10", "DON_VI_TRUC_THUOC", "true", "cơ sở");
 
   assert.deepEqual(calls.findAll?.[0], [
     ADMIN,
-    { page: "2", pageSize: "10", unitType: "DON_VI_TRUC_THUOC", isActive: "true" },
+    { page: "2", pageSize: "10", unitType: "DON_VI_TRUC_THUOC", isActive: "true", q: "cơ sở" },
   ]);
 });
 
@@ -78,9 +78,9 @@ test("create forwards the dto", async () => {
   const { controller, calls } = makeController();
   const dto = { code: "COSO-001", name: "Cơ sở 01" } as CreateUnitDto;
 
-  await controller.create(dto);
+  await controller.create(dto, ADMIN);
 
-  assert.deepEqual(calls.create?.[0], [dto]);
+  assert.deepEqual(calls.create?.[0], [dto, ADMIN.id]);
 });
 
 test("findOne forwards id and current user", async () => {
@@ -103,9 +103,9 @@ test("update forwards id and dto", async () => {
   const { controller, calls } = makeController();
   const dto = { name: "Tên mới" } as UpdateUnitDto;
 
-  await controller.update(UNIT_ID, dto);
+  await controller.update(UNIT_ID, dto, ADMIN);
 
-  assert.deepEqual(calls.update?.[0], [UNIT_ID, dto]);
+  assert.deepEqual(calls.update?.[0], [UNIT_ID, dto, ADMIN.id]);
 });
 
 // ---------- Bảo vệ route và phân quyền ----------
