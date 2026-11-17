@@ -27,6 +27,9 @@ test("cấu hình theo tính năng và mật khẩu demo", () => {
   const result = validateEnvironment(base);
   assert.equal(result.INITIAL_ACCOUNT_PASSWORD, "123456");
   assert.equal(result.ZALO_ZNS_ENABLED, false);
+  const gmailAliases = validateEnvironment({ ...base, EMAIL_ENABLED: true, SMTP_HOST: "smtp.gmail.com", SMTP_PORT: 465, SMTP_AUTH_REQUIRED: true, SMTP_USER: "sender@example.com", SMTP_PASS: "secret", SMTP_FROM: "sender@example.com", CREDENTIALS_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64") });
+  assert.equal(gmailAliases.MAIL_FROM, "sender@example.com");
+  assert.equal(gmailAliases.SMTP_PASSWORD, "secret");
   assert.throws(() => validateEnvironment({ ...base, NODE_ENV: "production" }), /INITIAL_ACCOUNT_PASSWORD/);
   assert.throws(() => validateEnvironment({ ...base, WEB_PUSH_ENABLED: true }), /WEB_PUSH_VAPID/);
   assert.throws(() => validateEnvironment({ ...base, ZALO_ZNS_ENABLED: true }), /ZALO_/);

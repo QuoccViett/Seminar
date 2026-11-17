@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Layout, Menu, Avatar, Dropdown, Badge, Button } from "antd";
 import {
@@ -16,14 +16,34 @@ import {
 } from "@ant-design/icons";
 import { useAuth } from "../contexts/AuthContext";
 import styles from "./AdminLayout.module.css";
+import { getUnreadCount } from "../services/notificationService";
 
 const { Header, Sider, Content } = Layout;
 
 export default function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const inboxPath = user?.role === "UNIT" ? "/unit/notifications" : "/admin/notifications";
+
+  /** Đọc số chưa xem từ backend khi đổi trang, quay lại tab hoặc đến nhịp làm mới
+   * Khi mạng lỗi giữ số cuối cùng và để trang hộp thư hiển thị lỗi riêng
+   */
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try { const result = await getUnreadCount(); if (active) setUnreadCount(result.count); }
+      catch { if (active) setUnreadCount(0); }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 30000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("notifications:changed", refresh);
+    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("notifications:changed", refresh); };
+  }, [location.pathname]);
 
   // Lấy tên trang hiện tại để hiển thị lên Header
   const pageTitles = {
@@ -33,17 +53,26 @@ export default function AdminLayout() {
     "/admin/config": "Cấu hình Kỳ thi",
     "/admin/records": "Xử lý Hồ sơ",
     "/admin/audit-log": "Lịch sử thao tác",
+    "/admin/notifications": "Hộp thư thông báo",
+    "/unit/notifications": "Hộp thư thông báo",
+    "/unit/records": "Trang tự chấm",
   };
   const currentTitle = pageTitles[location.pathname] || "";
 
-  const menuItems = [
+  // Menu UNIT chỉ chứa các tuyến được phép, còn ADMIN giữ phần quản trị và cùng hộp thư riêng
+  const adminMenuItems = [
     { key: "/admin/dashboard", icon: <DashboardOutlined />, label: "Tổng quan" },
     { key: "/admin/users", icon: <TeamOutlined />, label: "Quản lý Tài khoản" },
     { key: "/admin/units", icon: <BankOutlined />, label: "Quản lý Đơn vị" },
     { key: "/admin/config", icon: <SettingOutlined />, label: "Cấu hình Kỳ thi" },
     { key: "/admin/records", icon: <FileTextOutlined />, label: "Xử lý Hồ sơ" },
     { key: "/admin/audit-log", icon: <HistoryOutlined />, label: "Lịch sử thao tác" },
+    { key: "/admin/notifications", icon: <BellOutlined />, label: "Hộp thư thông báo" },
   ];
+  const menuItems = user?.role === "UNIT" ? [
+    { key: "/unit/records", icon: <FileTextOutlined />, label: "Trang tự chấm" },
+    { key: "/unit/notifications", icon: <BellOutlined />, label: "Hộp thư thông báo" },
+  ] : adminMenuItems;
 
   const userMenu = {
     items: [
@@ -80,8 +109,8 @@ export default function AdminLayout() {
 
           {/* Bên phải*/}
           <div className={styles.headerRight}>
-            <Badge count={5} size="small">
-              <Button type="text" icon={<BellOutlined style={{ fontSize: 18, color: "#555" }} />} />
+            <Badge count={unreadCount} size="small">
+              <Button type="text" aria-label="Mở hộp thư thông báo" onClick={() => navigate(inboxPath)} icon={<BellOutlined style={{ fontSize: 18, color: "#555" }} />} />
             </Badge>
 
             <Dropdown menu={userMenu} placement="bottomRight" trigger={["click"]}>

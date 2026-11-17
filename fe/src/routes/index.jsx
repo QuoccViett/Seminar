@@ -9,6 +9,8 @@ import AdminAuditLog from "../pages/admin/AdminAuditLog";
 import AdminConfig from "../pages/admin/AdminConfig";
 // 1. Import AdminLayout vào
 import AdminLayout from "../layouts/AdminLayout";
+import NotificationInbox from "../pages/NotificationInbox";
+import PushOnboardingPage from "../pages/auth/PushOnboardingPage";
 
 // Tạm thời tạo các trang giả để test Layout
 const AdminRecords = () => <div style={{ fontSize: 24, fontWeight: "bold" }}>Xử lý Hồ sơ</div>;
@@ -20,6 +22,8 @@ export default function AppRoutes() {
     <Routes>
       {/* Trang public */}
       <Route path="/login" element={<LoginPage />} />
+      {/* Link mời có quyền hẹp được mở trước khi tài khoản có phiên đăng nhập */}
+      <Route path="/onboarding/web-push" element={<PushOnboardingPage />} />
 
       {/* Đã đăng nhập mới được vào */}
       <Route element={<RequireAuth />}>
@@ -40,12 +44,18 @@ export default function AppRoutes() {
               <Route path="/admin/config" element={<AdminConfig />} />
               <Route path="/admin/records" element={<AdminRecords />} />
               <Route path="/admin/audit-log" element={<AdminAuditLog />} />
+              {/* Hộp thư quản trị dùng API thật và chỉ lấy dữ liệu thuộc access token hiện tại */}
+              <Route path="/admin/notifications" element={<NotificationInbox />} />
             </Route>
           </Route>
 
           {/* ================= KHU VỰC UNIT ================= */}
           <Route element={<RequireRole roles={["UNIT"]} />}>
-            <Route path="/unit/records" element={<UnitRecords />} />
+            {/* UNIT dùng cùng layout và hộp thư, menu được giới hạn theo role đã xác thực */}
+            <Route element={<AdminLayout />}>
+              <Route path="/unit/records" element={<UnitRecords />} />
+              <Route path="/unit/notifications" element={<NotificationInbox />} />
+            </Route>
           </Route>
 
         </Route>

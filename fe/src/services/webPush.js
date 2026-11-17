@@ -1,5 +1,4 @@
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-const vapidPublicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY;
 
 /** Phân biệt lỗi đã được dịch với ngoại lệ thô từ trình duyệt hoặc nhà cung cấp */
 class WebPushError extends Error {}
@@ -45,10 +44,6 @@ export async function enableWebPush(accessToken) {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     throw new WebPushError("Trình duyệt này không hỗ trợ thông báo đẩy.");
   }
-  if (!vapidPublicKey) {
-    throw new WebPushError("Chưa cấu hình khóa công khai cho thông báo đẩy.");
-  }
-
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
     throw new WebPushError("Bạn chưa cấp quyền nhận thông báo.");
@@ -56,15 +51,13 @@ export async function enableWebPush(accessToken) {
 
   const registration = await navigator.serviceWorker.register("/sw.js");
   const publicKeyResponse = await requestJson("/notifications/web-push/public-key");
-  if (publicKeyResponse.publicKey !== vapidPublicKey) {
-    throw new WebPushError("Khóa thông báo đẩy của giao diện và máy chủ không khớp.");
-  }
+  if (!publicKeyResponse.enabled || !publicKeyResponse.publicKey) throw new WebPushError("Thông báo đẩy chưa được kích hoạt trên máy chủ.");
 
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      applicationServerKey: urlBase64ToUint8Array(publicKeyResponse.publicKey),
     });
   }
 
@@ -77,6 +70,27 @@ export async function enableWebPush(accessToken) {
     // Giữ lỗi đã dịch và thay lỗi trình duyệt để không lộ nội dung thô
     if (error instanceof WebPushError) throw error;
     throw new WebPushError("Không thể bật thông báo đẩy. Vui lòng thử lại.");
+  }
+}
+
+/** Mời thiết bị khi người nhận chưa có phiên nghiệp vụ và còn phải đổi mật khẩu
+ * Token chỉ lấy từ fragment của link mời, dùng một lần tại endpoint onboarding và không lưu vào storage
+ */
+export async function enableWebPushWithInvitation(token) {
+  try {
+    if (!token) throw new WebPushError("Liên kết mời không hợp lệ.");
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new WebPushError("Trình duyệt này không hỗ trợ thông báo đẩy.");
+    const verified = await requestJson("/onboarding/web-push/verify", null, { method: "POST", body: JSON.stringify({ token }) });
+    if (!verified.valid || !verified.publicKey) throw new WebPushError("Liên kết mời không còn hiệu lực.");
+    if (await Notification.requestPermission() !== "granted") throw new WebPushError("Bạn chưa cấp quyền nhận thông báo.");
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(verified.publicKey) });
+    await requestJson("/onboarding/web-push/subscriptions", null, { method: "POST", body: JSON.stringify({ token, subscription: subscription.toJSON() }) });
+    return subscription;
+  } catch (error) {
+    if (error instanceof WebPushError) throw error;
+    throw new WebPushError("Không thể đăng ký thiết bị. Vui lòng thử lại.");
   }
 }
 

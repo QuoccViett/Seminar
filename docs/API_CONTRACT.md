@@ -194,6 +194,36 @@ VC04 dùng các route sau, đều cần access token và tài khoản đã đổ
 
 `q` được trim, tối đa 100 ký tự, chuỗi rỗng tương đương không lọc. Email được trim và chuyển chữ thường, username được trim và chuyển chữ thường lúc tạo; phone được trim, chỉ nhận 9–15 chữ số với dấu `+` đầu chuỗi tùy chọn. Username không được sửa. Mọi phản hồi hồ sơ chọn trường công khai rõ ràng, không có `passwordHash`, `credentialVersion` hoặc mật khẩu cũ. Đổi vai trò/hạ trạng thái ADMIN cuối cùng trả `422 LAST_ADMIN`; tự khóa/hạ quyền trả `422 BUSINESS_RULE_VIOLATION`; trùng mã/tên đăng nhập/email/unit trả `409`, ID không thuộc quyền xem trả `404`. Audit thay đổi cùng giao dịch và chỉ lưu các trường công khai. `temporaryPassword` chỉ phục vụ cấp tay trong VC04; trạng thái chưa gửi phải hiển thị rõ. Gửi credential qua các kênh thuộc VC06/VC07.
 
+### Hộp thư và hàng đợi thông báo VC05
+
+Các route dưới đây cần Bearer access token đã đổi mật khẩu ban đầu, chỉ dùng `userId` từ token đã kiểm tra ở backend. `SYSTEM` là bản ghi hộp thư luôn bật; ba tùy chọn gửi ngoài là `WEB_PUSH`, `EMAIL`, `ZALO_ZNS`. `ZALO_ZNS` mặc định tắt ở cấu hình hệ thống. `TELEGRAM` trong schema cũ không được API mới nhận. Kết quả tiếp nhận thông báo không xác nhận đã gửi qua provider.
+
+| Route | Đầu vào | Phản hồi |
+|---|---|---|
+| `GET /notifications` | `page` (mặc định 1), `pageSize` (mặc định 20, tối đa 100), `isRead=true\|false` tùy chọn | `{items,page,pageSize,total}` sắp `createdAt,id` giảm dần; mỗi item có `id,type,title,body,refType,refId,isRead,createdAt` |
+| `GET /notifications/unread-count` | Không có | `{count}` |
+| `PATCH /notifications/:notificationId/read` | UUID trong path | `{isRead:true}`; thông báo không thuộc mình trả `404 NOT_FOUND` |
+| `POST /notifications/read-all` | Không có | `{updated}` là số bản ghi vừa chuyển sang đã đọc |
+| `GET /notifications/preferences` | Không có | `{SYSTEM:true,WEB_PUSH:boolean,EMAIL:boolean,ZALO_ZNS:boolean,zaloZnsAvailable:boolean}`; không có dòng preference nghĩa là bật với Email/Push |
+| `PATCH /notifications/preferences` | Một hoặc nhiều trường boolean `WEB_PUSH`, `EMAIL`, `ZALO_ZNS`; từ chối `SYSTEM` và trường lạ | Cùng shape GET; bật ZNS khi hệ thống tắt trả `400 VALIDATION_ERROR` |
+| `POST /notifications/test` | `{channel:"SYSTEM"\|"WEB_PUSH"\|"EMAIL"\|"ZALO_ZNS"}` | `{notificationId,queuedChannels}`; chỉ tạo hộp thư và delivery trong DB, provider xử lý sau commit; ZNS tắt hoặc kênh cá nhân tắt trả `400 VALIDATION_ERROR` |
+
+`notifyUser(tx, input)` là API nội bộ: caller đưa transaction Prisma đang mở, `userId,type,title,body,dedupeKey` và tham chiếu tùy chọn. Dedupe theo `(userId,dedupeKey)`; retry cùng khóa trả bản ghi cũ, không thêm delivery. Rollback nghiệp vụ cũng rollback hộp thư và outbox. Không truyền password, token hoặc bí mật vào title/body. Worker chỉ nhận delivery `PENDING` đã đến hạn, dùng `FOR UPDATE SKIP LOCKED`, lease và `claimToken` để chặn worker cũ hoàn tất việc của worker mới. Kết quả `SENT/FAILED/SKIPPED` và `reasonCode/lastError` tiếng Việt được lưu theo từng kênh, không trả lỗi provider thô. `FAILED` chỉ sau tối đa năm lần thử; lỗi vĩnh viễn chuyển `SKIPPED`. Provider Email/Push và kiểm gửi thật thuộc VC06; VC05 dùng provider giả trong test và provider chưa cấu hình được đánh dấu `SKIPPED`.
+
+### Cấu hình Email/Web Push/Zalo ZNS VC06
+
+Email chỉ khởi động khi `EMAIL_ENABLED=true` và SMTP host/port, `MAIL_FROM`, thông tin xác thực nếu bật `SMTP_AUTH_REQUIRED` hợp lệ; Web Push chỉ chạy khi `WEB_PUSH_ENABLED=true` và đủ VAPID public/private key cùng subject. Khi cờ tắt, provider không gọi dịch vụ ngoài và delivery thông báo thường được đánh dấu `SKIPPED` với mã thiếu người nhận/cấu hình tương ứng; lỗi SMTP tạm thời được retry qua worker, còn endpoint Web Push trả 404/410 sẽ bị thu hồi. Secret chỉ lấy từ cấu hình tiến trình, không trả qua API hoặc ghi log. `ZALO_ZNS_ENABLED` mặc định `false`; VC06 chỉ giữ cấu hình ZNS, chưa có provider gửi và cấu hình bật sẽ bị từ chối lúc khởi động để không tạo việc gửi giả. Email/Web Push có provider gửi cho thông báo thường và cho credential theo điều kiện xác nhận bên dưới.
+
+Để tương thích cấu hình Gmail đang dùng, backend cũng nhận `SMTP_PASS` như bí danh của `SMTP_PASSWORD` và `SMTP_FROM` như bí danh của `MAIL_FROM`; cấu hình mới nên dùng tên canonical. Khi Email hoặc Web Push bật, `CREDENTIALS_ENCRYPTION_KEY` là bắt buộc
+
+VC06 bổ sung các route sau. Mọi route có `userId` chỉ ADMIN dùng được; các route subscription Bearer luôn gắn với chính tài khoản trong token. `GET /notifications/web-push/public-key` công khai, trả `{enabled,publicKey}` với `publicKey:null` khi tắt. `POST /notifications/web-push/subscriptions` nhận `{endpoint,keys:{p256dh,auth},expirationTime?}` và trả `{registered:true}`; endpoint thuộc tài khoản khác trả `409 SUBSCRIPTION_OWNED`. `DELETE /notifications/web-push/subscriptions/current` nhận `{endpoint}` và trả `{revoked:true}`, chỉ thu hồi thiết bị của chính mình. Khi chưa đổi mật khẩu, người nhận mở link mời có token ở URL fragment, gọi `POST /onboarding/web-push/verify` với `{token}` và `POST /onboarding/web-push/subscriptions` với `{token,subscription}`; token 48 byte chỉ dùng một lần, hết hạn, gắn phiên bản credential và chỉ có quyền đăng ký Push. Không route nào cho token mời truy cập nghiệp vụ khác.
+
+Khi có `CREDENTIALS_ENCRYPTION_KEY` 32 byte dạng base64, tạo/reset user lưu một `CredentialDispatch` mã hóa AES-256-GCM cùng transaction; không đưa mật khẩu vào Notification, audit hoặc GET. Khóa này bắt buộc khi Email hoặc Web Push được bật. Admin xác nhận địa chỉ đã kiểm tra bằng `POST /users/:id/credential-deliveries/confirm-email` với `{email}` khớp email tài khoản hiện tại trước khi worker gửi; không có xác nhận thì Email ở trạng thái `PENDING` với `EMAIL_UNCONFIRMED`. `GET /users/:id/credential-deliveries` trả `{credentialsSentAt,allRequiredChannelsSent,channels:[{channel,status,errorCode,attemptCount,sentAt}],expiresAt,status,zaloZnsAvailable}`; không có ciphertext/token/password/email trong phản hồi. Web Push chưa có thiết bị giữ `PENDING/NO_SUBSCRIPTION` đến TTL, không báo SENT. Đổi/reset mật khẩu làm vô hiệu hóa dispatch cũ, xóa ciphertext; việc đang gửi được đồng bộ với thay đổi phiên bản. Thiếu khóa mã hóa khi mọi kênh gửi tắt thì tạo/reset vẫn hoạt động theo hợp đồng VC04 và trạng thái gửi tự động là `NOT_CONFIGURED`; cần reset lại sau khi cấu hình để tạo payload gửi, không thể tái tạo mật khẩu rõ từ hash.
+
+`allRequiredChannelsSent` chỉ là `true` khi dispatch có ít nhất một delivery bắt buộc và mọi delivery đều `SENT`; không có delivery trả `false` để phân biệt chưa cấu hình hoặc chưa xếp hàng với đã gửi thành công
+
+`GET /notifications/:notificationId/deliveries` cần Bearer của chủ thông báo, trả `{notificationId,channels:[{channel,status,reasonCode,lastError,attemptCount,sentAt}]}`. Không có delivery ngoài khi thông báo chỉ ở hộp thư SYSTEM. `SENT` ở cả hai loại delivery nghĩa provider đã tiếp nhận request, chưa xác nhận người nhận đã xem. [Hướng dẫn cấu hình SMTP/VAPID](./VC06_SMTP_VAPID.md) ghi rõ môi trường thử cục bộ và cách bật thực tế.
+
 ## 3. Đợt thi đua, ngưỡng và tiêu chí
 
 ### Tạo đợt

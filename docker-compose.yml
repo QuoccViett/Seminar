@@ -11,5 +11,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: kpi-mailpit
+    ports:
+      - "127.0.0.1:8026:8025"
+      - "127.0.0.1:1026:1025"
+
 volumes:
   postgres_data:

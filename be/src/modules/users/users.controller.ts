@@ -1,10 +1,12 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   Inject,
+  Optional,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -28,6 +30,11 @@ import { CreateUserDto } from "./dto/create-user.dto.js";
 import { UpdateUserDto } from "./dto/update-user.dto.js";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto.js";
 import { UsersService } from "./users.service.js";
+import { CredentialDispatchService } from "../notifications/credential-dispatch.service.js";
+import { ConfirmCredentialEmailDto } from "./dto/confirm-credential-email.dto.js";
+
+/** Đổi lỗi UUID của route credential sang tiếng Việt và giữ field kỹ thuật cho FE */
+const credentialUserIdPipe = new ParseUUIDPipe({ exceptionFactory: () => new BadRequestException({ code: "VALIDATION_ERROR", message: "Mã tài khoản không hợp lệ.", details: [{ field: "id", messages: ["id phải là UUID hợp lệ."] }] }) });
 
 @ApiTags("Users")
 @ApiBearerAuth("access-token")
@@ -37,6 +44,7 @@ export class UsersController {
   constructor(
     @Inject(UsersService)
     private readonly usersService: UsersService,
+    @Optional() @Inject(CredentialDispatchService) private readonly credentials?: CredentialDispatchService,
   ) {}
 
   @Get()
@@ -108,6 +116,19 @@ export class UsersController {
   resetPassword(@Param("id", ParseUUIDPipe) id: string, @GetCurrentUser() currentUser: CurrentUser) {
     return this.usersService.resetPassword(id, currentUser.id);
   }
+
+  /** Trả trạng thái gửi từng kênh cho Admin, không trả payload hay địa chỉ đã mã hóa */
+  @Get(":id/credential-deliveries")
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "[ADMIN] Trạng thái cấp thông tin đăng nhập theo kênh" })
+  credentialStatus(@Param("id", credentialUserIdPipe) id: string) { return this.credentials!.status(id); }
+
+  /** Ghi xác nhận email của Admin trước khi worker được gửi mật khẩu ban đầu tới địa chỉ này */
+  @Post(":id/credential-deliveries/confirm-email")
+  @HttpCode(HttpStatus.OK)
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "[ADMIN] Xác nhận email nhận thông tin đăng nhập" })
+  confirmCredentialEmail(@Param("id", credentialUserIdPipe) id: string, @Body() body: ConfirmCredentialEmailDto, @GetCurrentUser() user: CurrentUser) { return this.credentials!.confirmEmail(id, body.email, user.id); }
 
   @Patch(":id/status")
   @Roles("ADMIN")

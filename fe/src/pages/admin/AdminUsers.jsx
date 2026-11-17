@@ -6,13 +6,13 @@ import { unitService } from "../../services/unitService";
 import PageHeader from "../../components/common/PageHeader";
 import styles from "./AdminUsers.module.css";
 
-/** Hiển thị mật khẩu tạm đúng một lần và nêu rõ chưa có kênh gửi tự động ở VC04
+/** Hiển thị mật khẩu tạm đúng một lần và nêu rõ trạng thái chờ worker của VC06
  * Giá trị chỉ lấy từ phản hồi vừa tạo hoặc đặt lại, không được lưu vào state danh sách
  */
 function showTemporaryPassword(result) {
   Modal.info({
     title: "Thông tin đăng nhập tạm",
-    content: <Space orientation="vertical"><span>Mật khẩu tạm của tài khoản này:</span><Input.Password readOnly value={result.temporaryPassword} /><span>Chưa gửi qua Email, Web Push hoặc Zalo ZNS. Hãy bàn giao thủ công qua kênh an toàn.</span><span>Tài khoản phải đổi mật khẩu khi đăng nhập lần đầu.</span></Space>,
+    content: <Space orientation="vertical"><span>Mật khẩu tạm của tài khoản này:</span><Input.Password readOnly value={result.temporaryPassword} /><span>Việc gửi qua Email/Web Push phụ thuộc cấu hình và điều kiện nhận. Xem “Trạng thái gửi” để kiểm tra, không coi việc tạo tài khoản là đã gửi.</span><span>Tài khoản phải đổi mật khẩu khi đăng nhập lần đầu.</span></Space>,
     okText: "Đã ghi nhận",
   });
 }
@@ -167,13 +167,35 @@ export default function AdminUsers() {
     });
   }
 
+  /** Xem kết quả từng kênh từ backend, bao gồm chờ đăng ký Push và ZNS chưa kích hoạt */
+  async function showDeliveryStatus(user) {
+    try {
+      const result = await userService.getCredentialStatus(user.id);
+      const labels = { SENT: "Đã được kênh tiếp nhận", PENDING: "Đang chờ", FAILED: "Gửi thất bại", SKIPPED: "Đã bỏ qua" };
+      Modal.info({ title: `Trạng thái gửi: ${user.username}`, content: <Space orientation="vertical">
+        <span>{result.status === "NOT_CONFIGURED" ? "Chưa cấu hình khóa mã hóa để cấp tự động. Cần đặt lại mật khẩu sau khi cấu hình." : result.allRequiredChannelsSent ? "Các kênh được yêu cầu đã tiếp nhận." : "Còn kênh chưa tiếp nhận thông tin đăng nhập."}</span>
+        {result.channels.map((item) => <span key={item.channel}>{item.channel}: {labels[item.status] ?? item.status}{item.errorCode ? ` (${item.errorCode})` : ""}</span>)}
+        <span>Zalo ZNS: Chưa kích hoạt</span>
+      </Space>, okText: "Đóng" });
+    } catch (error) { message.error(error.message || "Không thể tải trạng thái gửi thông tin đăng nhập."); }
+  }
+
+  /** Admin chỉ mở khóa gửi Email sau khi tự kiểm tra đúng địa chỉ người nhận trên modal */
+  function confirmEmail(user) {
+    if (!user.email) { message.error("Tài khoản chưa có địa chỉ email."); return; }
+    Modal.confirm({ title: "Xác nhận địa chỉ nhận thông tin đăng nhập", content: `Tôi đã kiểm tra ${user.email} thuộc đúng người nhận ${user.username}. Sau khi xác nhận, hệ thống có thể gửi mật khẩu ban đầu tới địa chỉ này.`, okText: "Đã kiểm tra, cho phép gửi", cancelText: "Hủy", onOk: async () => {
+      try { await userService.confirmCredentialEmail(user.id, user.email); message.success("Đã xác nhận email. Trạng thái gửi sẽ được cập nhật sau khi worker xử lý."); }
+      catch (error) { message.error(error.message || "Không thể xác nhận email nhận thông tin đăng nhập."); }
+    } });
+  }
+
   const columns = [
     { title: "Tên đăng nhập", dataIndex: "username", key: "username" },
     { title: "Họ và tên", dataIndex: "fullName", key: "fullName" },
     { title: "Quyền", dataIndex: "role", key: "role" },
     { title: "Đơn vị", key: "unit", render: (_, user) => user.unit?.name ?? "Toàn hệ thống" },
     { title: "Trạng thái", key: "status", render: (_, user) => <Space orientation="vertical"><Tag color={user.isActive ? "green" : "red"}>{user.isActive ? "Đang hoạt động" : "Đã khóa"}</Tag>{user.mustChangePassword && <Tag color="orange">Phải đổi mật khẩu</Tag>}{!user.credentialsSentAt && <Tag>Chưa gửi thông tin đăng nhập</Tag>}</Space> },
-    { title: "Hành động", key: "action", render: (_, user) => <Space><Button icon={<EditOutlined />} onClick={() => openForm(user)}>Sửa</Button><Button icon={user.isActive ? <LockOutlined /> : <UnlockOutlined />} onClick={() => toggleStatus(user)}>{user.isActive ? "Khóa" : "Mở"}</Button><Button icon={<KeyOutlined />} onClick={() => resetPassword(user)}>Đặt lại mật khẩu</Button></Space> },
+    { title: "Hành động", key: "action", render: (_, user) => <Space wrap><Button icon={<EditOutlined />} onClick={() => openForm(user)}>Sửa</Button><Button icon={user.isActive ? <LockOutlined /> : <UnlockOutlined />} onClick={() => toggleStatus(user)}>{user.isActive ? "Khóa" : "Mở"}</Button><Button icon={<KeyOutlined />} onClick={() => resetPassword(user)}>Đặt lại mật khẩu</Button><Button onClick={() => showDeliveryStatus(user)}>Trạng thái gửi</Button><Button disabled={!user.email || !user.mustChangePassword} onClick={() => confirmEmail(user)}>Xác nhận email</Button></Space> },
   ];
 
   return <div className={styles.pageContainer}>

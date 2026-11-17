@@ -17,6 +17,7 @@ import { AuditService } from "../../common/services/audit.service.js";
 import type { CurrentUser } from "../../common/decorators/current-user.js";
 import type { CreateUserDto } from "./dto/create-user.dto.js";
 import type { UpdateUserDto } from "./dto/update-user.dto.js";
+import { CredentialDispatchService } from "../notifications/credential-dispatch.service.js";
 
 const BCRYPT_ROUNDS = 12;
 const UUID_PATTERN =
@@ -152,6 +153,7 @@ export class UsersService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() @Inject(ConfigService) private readonly config?: ConfigService,
     @Optional() @Inject(AuditService) private readonly audit?: AuditService,
+    @Optional() @Inject(CredentialDispatchService) private readonly credentials?: CredentialDispatchService,
   ) {}
 
   /** Liệt kê tài khoản với bộ lọc được xác thực và thứ tự ổn định có ID
@@ -331,6 +333,8 @@ export class UsersService {
         },
         select: USER_SELECT,
         });
+        // Tạo payload mã hóa và hàng đợi cùng giao dịch user; lỗi DB phải hoàn tác cả hai phía
+        await this.credentials?.enqueue(tx, { userId: created.id, version: 0, username, password: temporaryPassword, email });
         await this.audit?.record({ actorId: actorId ?? null, action: "USER_CREATED", entity: "User", entityId: created.id, after: created }, tx);
         return created;
       });
@@ -487,6 +491,8 @@ export class UsersService {
           await tx.refreshToken.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: data.updatedAt } });
           await tx.webPushSubscription.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: data.updatedAt } });
         }
+        // Email mới hoặc trạng thái khóa khiến payload cấp trước đó không còn đúng người nhận
+        if (data.email !== undefined && data.email !== before.email) await this.credentials?.cancelForUser(tx, id, data.updatedAt);
         await this.audit?.record({ actorId: currentUser.id, action: "USER_UPDATED", entity: "User", entityId: id, before, after: updated }, tx);
         return updated;
       });
@@ -516,6 +522,8 @@ export class UsersService {
       await tx.$executeRaw`SELECT 1 FROM "users" WHERE "id" = ${id}::uuid FOR UPDATE`;
       const before = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
       if (!before) throw userNotFound();
+      const versionRow = await tx.user.findUnique({ where: { id }, select: { credentialVersion: true } });
+      await this.credentials?.cancelForUser(tx, id, now);
       const updated = await tx.user.update({
         where: { id },
         data: {
@@ -535,6 +543,7 @@ export class UsersService {
         data: { revokedAt: now },
       });
       await tx.webPushSubscription.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: now } });
+      await this.credentials?.enqueue(tx, { userId: id, version: (versionRow?.credentialVersion ?? 0) + 1, username: before.username, password: temporaryPassword, email: before.email });
       await this.audit?.record({ actorId: actorId ?? null, action: "USER_PASSWORD_RESET", entity: "User", entityId: id, before, after: updated }, tx);
     });
 
@@ -560,9 +569,11 @@ export class UsersService {
 
     const now = new Date();
 
+    // Tăng thời gian chờ để request cạnh tranh có thể tuần tự hóa qua khóa PostgreSQL và nhận đúng lỗi LAST_ADMIN
+    // Nếu dùng timeout mặc định, transaction thứ hai có thể bị Prisma hủy trước khi kiểm tra được số ADMIN còn hoạt động
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT 1 FROM "users" WHERE "id" = ${id}::uuid FOR UPDATE`;
       if (!isActive) await tx.$executeRaw`SELECT pg_advisory_xact_lock(417004)`;
+      await tx.$executeRaw`SELECT 1 FROM "users" WHERE "id" = ${id}::uuid FOR UPDATE`;
       const before = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
       if (!before) throw userNotFound();
       if (!isActive && before.role === "ADMIN" && before.isActive) {
@@ -589,9 +600,10 @@ export class UsersService {
           data: { revokedAt: now },
         });
         await tx.webPushSubscription.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: now } });
+        await this.credentials?.cancelForUser(tx, id, now);
       }
       await this.audit?.record({ actorId: currentUser.id, action: isActive ? "USER_ACTIVATED" : "USER_DEACTIVATED", entity: "User", entityId: id, before, after: updated }, tx);
       return updated;
-    });
+    }, { timeout: 10000 });
   }
 }

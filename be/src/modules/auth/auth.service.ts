@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AuditService } from "../../common/services/audit.service.js";
+import { CredentialDispatchService } from "../notifications/credential-dispatch.service.js";
 
 const BCRYPT_ROUNDS = 12;
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomBytes(32).toString("hex"), BCRYPT_ROUNDS);
@@ -40,7 +41,7 @@ function requireRefreshToken(body: { refreshToken?: unknown } | null | undefined
 
 @Injectable()
 export class AuthService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(JwtService) private readonly jwtService: JwtService, @Optional() @Inject(ConfigService) private readonly config?: ConfigService, @Optional() @Inject(AuditService) private readonly audit?: AuditService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(JwtService) private readonly jwtService: JwtService, @Optional() @Inject(ConfigService) private readonly config?: ConfigService, @Optional() @Inject(AuditService) private readonly audit?: AuditService, @Optional() @Inject(CredentialDispatchService) private readonly credentials?: CredentialDispatchService) {}
 
   /** Chỉ tài khoản đang hoạt động, có vai trò và đơn vị nhất quán mới được cấp phiên */
   private isUsable(user: { role: string; unitId: string | null; isActive: boolean; unit?: { isActive: boolean } | null }): boolean {
@@ -154,6 +155,8 @@ export class AuthService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const changed = await tx.user.updateMany({ where: { id: user.id, passwordHash: user.passwordHash, credentialVersion: user.credentialVersion }, data: { passwordHash, mustChangePassword: false, credentialVersion: { increment: 1 }, passwordChangedAt: now, updatedAt: now } });
       if (changed.count !== 1) throw validationError("currentPassword", "Mật khẩu đã thay đổi, vui lòng thử lại.");
+      // Phiên bản mới hủy toàn bộ ciphertext/token mời cũ ngay trong giao dịch đổi mật khẩu
+      await this.credentials?.cancelForUser(tx, user.id, now);
       await tx.refreshToken.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: now } });
       await tx.refreshToken.create({ data: { id: randomUUID(), userId: user.id, tokenHash: hashRefreshToken(refreshToken), expiresAt: new Date(now.getTime() + this.refreshTtl * 1000), createdAt: now } });
       await this.audit?.record({ actorId: user.id, action: "PASSWORD_CHANGED", entity: "User", entityId: user.id, ip }, tx);
