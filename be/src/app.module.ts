@@ -14,6 +14,7 @@ import { HttpLoggingMiddleware } from "./common/middleware/http-logging.middlewa
 import { CommonModule } from "./common/common.module.js";
 import { DashboardModule } from "./modules/dashboard/dashboard.module.js";
 import { ExportsModule } from "./modules/exports/exports.module.js";
+import { NotificationsModule } from "./modules/notifications/notifications.module.js";
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ExportsModule } from "./modules/exports/exports.module.js";
     AuditLogsModule,
     DashboardModule,
     ExportsModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [HttpLoggingMiddleware],

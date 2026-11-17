@@ -19,16 +19,22 @@ export const envValidationSchema = Joi.object({
     is: "production", then: Joi.string().min(6).required(), otherwise: Joi.string().min(6).default("123456"),
   }),
   CREDENTIALS_ENCRYPTION_KEY: Joi.string().allow("").optional(),
+  PUBLIC_APP_URL: Joi.string().uri({ scheme: ["http", "https"] }).optional(),
   WEB_PUSH_ENABLED: Joi.boolean().default(false),
+  WEB_PUSH_ALLOWED_HOSTS: Joi.string().optional(),
   WEB_PUSH_VAPID_PUBLIC_KEY: Joi.when("WEB_PUSH_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   WEB_PUSH_VAPID_PRIVATE_KEY: Joi.when("WEB_PUSH_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   WEB_PUSH_SUBJECT: Joi.when("WEB_PUSH_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   EMAIL_ENABLED: Joi.boolean().default(false),
   SMTP_HOST: Joi.when("EMAIL_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   SMTP_PORT: Joi.number().port().default(587),
-  SMTP_USER: Joi.when("EMAIL_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
-  SMTP_PASSWORD: Joi.when("EMAIL_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
-  MAIL_FROM: Joi.when("EMAIL_ENABLED", { is: true, then: Joi.string().email({ tlds: { allow: false } }).required(), otherwise: Joi.string().allow("").optional() }),
+  SMTP_AUTH_REQUIRED: Joi.boolean().default(true),
+  SMTP_ALLOW_INSECURE_LOCAL: Joi.boolean().default(false),
+  SMTP_USER: Joi.string().allow("").optional(),
+  SMTP_PASSWORD: Joi.string().allow("").optional(),
+  SMTP_PASS: Joi.string().allow("").optional(),
+  MAIL_FROM: Joi.string().email({ tlds: { allow: false } }).allow("").optional(),
+  SMTP_FROM: Joi.string().email({ tlds: { allow: false } }).allow("").optional(),
   ZALO_ZNS_ENABLED: Joi.boolean().default(false),
   ZALO_APP_ID: Joi.when("ZALO_ZNS_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   ZALO_APP_SECRET: Joi.when("ZALO_ZNS_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
@@ -59,18 +65,32 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
       return !["http:", "https:"].includes(url.protocol) || url.origin !== origin.trim();
     } catch { return true; }
   })) throw new Error("Cấu hình CORS_ORIGINS hoặc WEB_ORIGINS phải là origin HTTP hoặc HTTPS cụ thể");
-  if (result.value.ZALO_ZNS_ENABLED) {
+  const normalized = result.value as Record<string, unknown>;
+  // Chuẩn hóa bí danh Gmail về tên canonical trước khi kiểm tra điều kiện và khởi tạo provider
+  // Cho phép môi trường cũ tiếp tục chạy mà không làm thay đổi mặc định Email đang tắt
+  if (!normalized.MAIL_FROM && normalized.SMTP_FROM) normalized.MAIL_FROM = normalized.SMTP_FROM;
+  if (!normalized.SMTP_PASSWORD && normalized.SMTP_PASS) normalized.SMTP_PASSWORD = normalized.SMTP_PASS;
+  if (normalized.EMAIL_ENABLED && !normalized.SMTP_HOST) throw new Error("SMTP_HOST là bắt buộc khi bật xác thực Email");
+  if (normalized.EMAIL_ENABLED && !normalized.MAIL_FROM) throw new Error("MAIL_FROM hoặc SMTP_FROM là bắt buộc khi bật xác thực Email");
+  if (normalized.ZALO_ZNS_ENABLED) {
     try {
       const map: unknown = JSON.parse(String(result.value.ZALO_TEMPLATE_MAP));
       if (!map || Array.isArray(map) || typeof map !== "object" || Object.values(map).length === 0 ||
         Object.values(map).some((value) => typeof value !== "string" || !value.trim())) throw new Error("Danh sách mẫu không hợp lệ");
     } catch { throw new Error("Cấu hình ZALO_TEMPLATE_MAP phải là đối tượng JSON chứa mã mẫu hợp lệ"); }
+    throw new Error("Zalo ZNS chưa có provider gửi thật; giữ ZALO_ZNS_ENABLED=false cho đến khi tích hợp được kích hoạt");
   }
-  if (result.value.CREDENTIALS_ENCRYPTION_KEY) {
-    const key = String(result.value.CREDENTIALS_ENCRYPTION_KEY);
+  if (normalized.CREDENTIALS_ENCRYPTION_KEY) {
+    const key = String(normalized.CREDENTIALS_ENCRYPTION_KEY);
     if (!/^[A-Za-z0-9+/]{43}=$/.test(key) || Buffer.from(key, "base64").length !== 32) {
       throw new Error("CREDENTIALS_ENCRYPTION_KEY phải là khóa base64 có độ dài giải mã 32 byte");
     }
   }
-  return result.value as Record<string, unknown>;
+  // SMTP thật cần xác thực và TLS; Mailpit chỉ được miễn qua cờ riêng cùng host loopback ở môi trường không production
+  if (normalized.EMAIL_ENABLED && normalized.SMTP_AUTH_REQUIRED && (!normalized.SMTP_USER || !normalized.SMTP_PASSWORD)) throw new Error("Cấu hình SMTP_USER và SMTP_PASSWORD hoặc SMTP_PASS là bắt buộc khi bật xác thực Email");
+  if (normalized.EMAIL_ENABLED && !normalized.SMTP_AUTH_REQUIRED && !(normalized.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "::1"].includes(String(normalized.SMTP_HOST)))) throw new Error("SMTP không xác thực chỉ được dùng với Mailpit cục bộ ở môi trường thử nghiệm");
+  if (normalized.EMAIL_ENABLED && (normalized.SMTP_PORT === 25 || normalized.SMTP_PORT === 1025) && !(normalized.NODE_ENV !== "production" && normalized.SMTP_ALLOW_INSECURE_LOCAL && ["localhost", "127.0.0.1", "::1"].includes(String(normalized.SMTP_HOST)))) throw new Error("SMTP không mã hóa chỉ được phép cho Mailpit cục bộ ở môi trường thử nghiệm");
+  if ((normalized.EMAIL_ENABLED || normalized.WEB_PUSH_ENABLED) && !normalized.CREDENTIALS_ENCRYPTION_KEY) throw new Error("CREDENTIALS_ENCRYPTION_KEY là bắt buộc khi bật Email hoặc Web Push để cấp thông tin đăng nhập an toàn");
+  if (normalized.WEB_PUSH_ALLOWED_HOSTS && String(normalized.WEB_PUSH_ALLOWED_HOSTS).split(",").some((host) => !/^[a-z0-9.-]+$/.test(host.trim()) || host.trim().startsWith(".") || host.trim().endsWith("."))) throw new Error("WEB_PUSH_ALLOWED_HOSTS phải là danh sách tên miền hợp lệ");
+  return normalized;
 }

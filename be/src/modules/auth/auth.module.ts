@@ -5,11 +5,13 @@ import { PrismaModule } from "../../prisma/prisma.module.js";
 import { AuthController } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js";
+import { NotificationsModule } from "../notifications/notifications.module.js";
 
 @Global()
 @Module({
   imports: [
     PrismaModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       // Dùng cùng issuer và audience khi ký và xác minh để token từ hệ thống khác không được chấp nhận

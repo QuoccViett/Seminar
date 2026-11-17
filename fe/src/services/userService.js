@@ -11,4 +11,8 @@ export const userService = {
   toggleUserStatus: (id, isActive) => apiClient.patch(`/users/${id}/status`, { isActive }),
   /** Đặt lại mật khẩu và chỉ nhận mật khẩu tạm ở phản hồi hiện tại */
   resetPassword: (id) => apiClient.post(`/users/${id}/reset-password`),
+  /** Đọc trạng thái giao credential của lượt cấp mới nhất mà không nhận payload bí mật */
+  getCredentialStatus: (id) => apiClient.get(`/users/${id}/credential-deliveries`),
+  /** Admin xác nhận đã kiểm tra email hiện tại trước khi worker được gửi mật khẩu */
+  confirmCredentialEmail: (id, email) => apiClient.post(`/users/${id}/credential-deliveries/confirm-email`, { email }),
 };

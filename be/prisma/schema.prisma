@@ -430,10 +430,11 @@ model CredentialDispatch {
   id           String               @id @db.Uuid
   userId       String               @map("user_id") @db.Uuid
   credentialVersion Int             @map("credential_version")
-  ciphertext   String               @db.Text
-  nonce        String               @db.VarChar
-  authTag      String               @map("auth_tag") @db.VarChar
+  ciphertext   String?              @db.Text
+  nonce        String?              @db.VarChar
+  authTag      String?              @map("auth_tag") @db.VarChar
   keyId        String               @map("key_id") @db.VarChar
+  emailConfirmedAt DateTime?        @map("email_confirmed_at") @db.Timestamp(6)
   expiresAt    DateTime             @map("expires_at") @db.Timestamp(6)
   canceledAt   DateTime?            @map("canceled_at") @db.Timestamp(6)
   createdAt    DateTime             @map("created_at") @db.Timestamp(6)
