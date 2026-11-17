@@ -1,0 +1,18 @@
+title = "Seminar secret scanning"
+
+[extend]
+useDefault = true
+
+# Chỉ bỏ qua bốn mật khẩu giả cố định trong hai bài kiểm thử tích hợp VC03 và VC04
+# Điều kiện AND giữ các quy tắc quét khác và mọi file ngoài hai fixture tiếp tục được kiểm tra
+[[allowlists]]
+description = "Mật khẩu giả trong kiểm thử tích hợp VC03 và VC04"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^be/test/integration/vc0[34]\.\w+\.test\.ts$''']
+regexes = [
+  '''^MatkhauVC03kiemthu9$''',
+  '''^MatkhauVC04kiemthu9$''',
+  '''^MatkhauVC04DonVi9$''',
+  '''^MatkhauVC04SauReset9$''',
+]

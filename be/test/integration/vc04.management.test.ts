@@ -18,10 +18,12 @@ test("VC04 quản trị qua backend và PostgreSQL thật", async () => {
   process.env.WEB_ORIGINS = "http://127.0.0.1:5173";
   process.env.NODE_ENV = "test";
   process.env.TZ = "UTC";
-  const { AppModule } = await import("../../dist/app.module.js");
-  const { PrismaService } = await import("../../dist/prisma/prisma.service.js");
-  const { AllExceptionsFilter } = await import("../../dist/common/filters/all-exceptions.filter.js");
-  const { createApiValidationPipe } = await import("../../dist/common/pipes/api-validation.pipe.js");
+  // Nạp bản build để Nest giữ metadata decorator, dùng đường dẫn động vì dist không phát hành khai báo kiểu
+  const buildRoot = "../../dist";
+  const { AppModule } = await import(`${buildRoot}/app.module.js`);
+  const { PrismaService } = await import(`${buildRoot}/prisma/prisma.service.js`);
+  const { AllExceptionsFilter } = await import(`${buildRoot}/common/filters/all-exceptions.filter.js`);
+  const { createApiValidationPipe } = await import(`${buildRoot}/common/pipes/api-validation.pipe.js`);
   const app = await NestFactory.create(AppModule, { logger: false });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalPipes(createApiValidationPipe());
