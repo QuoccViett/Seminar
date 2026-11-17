@@ -57,6 +57,7 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
   process.env.CREDENTIALS_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   process.env.WEB_PUSH_ENABLED = "false";
   process.env.ZALO_ZNS_ENABLED = "false";
+  const changedPassword = randomBytes(12).toString("hex");
 
   const distUrl = new URL("../../dist/", import.meta.url);
   const { AppModule } = await import(new URL("app.module.js", distUrl).href);
@@ -161,7 +162,7 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
     const importedLogin = await request("POST", "auth/login", undefined, { username: passwordAccount.username, password: initialPassword });
     assert.equal(importedLogin.status, 200);
     assert.equal((await request("GET", `users/${passwordAccount.userId}`, importedLogin.body.accessToken as string)).status, 403);
-    assert.equal((await request("POST", "auth/change-password", importedLogin.body.accessToken as string, { currentPassword: initialPassword, newPassword: "MatkhauVC07Moi9" })).status, 200);
+    assert.equal((await request("POST", "auth/change-password", importedLogin.body.accessToken as string, { currentPassword: initialPassword, newPassword: changedPassword })).status, 200);
     const repeatedConfirm = await request("POST", `users/import/${importId}/confirm`, adminToken, {});
     assert.deepEqual(repeatedConfirm.body, confirmed.body);
     assert.equal(await prisma.user.count({ where: { username: { startsWith: `vc07-${suffix}-` } } }), 34);
