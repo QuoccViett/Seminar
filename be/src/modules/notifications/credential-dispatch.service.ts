@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { Prisma } from "../../generated/prisma/client.js";
@@ -110,6 +110,28 @@ export class CredentialDispatchService implements OnModuleInit, OnModuleDestroy 
     return { credentialsSentAt: user.credentialsSentAt, allRequiredChannelsSent: channels.length > 0 && channels.every((item) => item.status === "SENT"), channels, expiresAt: dispatch?.expiresAt ?? null, status: dispatch ? "QUEUED" : "NOT_CONFIGURED", zaloZnsAvailable: false };
   }
 
+  /** Đặt lại một delivery EMAIL/WEB_PUSH đã thất bại khi cùng dispatch còn hạn và ciphertext còn dùng được
+   * Đầu vào là user/channel từ route ADMIN, đầu ra chỉ xác nhận trạng thái PENDING; provider vẫn chạy riêng ở worker
+   * EMAIL cần xác nhận địa chỉ trước đó, WEB_PUSH cần thiết bị đang đăng ký, còn ZNS bị loại khỏi API này
+   */
+  async retryChannel(userId: string, channel: "EMAIL" | "WEB_PUSH", actorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { credentialVersion: true, isActive: true, mustChangePassword: true } });
+      if (!user) throw missingDispatch();
+      const dispatch = await tx.credentialDispatch.findUnique({ where: { userId_credentialVersion: { userId, credentialVersion: user.credentialVersion } }, include: { deliveries: true } });
+      const delivery = dispatch?.deliveries.find((item) => item.channel === channel);
+      if (!dispatch || dispatch.canceledAt || dispatch.expiresAt <= new Date() || !dispatch.ciphertext || !user.isActive || !user.mustChangePassword || !delivery) throw missingDispatch();
+      if (delivery.status !== "FAILED") throw new ConflictException({ code: "CREDENTIAL_DELIVERY_NOT_FAILED", message: "Kênh này chưa ở trạng thái thất bại để thử lại.", details: [] });
+      if (channel === "EMAIL" && !dispatch.emailConfirmedAt) throw new UnprocessableEntityException({ code: "EMAIL_UNCONFIRMED", message: "Cần xác nhận email người nhận trước khi thử gửi lại.", details: [] });
+      if (channel === "WEB_PUSH" && !await this.push.resolveRecipient(userId)) throw new UnprocessableEntityException({ code: "NO_SUBSCRIPTION", message: "Tài khoản chưa có thiết bị Web Push đang hoạt động.", details: [] });
+      const now = new Date();
+      await tx.credentialDelivery.update({ where: { id: delivery.id }, data: { status: "PENDING", attemptCount: 0, errorCode: null, nextAttemptAt: null, claimedAt: null, leaseUntil: null, claimToken: null, updatedAt: now } });
+      await this.audit.record({ actorId, action: "CREDENTIAL_DELIVERY_RETRIED", entity: "CredentialDelivery", entityId: delivery.id, after: { channel } }, tx);
+      return { userId, channel, status: "PENDING" as const };
+    });
+  }
+
   /** Giải mã chỉ bên trong worker hoặc xác nhận Admin; AAD chặn đổi payload giữa user/version */
   private decrypt(dispatch: { userId: string; credentialVersion: number; ciphertext: string | null; nonce: string | null; authTag: string | null; keyId: string }): CredentialPayload {
     const key = this.key();
@@ -169,7 +191,7 @@ export class CredentialDispatchService implements OnModuleInit, OnModuleDestroy 
       if (delivery.channel === "WEB_PUSH" && result.kind === "skip" && result.reasonCode === "RECIPIENT_MISSING") { await this.defer(tx, claim, "NO_SUBSCRIPTION"); return; }
       await this.finish(tx, claim, delivery.attemptCount, result);
       if (result.kind === "sent") await tx.user.updateMany({ where: { id: dispatch.userId, credentialVersion: dispatch.credentialVersion, credentialsSentAt: null }, data: { credentialsSentAt: new Date() } });
-      const unfinished = await tx.credentialDelivery.count({ where: { dispatchId: dispatch.id, status: "PENDING" } });
+      const unfinished = await tx.credentialDelivery.count({ where: { dispatchId: dispatch.id, status: { in: ["PENDING", "FAILED"] } } });
       if (unfinished === 0) await tx.credentialDispatch.update({ where: { id: dispatch.id }, data: { ciphertext: null, nonce: null, authTag: null } });
     }, { timeout: 20000 });
   }

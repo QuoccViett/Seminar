@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
@@ -12,11 +13,18 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Response } from "express";
+import { Res } from "@nestjs/common";
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
+  ApiHeader,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -32,9 +40,13 @@ import { UpdateUserStatusDto } from "./dto/update-user-status.dto.js";
 import { UsersService } from "./users.service.js";
 import { CredentialDispatchService } from "../notifications/credential-dispatch.service.js";
 import { ConfirmCredentialEmailDto } from "./dto/confirm-credential-email.dto.js";
+import { UserImportService } from "./user-import.service.js";
+import { RetryCredentialDeliveryDto } from "./dto/retry-credential-delivery.dto.js";
 
 /** Đổi lỗi UUID của route credential sang tiếng Việt và giữ field kỹ thuật cho FE */
 const credentialUserIdPipe = new ParseUUIDPipe({ exceptionFactory: () => new BadRequestException({ code: "VALIDATION_ERROR", message: "Mã tài khoản không hợp lệ.", details: [{ field: "id", messages: ["id phải là UUID hợp lệ."] }] }) });
+/** Kiểm UUID của phiên import và giữ đúng tên field để FE gắn lỗi vào thao tác đang thực hiện */
+const importSessionIdPipe = new ParseUUIDPipe({ exceptionFactory: () => new BadRequestException({ code: "VALIDATION_ERROR", message: "Mã phiên nhập không hợp lệ.", details: [{ field: "importId", messages: ["importId phải là UUID hợp lệ."] }] }) });
 
 @ApiTags("Users")
 @ApiBearerAuth("access-token")
@@ -44,8 +56,56 @@ export class UsersController {
   constructor(
     @Inject(UsersService)
     private readonly usersService: UsersService,
+    @Inject(UserImportService) private readonly userImport: UserImportService,
     @Optional() @Inject(CredentialDispatchService) private readonly credentials?: CredentialDispatchService,
   ) {}
+
+  /** Trả workbook XLSX mẫu cho quản trị viên tải về
+   * Đầu vào không có; đầu ra là byte file với MIME và tên cố định để trình duyệt tải xuống
+   * Header/cột được UserImportService sinh cùng nguồn với parser nhằm tránh lệch cấu trúc
+   */
+  @Get("import/template")
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "[ADMIN] Tải tệp mẫu nhập tài khoản UNIT" })
+  async importTemplate(@Res() response: Response): Promise<void> {
+    const buffer = await this.userImport.createTemplate();
+    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", 'attachment; filename="mau-nhap-tai-khoan-unit.xlsx"');
+    response.setHeader("Content-Length", buffer.length);
+    response.status(HttpStatus.OK).send(buffer);
+  }
+
+  /** Nhận một upload XLSX giới hạn bộ nhớ và tạo preview do Admin sở hữu
+   * Đầu vào là field multipart file, Idempotency-Key và actor từ Bearer; đầu ra là các dòng chuẩn hóa/lỗi
+   * Multer cắt file quá lớn trước khi service đọc; guard/controller kiểm role trước lưu bất kỳ phiên nào
+   * Route không tạo Unit/User và không gọi provider, kể cả khi tệp hợp lệ
+   */
+  @Post("import/preview")
+  @Roles("ADMIN")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
+  @ApiOperation({ summary: "[ADMIN] Kiểm tra và xem trước tệp Excel tài khoản UNIT" })
+  @ApiConsumes("multipart/form-data")
+  @ApiHeader({ name: "Idempotency-Key", required: true, description: "Khóa ổn định cho một lần xem trước và retry cùng tệp" })
+  @ApiBody({ schema: { type: "object", required: ["file"], properties: { file: { type: "string", format: "binary" } } } })
+  previewImport(
+    @UploadedFile() file: { buffer: Buffer; size: number; originalname: string },
+    @Headers("Idempotency-Key") idempotencyKey: string,
+    @GetCurrentUser() currentUser: CurrentUser,
+  ) {
+    return this.userImport.preview(file, currentUser.id, idempotencyKey);
+  }
+
+  /** Chuyển yêu cầu xác nhận phiên cho service giao dịch
+   * Đầu vào là UUID phiên và Admin từ token; đầu ra là kết quả persisted, bao gồm trạng thái credential từng dòng
+   * Service che phiên của Admin khác như 404 và rollback toàn lô nếu TTL, Unit hoặc uniqueness không còn hợp lệ
+   */
+  @Post("import/:importId/confirm")
+  @HttpCode(HttpStatus.OK)
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "[ADMIN] Tạo các tài khoản đã xem trước trong một giao dịch" })
+  confirmImport(@Param("importId", importSessionIdPipe) importId: string, @GetCurrentUser() currentUser: CurrentUser) {
+    return this.userImport.confirm(importId, currentUser.id);
+  }
 
   @Get()
   @Roles("ADMIN")
@@ -129,6 +189,20 @@ export class UsersController {
   @Roles("ADMIN")
   @ApiOperation({ summary: "[ADMIN] Xác nhận email nhận thông tin đăng nhập" })
   confirmCredentialEmail(@Param("id", credentialUserIdPipe) id: string, @Body() body: ConfirmCredentialEmailDto, @GetCurrentUser() user: CurrentUser) { return this.credentials!.confirmEmail(id, body.email, user.id); }
+
+  /** Đặt một delivery lỗi về trạng thái chờ để worker xử lý lại
+   * Đầu vào gồm userId, channel đã allowlist và actor Admin; đầu ra chỉ xác nhận PENDING
+   * Service cần payload còn mã hóa, session còn TTL, Email đã được xác nhận hoặc Web Push có subscription
+   * Request không gọi mạng, không tạo lại password và không nhận channel ZNS
+   */
+  @Post(":id/credential-deliveries/retry")
+  @HttpCode(HttpStatus.OK)
+  @Roles("ADMIN")
+  @ApiOperation({ summary: "[ADMIN] Thử lại kênh gửi thông tin đăng nhập đã thất bại" })
+  @ApiBody({ type: RetryCredentialDeliveryDto })
+  retryCredentialDelivery(@Param("id", credentialUserIdPipe) id: string, @Body() body: RetryCredentialDeliveryDto, @GetCurrentUser() user: CurrentUser) {
+    return this.credentials!.retryChannel(id, body.channel, user.id);
+  }
 
   @Patch(":id/status")
   @Roles("ADMIN")

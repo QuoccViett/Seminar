@@ -4,11 +4,12 @@ import { AuthModule } from "../auth/auth.module.js";
 import { NotificationsModule } from "../notifications/notifications.module.js";
 import { UsersController } from "./users.controller.js";
 import { UsersService } from "./users.service.js";
+import { UserImportService } from "./user-import.service.js";
 
 @Module({
   imports: [PrismaModule, AuthModule, NotificationsModule],
   controllers: [UsersController],
-  providers: [UsersService],
-  exports: [UsersService],
+  providers: [UsersService, UserImportService],
+  exports: [UsersService, UserImportService],
 })
 export class UsersModule {}
