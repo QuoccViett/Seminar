@@ -8,4 +8,4 @@ c6b13ce1f67d47a5a457f7a003b81402b161d2fe:be/test/integration/vc05.notifications.
 c6b13ce1f67d47a5a457f7a003b81402b161d2fe:be/test/integration/vc05.notifications.test.ts:generic-api-key:54
 c6b13ce1f67d47a5a457f7a003b81402b161d2fe:be/test/integration/vc06.credential-delivery.test.ts:generic-api-key:121
 b86cebf4b3aa591a1abbcf45ade33c69707225ce:be/test/integration/vc07.import.test.ts:generic-api-key:162
-00c4bc52d90efa3a3e7b00e2d69e3499f2d59b99:be/test/integration/vc07.import.test.ts:164
+00c4bc52d90efa3a3e7b00e2d69e3499f2d59b99:be/test/integration/vc07.import.test.ts:generic-api-key:164
