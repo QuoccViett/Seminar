@@ -8,6 +8,7 @@ import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js"
 import { CreateUserDto } from "./dto/create-user.dto.js";
 import { UpdateUserDto } from "./dto/update-user.dto.js";
 import { UpdateUserStatusDto } from "./dto/update-user-status.dto.js";
+import { RetryCredentialDeliveryDto } from "./dto/retry-credential-delivery.dto.js";
 import { UsersController } from "./users.controller.js";
 
 const ADMIN: CurrentUser = {
@@ -45,7 +46,15 @@ function makeController() {
     resetPassword: record("resetPassword"),
     updateStatus: record("updateStatus"),
   };
-  return { controller: new UsersController(service as never), calls };
+  const userImport = {
+    createTemplate: record("createTemplate"),
+    preview: record("previewImport"),
+    confirm: record("confirmImport"),
+  };
+  const credentials = {
+    retryChannel: record("retryCredentialDelivery"),
+  };
+  return { controller: new UsersController(service as never, userImport as never, credentials as never), calls };
 }
 
 async function validate<T extends object>(
@@ -108,6 +117,48 @@ test("resetPassword forwards id and actor for audit", async () => {
   await controller.resetPassword(TARGET_ID, ADMIN);
 
   assert.deepEqual(calls.resetPassword?.[0], [TARGET_ID, ADMIN.id]);
+});
+
+/** Xác nhận controller gắn ID Admin từ token vào preview thay vì nhận danh tính do client gửi */
+test("previewImport forwards the uploaded file, idempotency key and authenticated administrator", async () => {
+  const { controller, calls } = makeController();
+  const file = { originalname: "units.xlsx", size: 100, buffer: Buffer.from("xlsx") };
+
+  await controller.previewImport(file, "preview-key", ADMIN);
+
+  assert.deepEqual(calls.previewImport?.[0], [file, ADMIN.id, "preview-key"]);
+});
+
+/** Xác nhận phiên Import chỉ được tạo tiếp với ID đã chọn và danh tính Admin hiện hành */
+test("confirmImport forwards the session identifier and authenticated administrator", async () => {
+  const { controller, calls } = makeController();
+
+  await controller.confirmImport(TARGET_ID, ADMIN);
+
+  assert.deepEqual(calls.confirmImport?.[0], [TARGET_ID, ADMIN.id]);
+});
+
+/** Bảo đảm yêu cầu retry luôn lấy actor từ token và không nhận người thao tác trong body */
+test("retryCredentialDelivery forwards the account, requested channel and authenticated administrator", async () => {
+  const { controller, calls } = makeController();
+
+  await controller.retryCredentialDelivery(TARGET_ID, { channel: "EMAIL" }, ADMIN);
+
+  assert.deepEqual(calls.retryCredentialDelivery?.[0], [TARGET_ID, "EMAIL", ADMIN.id]);
+});
+
+/** Chỉ chấp nhận hai kênh có provider; ZNS không được đưa vào hàng đợi retry khi mặc định đang tắt */
+test("RetryCredentialDeliveryDto accepts Email and Web Push but rejects Zalo ZNS", async () => {
+  assert.equal((await validate(RetryCredentialDeliveryDto, { channel: "EMAIL" })).channel, "EMAIL");
+  assert.equal((await validate(RetryCredentialDeliveryDto, { channel: "WEB_PUSH" })).channel, "WEB_PUSH");
+  await assert.rejects(validate(RetryCredentialDeliveryDto, { channel: "ZALO_ZNS" }), (error: unknown) => getStatus(error) === 400);
+});
+
+/** Bảo đảm cả ba endpoint import chỉ dành cho ADMIN sau khi controller-level guards xác thực token */
+test("template, preview and confirm import routes are ADMIN-only", () => {
+  for (const handler of [UsersController.prototype.importTemplate, UsersController.prototype.previewImport, UsersController.prototype.confirmImport, UsersController.prototype.retryCredentialDelivery]) {
+    assert.deepEqual(rolesOf(handler), ["ADMIN"]);
+  }
 });
 
 test("updateStatus forwards id, isActive and current user", async () => {

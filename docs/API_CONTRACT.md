@@ -222,6 +222,23 @@ Khi có `CREDENTIALS_ENCRYPTION_KEY` 32 byte dạng base64, tạo/reset user lư
 
 `allRequiredChannelsSent` chỉ là `true` khi dispatch có ít nhất một delivery bắt buộc và mọi delivery đều `SENT`; không có delivery trả `false` để phân biệt chưa cấu hình hoặc chưa xếp hàng với đã gửi thành công
 
+### Import Excel tài khoản UNIT VC07
+
+Bốn route dưới đây yêu cầu Bearer đã đổi mật khẩu ban đầu và chỉ ADMIN được gọi. Tệp mẫu chỉ có một sheet, hàng đầu là tiêu đề `unitCode,unitName,unitType,username,fullName,email,phone`; `unitType` nhận `CONG_AN_QUAN_HUYEN`, `PHONG_NGHIEP_VU` hoặc `DON_VI_TRUC_THUOC`; `phone` được ghi dạng văn bản để giữ số 0 đầu. Mọi dòng tạo tài khoản UNIT, không nhận `role`, `password`, `isActive` hoặc `unitId` từ file. Email bắt buộc để có địa chỉ nhận credential; số điện thoại chỉ được lưu hồ sơ, không tự gửi ZNS.
+
+| Route | Đầu vào | Phản hồi |
+|---|---|---|
+| `GET /users/import/template` | Không có | Tệp XLSX tải xuống, header `Content-Disposition` là `attachment` |
+| `POST /users/import/preview` | `multipart/form-data`, field `file` là `.xlsx`, header `Idempotency-Key` dài 1–200 ký tự | `{importId,expiresAt,totalRows,validRows,invalidRows,rows:[{rowNumber,unitCode,unitName,unitType,username,fullName,email,phone,errors:[{field,code,message}]}]}`; lỗi dùng mã ổn định như `DUPLICATE_USERNAME`, `UNIT_MISMATCH`, `INVALID_EMAIL`; tối đa 5 MiB, 100 dòng dữ liệu, 1 sheet và 25 MiB sau giải nén |
+| `POST /users/import/:importId/confirm` | UUID phiên trong path; body `{}` | `{importId,status:"CONFIRMED",createdCount,unitsCreated,accounts:[{rowNumber,userId,username,email,unitCode,credentialStatus,channels}]}`; mỗi channel có `{channel,status,errorCode,attemptCount,sentAt}` |
+| `POST /users/:id/credential-deliveries/retry` | ADMIN; body `{channel:"EMAIL"|"WEB_PUSH"}` | `{userId,channel,status:"PENDING"}`; chỉ nhận delivery lỗi còn hạn và còn payload mã hóa, không gọi provider trong request |
+
+Preview chỉ đọc file, lưu digest SHA-256 và các dòng đã chuẩn hóa/lỗi trong `ImportSession` gắn Admin, TTL 30 phút; không ghi Unit/User, password, file bytes hoặc provider payload. Gửi lại preview cùng `Idempotency-Key` và cùng digest trả lại phiên cũ; cùng khóa nhưng digest khác trả `409 IDEMPOTENCY_KEY_REUSED`. Từ chối tệp sai chữ ký/ZIP hỏng, mã hóa, macro, công thức, sheet thừa, tiêu đề sai, dòng trống toàn bộ bị bỏ qua, giá trị vượt giới hạn và file vượt giới hạn trước khi lưu phiên.
+
+Confirm khóa phiên và kiểm lại hạn, lỗi preview, Unit/User/email trùng trong cơ sở dữ liệu dưới một transaction. Chỉ liên kết Unit có mã trùng khi tên/loại khớp chính xác, đang hoạt động và chưa có tài khoản; nếu chưa có thì tạo mới, không sửa dữ liệu sẵn có. Một lỗi bất kỳ trả `422 IMPORT_VALIDATION_FAILED` kèm lỗi theo dòng và rollback toàn bộ. Session hết hạn trả `422 IMPORT_SESSION_EXPIRED`; phiên của Admin khác trả `404 IMPORT_SESSION_NOT_FOUND`. Gọi lại phiên đã xác nhận trả đúng `result` đã lưu, không tạo thêm tài khoản hoặc delivery. Username chuẩn hóa chữ thường, email chuẩn hóa chữ thường; phone lưu dạng chuỗi đã chuẩn hóa.
+
+Mật khẩu ban đầu lấy từ `INITIAL_ACCOUNT_PASSWORD`, mặc định demo `123456`, chỉ lưu hash User; `mustChangePassword=true`, `credentialVersion=0`. Dispatch mã hóa và delivery Web Push/Email được xếp trong cùng transaction qua dịch vụ VC06 khi có khóa/cấu hình; gửi mạng do worker thực hiện sau commit, Email vẫn cần Admin xác nhận địa chỉ, Web Push cần đăng ký thiết bị và ZNS luôn báo chưa kích hoạt. Khi thiếu khóa mã hóa trả `credentialStatus:"NOT_CONFIGURED"`; Admin cần cấu hình khóa rồi cấp lại thông tin đăng nhập qua luồng reset hiện có. Confirm không trả mật khẩu tạm và không báo gửi thành công trước khi provider tiếp nhận. Admin có thể xác nhận email từng người nhận bằng route VC06 rồi dùng route retry cho kênh lỗi còn đủ điều kiện; dữ liệu mã hóa được giữ tới TTL khi delivery thất bại để việc retry không cần tái tạo mật khẩu rõ.
+
 `GET /notifications/:notificationId/deliveries` cần Bearer của chủ thông báo, trả `{notificationId,channels:[{channel,status,reasonCode,lastError,attemptCount,sentAt}]}`. Không có delivery ngoài khi thông báo chỉ ở hộp thư SYSTEM. `SENT` ở cả hai loại delivery nghĩa provider đã tiếp nhận request, chưa xác nhận người nhận đã xem. [Hướng dẫn cấu hình SMTP/VAPID](./VC06_SMTP_VAPID.md) ghi rõ môi trường thử cục bộ và cách bật thực tế.
 
 ## 3. Đợt thi đua, ngưỡng và tiêu chí

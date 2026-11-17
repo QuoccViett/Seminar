@@ -53,10 +53,11 @@ async function bootstrap(): Promise<void> {
       "Cần cấu hình ít nhất một origin cụ thể trong CORS_ORIGINS hoặc WEB_ORIGINS",
     );
   }
+  // Idempotency-Key là header riêng của upload preview; cho phép preflight cùng token và Content-Type
   app.enableCors({
     origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Authorization", "Content-Type"],
+    allowedHeaders: ["Authorization", "Content-Type", "Idempotency-Key"],
     credentials: true,
   });
 

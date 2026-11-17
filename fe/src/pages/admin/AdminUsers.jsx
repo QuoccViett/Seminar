@@ -43,6 +43,12 @@ export default function AdminUsers() {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importKey, setImportKey] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importConfirming, setImportConfirming] = useState(false);
 
   /** Tải tài khoản từ backend theo trang và từ khóa, không lọc cục bộ trên một trang
    * Khi lỗi, giữ nguyên bảng cũ và báo người dùng để họ có thể thử lại
@@ -180,13 +186,137 @@ export default function AdminUsers() {
     } catch (error) { message.error(error.message || "Không thể tải trạng thái gửi thông tin đăng nhập."); }
   }
 
-  /** Admin chỉ mở khóa gửi Email sau khi tự kiểm tra đúng địa chỉ người nhận trên modal */
-  function confirmEmail(user) {
+  /** Tải workbook mẫu do backend sinh và chuyển byte response thành thao tác tải xuống của trình duyệt
+   * Không dựng mẫu riêng ở FE để giữ nguyên thứ tự cột, tên sheet và định dạng phone do parser chấp nhận
+   * Nếu API lỗi thì giữ nguyên modal và báo câu tiếng Việt để người dùng có thể thử lại
+   */
+  async function downloadImportTemplate() {
+    try {
+      const response = await userService.downloadImportTemplate();
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "mau-nhap-tai-khoan-unit.xlsx";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      message.error(error.message || "Không thể tải tệp mẫu nhập tài khoản.");
+    }
+  }
+
+  /** Ghi nhận file người dùng vừa chọn hoặc xóa file hiện tại
+   * Mọi thay đổi tệp đều xóa importId và kết quả cũ để confirm không thể dùng preview của workbook trước
+   * Việc chọn/kéo thả chỉ đổi state cục bộ, không gọi API tạo tài khoản
+   */
+  function selectImportFile(file) {
+    setImportFile(file);
+    setImportKey(file ? `${Date.now()}-${Math.random().toString(36).slice(2)}` : null);
+    setImportPreview(null);
+    setImportResult(null);
+  }
+
+  /** Gửi file XLSX lên parser thật của backend và nhận lỗi theo số dòng/cột
+   * Đầu vào là File đang chọn; mỗi File giữ một khóa idempotency để retry mạng trả cùng phiên preview
+   * Chỉ lưu response chuẩn hóa trong state phiên hiện tại, không đưa workbook hoặc credential vào local/session storage
+   */
+  async function previewImport() {
+    if (!importFile) return;
+    setImportLoading(true);
+    try {
+      const result = await userService.previewImport(importFile, importKey);
+      setImportPreview(result);
+      setImportResult(null);
+    } catch (error) {
+      message.error(error.message || "Không thể xem trước tệp Excel.");
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  /** Xác nhận đúng ImportSession server đã cấp sau khi mọi dòng preview hợp lệ
+   * Đầu ra là số tài khoản/đơn vị cùng delivery theo từng kênh; backend mới là nơi quyết định giao dịch và trạng thái
+   * Lỗi theo đường dẫn rows[n].field được gắn lại vào dòng, còn session hết hạn yêu cầu tải lên xem trước lại
+   */
+  async function confirmImport() {
+    if (!importPreview || importPreview.invalidRows !== 0 || importPreview.validRows === 0) return;
+    setImportConfirming(true);
+    try {
+      const result = await userService.confirmImport(importPreview.importId);
+      setImportResult(result);
+      message.success(`Đã tạo ${result.createdCount} tài khoản UNIT.`);
+      await load(1, pageSize, q);
+      setPage(1);
+    } catch (error) {
+      if (error.fieldErrors?.length) {
+        setImportPreview((current) => current ? { ...current, rows: current.rows.map((row) => {
+          const rowErrors = error.fieldErrors.flatMap((detail) => {
+            const match = /^rows\[(\d+)\]\.(.+)$/.exec(detail.field ?? "");
+            return match && Number(match[1]) === row.rowNumber ? detail.messages.map((message) => ({ field: match[2], code: "IMPORT_VALIDATION_FAILED", message })) : [];
+          });
+          return rowErrors.length ? { ...row, errors: [...row.errors, ...rowErrors] } : row;
+        }), invalidRows: Math.max(current.invalidRows, error.fieldErrors.length), validRows: 0 } : current);
+      }
+      message.error(error.message || "Không thể xác nhận nhập tài khoản.");
+    } finally {
+      setImportConfirming(false);
+    }
+  }
+
+  /** Đóng modal và bỏ dữ liệu tạm chỉ tồn tại trong state component
+   * ImportSession chưa xác nhận vẫn tự hết hạn phía server sau TTL, nên đóng giao diện không tạo hoặc xóa tài khoản
+   */
+  function closeImport() {
+    setImportOpen(false);
+    setImportFile(null);
+    setImportKey(null);
+    setImportPreview(null);
+    setImportResult(null);
+  }
+
+  /** Admin xác nhận từng email sau khi kiểm tra người nhận; callback đồng bộ trạng thái kênh mà API trả về
+   * Chỉ thao tác xác nhận mới cho phép worker gửi credential qua Email, còn hủy modal không tạo yêu cầu gửi
+   */
+  function confirmEmail(user, onConfirmed) {
     if (!user.email) { message.error("Tài khoản chưa có địa chỉ email."); return; }
     Modal.confirm({ title: "Xác nhận địa chỉ nhận thông tin đăng nhập", content: `Tôi đã kiểm tra ${user.email} thuộc đúng người nhận ${user.username}. Sau khi xác nhận, hệ thống có thể gửi mật khẩu ban đầu tới địa chỉ này.`, okText: "Đã kiểm tra, cho phép gửi", cancelText: "Hủy", onOk: async () => {
-      try { await userService.confirmCredentialEmail(user.id, user.email); message.success("Đã xác nhận email. Trạng thái gửi sẽ được cập nhật sau khi worker xử lý."); }
+      try { const result = await userService.confirmCredentialEmail(user.id ?? user.userId, user.email); onConfirmed?.(result); message.success("Đã xác nhận email. Trạng thái gửi sẽ được cập nhật sau khi worker xử lý."); }
       catch (error) { message.error(error.message || "Không thể xác nhận email nhận thông tin đăng nhập."); }
     } });
+  }
+
+  /** Tải trạng thái mới nhất của một tài khoản theo yêu cầu rõ ràng từ quản trị viên
+   * API chỉ đọc delivery đã lưu và cập nhật bảng; không tạo lần gửi mới, phù hợp theo dõi nhiều dòng mà không spam request
+   * Lỗi đọc không xóa kết quả trước đó để trạng thái đã nhận vẫn còn hiển thị
+   */
+  async function refreshImportedStatus(account) {
+    try {
+      const result = await userService.getCredentialStatus(account.userId);
+      setImportResult((current) => current ? { ...current, accounts: current.accounts.map((item) => item.userId === account.userId ? { ...item, credentialStatus: result.status, channels: result.channels } : item) } : current);
+    } catch (error) {
+      message.error(error.message || "Không thể làm mới trạng thái gửi thông tin đăng nhập.");
+    }
+  }
+
+  /** Đề nghị backend xếp lại một kênh đang FAILED sau khi quản trị viên chọn retry
+   * Đầu vào là tài khoản trong kết quả import và kênh cụ thể; backend xác thực TTL, xác nhận Email hoặc subscription Push
+   * Không tự chạy lại provider từ FE; sau khi xếp thành công, đọc lại trạng thái do worker lưu
+   */
+  async function retryImportedChannel(account, channel) {
+    try {
+      await userService.retryCredentialDelivery(account.userId, channel);
+      await refreshImportedStatus(account);
+      message.success(`Đã xếp lại kênh ${channel} cho ${account.username}.`);
+    } catch (error) {
+      message.error(error.message || "Không thể thử lại kênh gửi thông tin đăng nhập.");
+    }
+  }
+
+  /** Thay trạng thái các delivery sau khi Admin xác nhận địa chỉ nhận Email
+   * Đầu vào là userId và response an toàn của API; thay đúng một account trong kết quả, không suy diễn SENT từ thao tác xác nhận
+   * Kênh chỉ được xem là đã gửi khi response hoặc lần làm mới sau đó có status SENT
+   */
+  function applyImportedDeliveryStatus(userId, result) {
+    setImportResult((current) => current ? { ...current, accounts: current.accounts.map((item) => item.userId === userId ? { ...item, credentialStatus: result.status, channels: result.channels } : item) } : current);
   }
 
   const columns = [
@@ -213,9 +343,30 @@ export default function AdminUsers() {
         {role === "UNIT" && <Form.Item name="unitId" label="Đơn vị" rules={[{ required: true, message: "Vui lòng chọn đơn vị." }]}><Select showSearch filterOption={false} onSearch={loadUnits} options={units.map((unit) => ({ value: unit.id, label: `${unit.code} — ${unit.name}` }))} placeholder="Tìm và chọn đơn vị" /></Form.Item>}
       </Form>
     </Modal>
-    {/* Giữ điểm vào kéo thả theo yêu cầu, báo rõ backend Import sẽ triển khai ở VC07 */}
-    <Modal title="Import Excel kéo thả" open={importOpen} footer={null} onCancel={() => setImportOpen(false)}>
-      <Upload.Dragger disabled showUploadList={false}><p>Kéo thả tệp Excel vào đây</p><p>Chức năng nhập hàng loạt chưa khả dụng trong VC04; sẽ triển khai cùng backend ở VC07.</p></Upload.Dragger>
+    {/* Khu vực này chỉ chọn file và gọi backend preview; sự kiện thả không tự ghi tài khoản */}
+    <Modal title="Import Excel tài khoản UNIT" open={importOpen} width={1000} confirmLoading={importConfirming} okText="Xác nhận tạo tài khoản" cancelText="Đóng" onOk={confirmImport} onCancel={closeImport} okButtonProps={{ disabled: !importPreview || importPreview.validRows === 0 || importPreview.invalidRows > 0 || !!importResult }}>
+      <Space orientation="vertical" style={{ width: "100%" }} size="middle">
+        <Space wrap><Button onClick={downloadImportTemplate}>Tải tệp mẫu</Button><span>Tệp XLSX tối đa 5 MiB và 100 dòng; email bắt buộc để gửi thông tin đăng nhập</span></Space>
+        <Upload.Dragger accept=".xlsx" maxCount={1} fileList={importFile ? [{ uid: "import-file", name: importFile.name, status: "done" }] : []} beforeUpload={(file) => { selectImportFile(file); return false; }} onRemove={() => { selectImportFile(null); return true; }} showUploadList>
+          <p><UploadOutlined /></p><p>Kéo thả tệp Excel vào đây hoặc bấm để chọn</p><p>Chọn tệp không tạo tài khoản; cần xem trước rồi xác nhận</p>
+        </Upload.Dragger>
+        {importFile && <Space wrap><Button type="primary" loading={importLoading} onClick={previewImport}>Xem trước và kiểm tra</Button><Button onClick={() => selectImportFile(null)}>Xóa tệp</Button></Space>}
+        {importPreview && <>
+          <div>{`Phiên xem trước đến ${new Date(importPreview.expiresAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}: ${importPreview.totalRows} dòng, ${importPreview.validRows} hợp lệ, ${importPreview.invalidRows} có lỗi`}</div>
+          <Table size="small" rowKey="rowNumber" dataSource={importPreview.rows} pagination={{ pageSize: 10 }} scroll={{ x: 900 }} columns={[
+            { title: "Dòng", dataIndex: "rowNumber", width: 70 }, { title: "Mã đơn vị", dataIndex: "unitCode" }, { title: "Tên đơn vị", dataIndex: "unitName" }, { title: "Tên đăng nhập", dataIndex: "username" }, { title: "Họ và tên", dataIndex: "fullName" }, { title: "Email", dataIndex: "email" }, { title: "Điện thoại", dataIndex: "phone" },
+            { title: "Lỗi", key: "errors", render: (_, row) => row.errors.map((item, index) => <div key={`${item.code}-${index}`}><Tag color="red">{item.code}</Tag>{item.field}: {item.message}</div>) },
+          ]} />
+        </>}
+        {importResult && <>
+          <div>{`Đã tạo ${importResult.createdCount} tài khoản và ${importResult.unitsCreated} đơn vị mới. Tiến độ: ${importResult.accounts.length}/${importPreview?.totalRows ?? importResult.accounts.length} tài khoản đã xử lý.`}</div>
+          <Table size="small" rowKey="userId" dataSource={importResult.accounts} pagination={{ pageSize: 10 }} scroll={{ x: 1000 }} columns={[
+            { title: "Dòng", dataIndex: "rowNumber" }, { title: "Đơn vị", dataIndex: "unitCode" }, { title: "Tên đăng nhập", dataIndex: "username" }, { title: "Tình trạng credential", dataIndex: "credentialStatus", render: (status) => status === "QUEUED" ? "Đã xếp hàng" : "Chưa cấu hình" },
+            { title: "Email", key: "email", render: (_, row) => { const delivery = row.channels.find((item) => item.channel === "EMAIL"); return <Space direction="vertical"><span>{delivery?.status ?? "Chưa xếp hàng"}{delivery?.errorCode ? ` · ${delivery.errorCode}` : ""}</span>{delivery?.errorCode === "EMAIL_UNCONFIRMED" && <Button size="small" onClick={() => confirmEmail(row, (result) => applyImportedDeliveryStatus(row.userId, result))}>Xác nhận email đã kiểm tra</Button>}{delivery?.status === "FAILED" && <Button size="small" onClick={() => retryImportedChannel(row, "EMAIL")}>Thử lại Email</Button>}</Space>; } },
+            { title: "Web Push", key: "push", render: (_, row) => { const delivery = row.channels.find((item) => item.channel === "WEB_PUSH"); return <Space direction="vertical"><span>{delivery?.errorCode === "NO_SUBSCRIPTION" ? "Chờ đăng ký thiết bị" : delivery?.status ?? "Chưa xếp hàng"}{delivery?.errorCode && delivery.errorCode !== "NO_SUBSCRIPTION" ? ` · ${delivery.errorCode}` : ""}</span>{delivery?.status === "FAILED" && <Button size="small" onClick={() => retryImportedChannel(row, "WEB_PUSH")}>Thử lại Web Push</Button>}</Space>; } }, { title: "Zalo ZNS", render: () => "Chưa kích hoạt" }, { title: "Tiến độ", render: (_, row) => <Button size="small" onClick={() => refreshImportedStatus(row)}>Cập nhật trạng thái</Button> },
+          ]} />
+        </>}
+      </Space>
     </Modal>
   </div>;
 }
