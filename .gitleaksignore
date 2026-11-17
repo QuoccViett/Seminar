@@ -4,3 +4,6 @@
 58a0f9108f0590757aa28405a4fe9e9b22f3e0e5:be/test/integration/vc04.management.test.ts:generic-api-key:88
 58a0f9108f0590757aa28405a4fe9e9b22f3e0e5:be/test/integration/vc04.management.test.ts:generic-api-key:101
 58a0f9108f0590757aa28405a4fe9e9b22f3e0e5:be/test/integration/vc04.management.test.ts:generic-api-key:113
+c6b13ce1f67d47a5a457f7a003b81402b161d2fe:be/test/integration/vc05.notifications.test.ts:generic-api-key:53
+c6b13ce1f67d47a5a457f7a003b81402b161d2fe:be/test/integration/vc05.notifications.test.ts:generic-api-key:54
+c6b13ce1f67d47a5a457f7a003b81402b161d2fe:be/test/integration/vc06.credential-delivery.test.ts:generic-api-key:121

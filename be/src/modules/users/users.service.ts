@@ -569,9 +569,11 @@ export class UsersService {
 
     const now = new Date();
 
+    // Tăng thời gian chờ để request cạnh tranh có thể tuần tự hóa qua khóa PostgreSQL và nhận đúng lỗi LAST_ADMIN
+    // Nếu dùng timeout mặc định, transaction thứ hai có thể bị Prisma hủy trước khi kiểm tra được số ADMIN còn hoạt động
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT 1 FROM "users" WHERE "id" = ${id}::uuid FOR UPDATE`;
       if (!isActive) await tx.$executeRaw`SELECT pg_advisory_xact_lock(417004)`;
+      await tx.$executeRaw`SELECT 1 FROM "users" WHERE "id" = ${id}::uuid FOR UPDATE`;
       const before = await tx.user.findUnique({ where: { id }, select: USER_SELECT });
       if (!before) throw userNotFound();
       if (!isActive && before.role === "ADMIN" && before.isActive) {
@@ -602,6 +604,6 @@ export class UsersService {
       }
       await this.audit?.record({ actorId: currentUser.id, action: isActive ? "USER_ACTIVATED" : "USER_DEACTIVATED", entity: "User", entityId: id, before, after: updated }, tx);
       return updated;
-    });
+    }, { timeout: 10000 });
   }
 }
