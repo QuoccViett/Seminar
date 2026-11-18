@@ -53,6 +53,7 @@ export default function AdminLayout() {
     "/admin/config": "Cấu hình Kỳ thi",
     "/admin/records": "Xử lý Hồ sơ",
     "/admin/audit-log": "Lịch sử thao tác",
+    "/admin/reports": "Báo cáo",
     "/admin/notifications": "Hộp thư thông báo",
     "/unit/notifications": "Hộp thư thông báo",
     "/unit/records": "Trang tự chấm",
@@ -67,6 +68,7 @@ export default function AdminLayout() {
     { key: "/admin/config", icon: <SettingOutlined />, label: "Cấu hình Kỳ thi" },
     { key: "/admin/records", icon: <FileTextOutlined />, label: "Xử lý Hồ sơ" },
     { key: "/admin/audit-log", icon: <HistoryOutlined />, label: "Lịch sử thao tác" },
+    { key: "/admin/reports", icon: <FileTextOutlined />, label: "Báo cáo" },
     { key: "/admin/notifications", icon: <BellOutlined />, label: "Hộp thư thông báo" },
   ];
   const menuItems = user?.role === "UNIT" ? [

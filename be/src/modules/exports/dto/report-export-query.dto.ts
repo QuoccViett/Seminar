@@ -10,7 +10,15 @@ import {
   REPORT_TYPES,
 } from "./create-report-export.dto.js";
 
+/** Lọc metadata trên server, các trường này không thay quyền ADMIN của guard
+ * Phân trang dùng giới hạn chung, evaluationId giúp tìm lại biên bản một hồ sơ
+ */
 export class ReportExportQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({ format: "uuid" })
+  @IsOptional()
+  @IsUUID("4", { message: "Mã hồ sơ phải là UUID hợp lệ" })
+  evaluationId?: string;
+
   @ApiPropertyOptional({ format: "uuid" })
   @IsOptional()
   @IsUUID("4", { message: "periodId phải là UUID hợp lệ" })

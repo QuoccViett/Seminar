@@ -1,22 +1,8 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
 import { randomUUID } from "node:crypto";
-import {
-  mkdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { ERROR_CODES } from "../../common/constants/error-codes.js";
 import { AuditService } from "../../common/services/audit.service.js";
 import { buildPaginationOptions, createPaginatedResult } from "../../common/utils/pagination.util.js";
 import type { CreateReportExportDto, ReportFormat } from "./dto/create-report-export.dto.js";
@@ -24,421 +10,149 @@ import type { ReportExportQueryDto } from "./dto/report-export-query.dto.js";
 import { ExcelReportGenerator } from "./generators/excel.generator.js";
 import { PdfReportGenerator } from "./generators/pdf.generator.js";
 import { WordReportGenerator } from "./generators/word.generator.js";
-import type {
-  AppraisalReportData,
-  GeneratedReport,
-  ReportPeriodData,
-  SummaryReportData,
-} from "./generators/report-data.js";
+import { ReportSnapshotService } from "./report-snapshot.service.js";
+import { ReportStorageService } from "./report-storage.service.js";
 
+type ExportRecord = {
+  id: string; periodId: string; evaluationId: string | null; reportType: string; format: string;
+  fileName: string | null; sizeBytes: bigint | null; createdById: string; createdAt: Date;
+};
+
+/** Điều phối snapshot, generator, kho private và metadata/audit của lần xuất đồng bộ
+ * Không tạo bản ghi thành công trước khi bytes được lưu và không phát thông báo ra provider
+ */
 @Injectable()
-export class ExportsService {
-  /** Tiêm audit cùng các generator để metadata và dấu vết xuất báo cáo commit nguyên tử */
+export class ExportsService implements OnModuleInit, OnModuleDestroy {
+  private cleanupTimer?: ReturnType<typeof setInterval>;
+
+  /** Tiêm các thành phần tách biệt để kiểm lỗi storage, chữ ký và rollback mà không giả luồng HTTP */
   constructor(
     @Inject(AuditService) private readonly audit: AuditService,
-    @Inject(PrismaService)
-    private readonly prisma: PrismaService,
-
-    @Inject(ConfigService)
-    private readonly configService: ConfigService,
-
-    @Inject(ExcelReportGenerator)
-    private readonly excelGenerator: ExcelReportGenerator,
-
-    @Inject(PdfReportGenerator)
-    private readonly pdfGenerator: PdfReportGenerator,
-
-    @Inject(WordReportGenerator)
-    private readonly wordGenerator: WordReportGenerator,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(ExcelReportGenerator) private readonly excel: ExcelReportGenerator,
+    @Inject(PdfReportGenerator) private readonly pdf: PdfReportGenerator,
+    @Inject(WordReportGenerator) private readonly word: WordReportGenerator,
+    @Inject(ReportSnapshotService) private readonly snapshot: ReportSnapshotService,
+    @Inject(ReportStorageService) private readonly storage: ReportStorageService,
+    @Inject(JwtService) private readonly jwt: JwtService,
   ) {}
 
-  /** Tạo tệp bằng generator hiện có, sau đó ghi metadata và audit trong cùng giao dịch
-   * Đầu vào là người đã qua guard và scope báo cáo, đầu ra là metadata không chứa đường dẫn private
-   * Nếu DB hoặc audit lỗi thì dọn tệp vừa tạo, không báo thành công khi dấu vết chưa được ghi
+  /** Dọn sau khởi động và mỗi giờ để phục hồi tệp mồ côi sau crash hoặc lỗi bù xóa
+   * Timer không giữ tiến trình sống và lỗi dọn không làm hỏng một lần xuất hợp lệ
    */
-  async create(createdById: string, dto: CreateReportExportDto) {
-    const period = await this.prisma.evaluationPeriod.findUnique({
-      where: { id: dto.periodId },
-      select: {
-        id: true,
-        year: true,
-        name: true,
-        phase: true,
-        maxTotalScore: true,
-      },
-    });
-
-    if (!period) {
-      throw new NotFoundException({
-        code: ERROR_CODES.NOT_FOUND,
-        message: "Không tìm thấy kỳ đánh giá",
-      });
-    }
-
-    let generated: GeneratedReport;
-    let evaluationId: string | null = null;
-    const periodData: ReportPeriodData = {
-      ...period,
-      maxTotalScore: Number(period.maxTotalScore),
-    };
-
-    if (dto.reportType === "SUMMARY_ALL_UNITS") {
-      if (dto.evaluationId) {
-        throw new BadRequestException({
-          code: ERROR_CODES.BUSINESS_RULE_VIOLATION,
-          message: "SUMMARY_ALL_UNITS không được gắn với evaluationId",
-        });
-      }
-
-      const data = await this.getSummaryData(periodData);
-      generated = await this.generate(dto.format, "summary", data);
-    } else {
-      if (!dto.evaluationId) {
-        throw new BadRequestException({
-          code: ERROR_CODES.BUSINESS_RULE_VIOLATION,
-          message: "UNIT_APPRAISAL_MINUTES yêu cầu evaluationId",
-        });
-      }
-
-      const data = await this.getAppraisalData(
-        periodData,
-        dto.evaluationId,
-        dto.periodId,
-      );
-      evaluationId = dto.evaluationId;
-      generated = await this.generate(dto.format, "appraisal", data);
-    }
-
-    const id = randomUUID();
-    const fileName = this.buildFileName(
-      dto.reportType,
-      periodData.year,
-      generated.extension,
-    );
-    const root = this.getStorageRoot();
-    const relativePath = join(periodData.id, `${id}-${fileName}`);
-    const absolutePath = resolve(root, relativePath);
-
-    await mkdir(dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, generated.buffer, { flag: "wx" });
-
-    try {
-      const record = await this.prisma.$transaction(async (tx) => {
-        const saved = await tx.reportExport.create({
-          data: {
-            id,
-            periodId: dto.periodId,
-            evaluationId,
-            reportType: dto.reportType,
-            format: dto.format,
-            storagePath: relativePath,
-            fileName,
-            sizeBytes: BigInt(generated.buffer.length),
-            createdById,
-            createdAt: new Date(),
-          },
-        });
-        await this.audit.record({ actorId: createdById, action: "REPORT_EXPORTED", entity: "ReportExport", entityId: id, after: { periodId: dto.periodId, evaluationId, reportType: dto.reportType, format: dto.format, fileName, sizeBytes: generated.buffer.length } }, tx);
-        return saved;
-      });
-
-      return this.toMetadata(record);
-    } catch {
-      await rm(absolutePath, { force: true }).catch(() => undefined);
-      throw new InternalServerErrorException({
-        code: ERROR_CODES.INTERNAL_ERROR,
-        message: "Không thể lưu thông tin báo cáo vừa tạo",
-      });
-    }
+  onModuleInit(): void {
+    void this.cleanupOrphans().catch(() => undefined);
+    this.cleanupTimer = setInterval(() => { void this.cleanupOrphans().catch(() => undefined); }, 3600000);
+    this.cleanupTimer.unref();
   }
 
-  async findAll(query: ReportExportQueryDto) {
-    const where = {
-      ...(query.periodId && { periodId: query.periodId }),
-      ...(query.reportType && { reportType: query.reportType }),
-      ...(query.format && { format: query.format }),
-    };
+  /** Dừng lịch khi Nest đóng để không truy vấn sau khi Prisma đã ngắt kết nối */
+  onModuleDestroy(): void { if (this.cleanupTimer) clearInterval(this.cleanupTimer); }
 
-    const { skip, take, orderBy } = buildPaginationOptions(
-      query,
-      ["createdAt"],
-    );
+  /** Kiểm từng key cũ trên DB trước xóa, hỗ trợ bản ghi trước đây dùng dấu phân cách Windows
+   * Khi DB hỏng callback ném lỗi và storage giữ tệp để lần sau kiểm lại
+   */
+  async cleanupOrphans(now = new Date()): Promise<number> {
+    return this.storage.cleanup(async (key) => Boolean(await this.prisma.reportExport.findFirst({ where: { storagePath: { in: [key, key.replaceAll("/", "\\")] } }, select: { id: true } })), now);
+  }
+
+  /** Tạo tệp hoàn chỉnh từ snapshot, lưu private rồi commit metadata và audit cùng transaction
+   * Scope sai bị chặn trước khi đọc dữ liệu; lỗi generator không trả raw provider hoặc thư viện
+   * Khi transaction lỗi sẽ bù xóa, nếu bù cũng lỗi bộ dọn theo tuổi tệp tiếp tục xử lý
+   */
+  async create(actorId: string, dto: CreateReportExportDto) {
+    this.validateScope(dto);
+    const snapshot = await this.snapshot.read(dto, actorId);
+    let generated;
+    try {
+      generated = snapshot.type === "summary" ? await this.excel.generateSummary(snapshot.data)
+        : dto.format === "PDF" ? await this.pdf.generateAppraisal(snapshot.data) : await this.word.generateAppraisal(snapshot.data);
+      if (!generated.buffer.length || generated.buffer.length > 32 * 1024 * 1024) throw new Error("Dung lượng báo cáo không hợp lệ");
+    } catch { throw new InternalServerErrorException({ code: "INTERNAL_ERROR", message: "Không thể tạo nội dung báo cáo" }); }
+    const id = randomUUID();
+    const prefix = dto.reportType === "SUMMARY_ALL_UNITS" ? "summary-all-units" : "unit-appraisal-minutes";
+    const fileName = `${prefix}-${snapshot.data.period.year}.${generated.extension}`;
+    const key = `${dto.periodId}/${id}-${fileName}`;
+    await this.storage.put(key, generated.buffer);
+    let record: ExportRecord;
+    try {
+      record = await this.prisma.$transaction(async (tx) => {
+        const saved = await tx.reportExport.create({ data: { id, periodId: dto.periodId, evaluationId: dto.evaluationId ?? null, reportType: dto.reportType, format: dto.format, storagePath: key, fileName, sizeBytes: BigInt(generated.buffer.length), createdById: actorId, createdAt: snapshot.data.period.generatedAt } });
+        await this.audit.record({ actorId, action: "REPORT_EXPORTED", entity: "ReportExport", entityId: id, after: { periodId: dto.periodId, evaluationId: dto.evaluationId ?? null, reportType: dto.reportType, format: dto.format, fileName, sizeBytes: generated.buffer.length } }, tx);
+        return saved;
+      });
+    } catch {
+      await this.storage.remove(key).catch(() => undefined);
+      throw new InternalServerErrorException({ code: "INTERNAL_ERROR", message: "Không thể lưu thông tin báo cáo vừa tạo" });
+    }
+    return this.metadata(record, actorId);
+  }
+
+  /** Áp quy tắc loại/định dạng và evaluationId cho cả controller lẫn caller nội bộ
+   * Không dùng IsOptional để bỏ qua null của trường bắt buộc theo loại báo cáo
+   */
+  private validateScope(dto: CreateReportExportDto): void {
+    if (!["SUMMARY_ALL_UNITS", "UNIT_APPRAISAL_MINUTES"].includes(dto.reportType) ||
+      (dto.reportType === "SUMMARY_ALL_UNITS" && dto.format !== "XLSX") ||
+      (dto.reportType === "UNIT_APPRAISAL_MINUTES" && !["PDF", "DOCX"].includes(dto.format))) {
+      throw new BadRequestException({ code: "BUSINESS_RULE_VIOLATION", message: "Định dạng không phù hợp với loại báo cáo đã chọn" });
+    }
+    if (dto.reportType === "SUMMARY_ALL_UNITS" && dto.evaluationId !== undefined) throw new BadRequestException({ code: "BUSINESS_RULE_VIOLATION", message: "Báo cáo tổng hợp không được gắn với mã hồ sơ" });
+    if (dto.reportType === "UNIT_APPRAISAL_MINUTES" && !dto.evaluationId) throw new BadRequestException({ code: "BUSINESS_RULE_VIOLATION", message: "Biên bản thẩm định cần mã hồ sơ thuộc kỳ đã chọn" });
+  }
+
+  /** Lọc và phân trang lịch sử trong một snapshot, ký URL cho chính quản trị viên đang yêu cầu
+   * Sắp xếp phụ bằng ID giữ thứ tự ổn định, không đưa storagePath vào kết quả
+   */
+  async findAll(query: ReportExportQueryDto, actorId: string) {
+    const where = { ...(query.periodId && { periodId: query.periodId }), ...(query.evaluationId && { evaluationId: query.evaluationId }), ...(query.reportType && { reportType: query.reportType }), ...(query.format && { format: query.format }) };
+    const { skip, take, orderBy } = buildPaginationOptions(query, ["createdAt"]);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.reportExport.findMany({ where, orderBy, skip, take }),
       this.prisma.reportExport.count({ where }),
-    ]);
-
-    return createPaginatedResult(
-      items.map((item) => this.toMetadata(item)),
-      total,
-      query.page,
-      query.pageSize,
-    );
+    ], { isolationLevel: "RepeatableRead" });
+    return createPaginatedResult(items.map((item) => this.metadata(item, actorId)), total, query.page, query.pageSize);
   }
 
-  async findOne(id: string) {
-    const record = await this.findRecordOrThrow(id);
-    return this.toMetadata(record);
-  }
+  /** Cấp lại URL ngắn hạn khi người dùng tải muộn, không thay file hoặc metadata đã xuất */
+  async findOne(id: string, actorId: string) { return this.metadata(await this.record(id), actorId); }
 
-  /** Lấy nội dung tệp báo cáo theo mã và chỉ trả tệp thường trong thư mục lưu trữ
-   * Tệp thiếu, sai loại hoặc không đọc được đều trả 404 để không lộ đường dẫn máy chủ
+  /** Xác minh chữ ký có mục đích riêng và ràng buộc người dùng/mã báo cáo trước khi đọc bytes
+   * Guard vẫn xác thực ADMIN đang hoạt động, URL không tự cấp quyền hoặc sống quá thời hạn token
+   * Audit tải chỉ ghi mã báo cáo và định dạng, tuyệt đối không ghi token hoặc đường dẫn
    */
-  async getDownload(id: string) {
-    const record = await this.findRecordOrThrow(id);
-    const absolutePath = this.resolveStoragePath(record.storagePath);
-
+  async getDownload(id: string, actorId: string, token: string) {
     try {
-      const fileStat = await stat(absolutePath);
-      if (!fileStat.isFile()) {
-        throw new Error("Đường dẫn lưu trữ không phải là tệp");
-      }
-      const buffer = await readFile(absolutePath);
-      return {
-        buffer,
-        fileName: record.fileName ?? basename(absolutePath),
-        contentType: this.getContentType(record.format as ReportFormat),
-      };
-    } catch {
-      throw new NotFoundException({
-        code: ERROR_CODES.NOT_FOUND,
-        message: "Không tìm thấy tệp báo cáo trên storage",
-      });
-    }
+      const claims = this.jwt.verify<{ purpose: string; sub: string; reportId: string }>(token, { algorithms: ["HS256"], audience: "seminar-report-download" });
+      if (claims.purpose !== "REPORT_DOWNLOAD" || claims.sub !== actorId || claims.reportId !== id) throw new Error("Phạm vi tải không hợp lệ");
+    } catch { throw new ForbiddenException({ code: "FORBIDDEN", message: "Liên kết tải báo cáo không hợp lệ hoặc đã hết hạn, vui lòng lấy liên kết mới" }); }
+    const record = await this.record(id);
+    const buffer = await this.storage.get(record.storagePath);
+    await this.audit.record({ actorId, action: "REPORT_DOWNLOADED", entity: "ReportExport", entityId: id, after: { format: record.format } });
+    return { buffer, fileName: record.fileName ?? `bao-cao.${record.format.toLowerCase()}`, contentType: this.contentType(record.format as ReportFormat) };
   }
 
-  private async getSummaryData(
-    period: ReportPeriodData,
-  ): Promise<SummaryReportData> {
-    const units = await this.prisma.unit.findMany({
-      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
-      select: {
-        code: true,
-        name: true,
-        evaluations: {
-          where: { periodId: period.id },
-          select: {
-            status: true,
-            submittedAt: true,
-            finalScore: true,
-            finalPercent: true,
-            finalRating: true,
-          },
-        },
-      },
-    });
-
-    return {
-      period,
-      rows: units.map((unit) => {
-        const evaluation = unit.evaluations[0];
-        return {
-          unitCode: unit.code,
-          unitName: unit.name,
-          evaluationStatus: evaluation?.status ?? "CHƯA CÓ ĐÁNH GIÁ",
-          submittedAt: evaluation?.submittedAt ?? null,
-          finalScore: evaluation?.finalScore === null || !evaluation
-            ? null
-            : Number(evaluation.finalScore),
-          finalPercent: evaluation?.finalPercent === null || !evaluation
-            ? null
-            : Number(evaluation.finalPercent),
-          finalRating: evaluation?.finalRating ?? null,
-        };
-      }),
-    };
-  }
-
-  private async getAppraisalData(
-    period: ReportPeriodData,
-    evaluationId: string,
-    periodId: string,
-  ): Promise<AppraisalReportData> {
-    const evaluation = await this.prisma.evaluation.findUnique({
-      where: { id: evaluationId },
-      include: {
-        unit: { select: { code: true, name: true } },
-        criterionScores: {
-          include: {
-            criterion: {
-              select: { code: true, name: true, maxScore: true, sortOrder: true },
-            },
-          },
-          orderBy: { criterion: { sortOrder: "asc" } },
-        },
-        feedbacks: {
-          include: { author: { select: { fullName: true } } },
-          orderBy: { createdAt: "asc" },
-        },
-      },
-    });
-
-    if (!evaluation) {
-      throw new NotFoundException({
-        code: ERROR_CODES.NOT_FOUND,
-        message: "Không tìm thấy phiếu đánh giá",
-      });
-    }
-
-    if (evaluation.periodId !== periodId) {
-      throw new BadRequestException({
-        code: ERROR_CODES.BUSINESS_RULE_VIOLATION,
-        message: "Phiếu đánh giá không thuộc kỳ đánh giá đã chọn",
-      });
-    }
-
-    return {
-      period,
-      evaluation: {
-        id: evaluation.id,
-        status: evaluation.status,
-        submittedAt: evaluation.submittedAt,
-        finalizedAt: evaluation.finalizedAt,
-        finalScore: evaluation.finalScore === null
-          ? null
-          : Number(evaluation.finalScore),
-        finalPercent: evaluation.finalPercent === null
-          ? null
-          : Number(evaluation.finalPercent),
-        finalRating: evaluation.finalRating,
-      },
-      unit: evaluation.unit,
-      scores: evaluation.criterionScores.map((score) => {
-        const selfScore = score.selfScore === null
-          ? null
-          : Number(score.selfScore);
-        const adminScore = score.adminScore === null
-          ? null
-          : Number(score.adminScore);
-        return {
-          code: score.criterion.code,
-          name: score.criterion.name,
-          maxScore: Number(score.criterion.maxScore),
-          selfScore,
-          adminScore,
-          currentScore: adminScore ?? selfScore,
-          selfNote: score.selfNote,
-          adminComment: score.adminComment,
-          sortOrder: score.criterion.sortOrder,
-        };
-      }),
-      feedbacks: evaluation.feedbacks.map((feedback) => ({
-        type: feedback.type,
-        content: feedback.content,
-        authorName: feedback.author.fullName,
-        createdAt: feedback.createdAt,
-      })),
-    };
-  }
-
-  private generate(
-    format: ReportFormat,
-    type: "summary",
-    data: SummaryReportData,
-  ): Promise<GeneratedReport>;
-  private generate(
-    format: ReportFormat,
-    type: "appraisal",
-    data: AppraisalReportData,
-  ): Promise<GeneratedReport>;
-  private generate(
-    format: ReportFormat,
-    type: "summary" | "appraisal",
-    data: SummaryReportData | AppraisalReportData,
-  ): Promise<GeneratedReport> {
-    if (format === "XLSX") {
-      return type === "summary"
-        ? this.excelGenerator.generateSummary(data as SummaryReportData)
-        : this.excelGenerator.generateAppraisal(data as AppraisalReportData);
-    }
-    if (format === "PDF") {
-      return type === "summary"
-        ? this.pdfGenerator.generateSummary(data as SummaryReportData)
-        : this.pdfGenerator.generateAppraisal(data as AppraisalReportData);
-    }
-    return type === "summary"
-      ? this.wordGenerator.generateSummary(data as SummaryReportData)
-      : this.wordGenerator.generateAppraisal(data as AppraisalReportData);
-  }
-
-  private async findRecordOrThrow(id: string) {
+  /** Tìm bản ghi duy nhất và chuẩn hóa trường hợp không có lịch sử xuất */
+  private async record(id: string) {
     const record = await this.prisma.reportExport.findUnique({ where: { id } });
-    if (!record) {
-      throw new NotFoundException({
-        code: ERROR_CODES.NOT_FOUND,
-        message: "Không tìm thấy lịch sử xuất báo cáo",
-      });
-    }
+    if (!record) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy lịch sử xuất báo cáo" });
     return record;
   }
 
-  private toMetadata(record: {
-    id: string;
-    periodId: string;
-    evaluationId: string | null;
-    reportType: string;
-    format: string;
-    fileName: string | null;
-    sizeBytes: bigint | null;
-    createdById: string;
-    createdAt: Date;
-  }) {
-    return {
-      id: record.id,
-      periodId: record.periodId,
-      evaluationId: record.evaluationId,
-      reportType: record.reportType,
-      format: record.format,
-      fileName: record.fileName,
-      sizeBytes: record.sizeBytes === null ? null : Number(record.sizeBytes),
-      createdById: record.createdById,
-      createdAt: record.createdAt,
-    };
+  /** Chiếu metadata an toàn và URL ký riêng cho người đọc, kiểm BigInt trước khi chuyển số
+   * Thời hạn được tính ở server và token có audience riêng để không dùng thay access token
+   */
+  private metadata(record: ExportRecord, actorId: string) {
+    if (record.sizeBytes !== null && (record.sizeBytes < 0n || record.sizeBytes > BigInt(Number.MAX_SAFE_INTEGER))) throw new InternalServerErrorException({ code: "INTERNAL_ERROR", message: "Dung lượng báo cáo chưa hợp lệ" });
+    const ttl = this.config.get<number>("REPORT_EXPORT_DOWNLOAD_TTL_SECONDS") ?? 120;
+    const expires = Math.floor(Date.now() / 1000) + ttl;
+    const token = this.jwt.sign({ purpose: "REPORT_DOWNLOAD", sub: actorId, reportId: record.id, exp: expires }, { algorithm: "HS256", audience: "seminar-report-download" });
+    return { id: record.id, periodId: record.periodId, evaluationId: record.evaluationId, reportType: record.reportType, format: record.format, fileName: record.fileName, sizeBytes: record.sizeBytes === null ? null : Number(record.sizeBytes), createdById: record.createdById, createdAt: record.createdAt, status: "READY" as const, downloadUrl: `/api/v1/admin/reports/exports/${record.id}/download?token=${encodeURIComponent(token)}`, downloadExpiresAt: new Date(expires * 1000).toISOString() };
   }
 
-  private getStorageRoot(): string {
-    const configured = this.configService.get<string>("REPORT_EXPORT_DIR")
-      ?? "./storage/report-exports";
-    return isAbsolute(configured)
-      ? configured
-      : resolve(process.cwd(), configured);
-  }
-
-  private resolveStoragePath(storagePath: string): string {
-    const root = this.getStorageRoot();
-    const target = resolve(root, storagePath);
-    const fromRoot = relative(root, target);
-    if (
-      fromRoot === "" ||
-      fromRoot === ".." ||
-      fromRoot.startsWith(`..${sep}`) ||
-      isAbsolute(fromRoot)
-    ) {
-      throw new NotFoundException({
-        code: ERROR_CODES.NOT_FOUND,
-        message: "Đường dẫn tệp báo cáo không hợp lệ",
-      });
-    }
-    return target;
-  }
-
-  private buildFileName(
-    reportType: string,
-    year: number,
-    extension: string,
-  ): string {
-    const prefix = reportType === "SUMMARY_ALL_UNITS"
-      ? "summary-all-units"
-      : "unit-appraisal-minutes";
-    return `${prefix}-${year}.${extension}`;
-  }
-
-  private getContentType(format: ReportFormat): string {
-    const contentTypes: Record<ReportFormat, string> = {
-      XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      PDF: "application/pdf",
-      DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    };
-    return contentTypes[format];
+  /** Chọn MIME theo định dạng đã lưu, không suy ra từ đường dẫn hoặc dữ liệu client */
+  private contentType(format: ReportFormat): string {
+    return { XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", PDF: "application/pdf", DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }[format];
   }
 }

@@ -1,155 +1,75 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import PDFDocument from "pdfkit";
-import type {
-  AppraisalReportData,
-  GeneratedReport,
-  SummaryReportData,
-} from "./report-data.js";
-import { PassThrough } from "node:stream";
+import { fileURLToPath } from "node:url";
+import { appraisalSections, reportDate, reportStatus, reportValue, scoreDetails, type AppraisalReportData, type GeneratedReport } from "./report-data.js";
 
-const PDF_CONTENT_TYPE = "application/pdf";
-
+/** Tạo PDF có font Noto Sans nhúng để đọc và trích xuất tiếng Việt trên máy không cài font
+ * Dùng bố cục dòng chảy A4 để nội dung minh chứng hoặc nhận xét dài tự ngắt trang
+ */
 @Injectable()
 export class PdfReportGenerator {
-  constructor(
-    @Inject(ConfigService)
-    private readonly configService: ConfigService,
-  ) {}
+  /** Nhận cấu hình font thay thế tùy chọn, mặc định luôn dùng font Unicode được đóng gói */
+  constructor(@Inject(ConfigService) private readonly config: ConfigService) {}
 
-  async generateSummary(data: SummaryReportData): Promise<GeneratedReport> {
-    const doc = this.createDocument();
-    const chunks: Buffer[] = [];
-    const output = new PassThrough();
-    doc.pipe(output);
-    output.on("data", (chunk: Buffer) => chunks.push(chunk));
-
-    doc.fontSize(16).text("BÁO CÁO TỔNG HỢP TOÀN BỘ ĐƠN VỊ", {
-      align: "center",
-    });
-    doc.moveDown();
-    doc.fontSize(11).text(`Kỳ đánh giá: ${data.period.name}`);
-    doc.text(`Năm: ${data.period.year}`);
-    doc.text(`Giai đoạn: ${data.period.phase}`);
-    doc.text(`Điểm tối đa: ${data.period.maxTotalScore}`);
-    doc.moveDown();
-
-    this.writeTableHeader(doc, [
-      "Mã đơn vị",
-      "Tên đơn vị",
-      "Trạng thái",
-      "Điểm",
-      "Tỷ lệ",
-      "Xếp loại",
-    ]);
-    for (const row of data.rows) {
-      this.ensureSpace(doc, 42);
-      doc.fontSize(8).text(
-        `${row.unitCode} | ${row.unitName} | ${row.evaluationStatus} | ${row.finalScore ?? "-"} | ${row.finalPercent ?? "-"}% | ${row.finalRating ?? "-"}`,
-      );
-    }
-
-    const finished = this.waitForFinish(output);
-    doc.end();
-    await finished;
-    return {
-      buffer: Buffer.concat(chunks),
-      contentType: PDF_CONTENT_TYPE,
-      extension: "pdf",
-    };
-  }
-
+  /** Ghi trọn biên bản theo snapshot, nhóm không được tính điểm và chữ ký để trống
+   * Lắng nghe lỗi stream trước khi render để lỗi font hoặc ghi PDF không làm request treo
+   */
   async generateAppraisal(data: AppraisalReportData): Promise<GeneratedReport> {
-    const doc = this.createDocument();
+    const doc = new PDFDocument({ size: "A4", margin: 42, info: { Title: "Biên bản thẩm định kết quả thi đua", Author: data.period.createdByName } });
     const chunks: Buffer[] = [];
-    const output = new PassThrough();
-    doc.pipe(output);
-    output.on("data", (chunk: Buffer) => chunks.push(chunk));
-
-    doc.fontSize(16).text("BIÊN BẢN ĐÁNH GIÁ ĐƠN VỊ", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(10);
-    doc.text(`Kỳ đánh giá: ${data.period.name} (${data.period.year})`);
-    doc.text(`Đơn vị: ${data.unit.code} - ${data.unit.name}`);
-    doc.text(`Trạng thái: ${data.evaluation.status}`);
-    doc.text(`Ngày nộp: ${this.formatDate(data.evaluation.submittedAt)}`);
-    doc.text(`Ngày chốt: ${this.formatDate(data.evaluation.finalizedAt)}`);
-    doc.text(`Tổng điểm: ${data.evaluation.finalScore ?? "-"}`);
-    doc.text(`Tỷ lệ: ${data.evaluation.finalPercent ?? "-"}%`);
-    doc.text(`Xếp loại: ${data.evaluation.finalRating ?? "-"}`);
-    doc.moveDown();
-
-    doc.fontSize(12).text("CHI TIẾT TIÊU CHÍ", { underline: true });
-    for (const score of data.scores) {
-      this.ensureSpace(doc, 70);
-      doc.fontSize(9).text(`${score.code} - ${score.name}`);
-      doc.fontSize(8).text(
-        `Tối đa: ${score.maxScore} | Tự đánh giá: ${score.selfScore ?? "-"} | Admin: ${score.adminScore ?? "-"} | Điểm hiện tại: ${score.currentScore ?? "-"}`,
-      );
-      if (score.selfNote) doc.text(`Ghi chú: ${score.selfNote}`);
-      if (score.adminComment) doc.text(`Nhận xét Admin: ${score.adminComment}`);
-      doc.moveDown(0.5);
-    }
-
-    if (data.feedbacks.length > 0) {
-      doc.addPage();
-      doc.fontSize(12).text("NHẬN XÉT / PHẢN HỒI", { underline: true });
-      for (const feedback of data.feedbacks) {
-        this.ensureSpace(doc, 55);
-        doc.fontSize(9).text(
-          `${feedback.type} - ${feedback.authorName} - ${this.formatDate(feedback.createdAt)}`,
-        );
-        doc.fontSize(9).text(feedback.content);
-        doc.moveDown();
+    const finished = new Promise<Buffer>((resolve, reject) => {
+      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+    });
+    try {
+      const regular = this.config.get<string>("REPORT_EXPORT_FONT_PATH") || fileURLToPath(new URL("../../../../assets/fonts/NotoSans-Regular.ttf", import.meta.url));
+      const bold = fileURLToPath(new URL("../../../../assets/fonts/NotoSans-Bold.ttf", import.meta.url));
+      doc.registerFont("Report", regular); doc.registerFont("ReportBold", bold);
+      doc.font("ReportBold").fontSize(15).text("BIÊN BẢN THẨM ĐỊNH KẾT QUẢ THI ĐUA", { align: "center" });
+      doc.moveDown();
+      const sections = appraisalSections(data);
+      for (const line of sections.heading) this.line(doc, line);
+      this.heading(doc, "CHI TIẾT TIÊU CHÍ");
+      for (const score of data.scores) {
+        this.heading(doc, `${score.code} — ${score.name}`, score.isGroup ? 12 : 10);
+        if (!score.isGroup) {
+          this.line(doc, `Tối đa: ${score.maxScore} | Tự chấm: ${reportValue(score.selfScore)} | Thẩm định: ${reportValue(score.adminScore)} | Chênh lệch: ${score.selfScore !== null && score.adminScore !== null ? Number((score.adminScore - score.selfScore).toFixed(2)) : "Chưa có"}`);
+          for (const line of scoreDetails(score)) this.line(doc, line);
+        }
       }
+      this.heading(doc, "TỔNG KẾT VÀ LỊCH BỔ SUNG");
+      for (const line of sections.conclusion) this.line(doc, line);
+      this.heading(doc, "LỊCH SỬ HỒ SƠ");
+      if (!data.histories.length) this.line(doc, "Chưa có lịch sử chuyển trạng thái");
+      for (const history of data.histories) this.line(doc, `${reportDate(history.createdAt)} — ${history.actorName}: ${reportStatus(history.fromStatus)} → ${reportStatus(history.toStatus)}; ${history.comment ?? "Không có ghi chú"}`);
+      this.heading(doc, "NHẬN XÉT VÀ PHẢN HỒI");
+      if (!data.feedbacks.length) this.line(doc, "Chưa có phản hồi");
+      for (const feedback of data.feedbacks) this.line(doc, `${reportDate(feedback.createdAt)} — ${feedback.authorName} (${feedback.type}): ${feedback.content}`);
+      this.heading(doc, "XÁC NHẬN");
+      this.line(doc, "ĐẠI DIỆN ĐƠN VỊ                                      BAN THANH NIÊN");
+      this.line(doc, "(Ký, ghi rõ họ tên)                                      (Ký, ghi rõ họ tên)");
+      doc.moveDown(3);
+      this.line(doc, "Mẫu làm việc phục vụ đồ án, đối chiếu lại khi có mẫu hành chính chính thức");
+      doc.end();
+    } catch {
+      // Hủy stream bằng lỗi dự án để font hoặc thư viện không lộ đường dẫn vào tầng HTTP
+      doc.destroy(new Error("Không thể tạo nội dung PDF tiếng Việt"));
     }
-
-    const finished = this.waitForFinish(output);
-    doc.end();
-    await finished;
-    return {
-      buffer: Buffer.concat(chunks),
-      contentType: PDF_CONTENT_TYPE,
-      extension: "pdf",
-    };
+    return { buffer: await finished, contentType: "application/pdf", extension: "pdf" };
   }
 
-  private createDocument(): PDFKit.PDFDocument {
-    const doc = new PDFDocument({
-      size: "A4",
-      margin: 42,
-      bufferPages: true,
-      info: { Title: "Seminar KPI Report", Author: "Seminar KPI" },
-    });
-    const fontPath = this.configService.get<string>("REPORT_EXPORT_FONT_PATH");
-    if (fontPath) {
-      doc.font(fontPath);
-    }
-    return doc;
+  /** Giữ tiêu đề gần nội dung kế tiếp, chỉ chủ động sang trang khi khoảng trống không đủ */
+  private heading(doc: PDFKit.PDFDocument, text: string, size = 12): void {
+    if (doc.y > doc.page.height - doc.page.margins.bottom - 80) doc.addPage();
+    doc.moveDown(0.5).font("ReportBold").fontSize(size).text(text);
+    doc.moveDown(0.3);
   }
 
-  private writeTableHeader(
-    doc: PDFKit.PDFDocument,
-    columns: string[],
-  ): void {
-    doc.fontSize(9).text(columns.join(" | "), { underline: true });
-    doc.moveDown(0.5);
-  }
-
-  private ensureSpace(doc: PDFKit.PDFDocument, height: number): void {
-    if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
-      doc.addPage();
-    }
-  }
-
-  private formatDate(value: Date | null): string {
-    return value ? value.toLocaleString("vi-VN") : "-";
-  }
-
-  private waitForFinish(output: PassThrough): Promise<void> {
-    return new Promise((resolve, reject) => {
-      output.on("end", resolve);
-      output.on("error", reject);
-    });
+  /** Ghi một đoạn Unicode có thể dài nhiều trang, PDFKit tự wrap và giữ lề A4 */
+  private line(doc: PDFKit.PDFDocument, text: string): void {
+    doc.font("Report").fontSize(10).text(text, { lineGap: 3 });
+    doc.moveDown(0.3);
   }
 }

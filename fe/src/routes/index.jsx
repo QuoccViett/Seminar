@@ -13,6 +13,7 @@ import NotificationInbox from "../pages/NotificationInbox";
 import PushOnboardingPage from "../pages/auth/PushOnboardingPage";
 import UnitRecords from "../pages/unit/UnitRecords";
 import AdminRecords from "../pages/admin/AdminRecords";
+import AdminReports from "../pages/admin/AdminReports";
 
 // Trang hồ sơ Admin dùng danh sách/chi tiết backend thật, thao tác thẩm định thuộc VC12
 const Forbidden = () => <div style={{ padding: 20, color: "red" }}>403 - Bạn không có quyền truy cập!</div>;
@@ -44,6 +45,8 @@ export default function AppRoutes() {
               <Route path="/admin/config" element={<AdminConfig />} />
               <Route path="/admin/records" element={<AdminRecords />} />
               <Route path="/admin/audit-log" element={<AdminAuditLog />} />
+              {/* Báo cáo chỉ trong nhánh ADMIN đã đổi mật khẩu, mọi thao tác tạo và tải gọi API thật */}
+              <Route path="/admin/reports" element={<AdminReports />} />
               {/* Hộp thư quản trị dùng API thật và chỉ lấy dữ liệu thuộc access token hiện tại */}
               <Route path="/admin/notifications" element={<NotificationInbox />} />
             </Route>
