@@ -40,6 +40,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const error = this.record(exception);
     const code = error?.code;
     const meta = this.record(error?.meta);
+    // Trigger VC12 dùng SQLSTATE riêng tại câu ghi để deadline không bị trả thành lỗi SQL chung
+    // Chỉ đọc mã cấu trúc đã biết, không phản chiếu message, detail hoặc payload từ adapter
+    const adapterCause = this.record(this.record(meta?.driverAdapterError)?.cause);
+    const databaseState = typeof meta?.code === "string" ? meta.code : typeof adapterCause?.originalCode === "string" ? adapterCause.originalCode : "";
+    if (databaseState === "P4012") return { statusCode: 403, code: "DEADLINE_PASSED", message: "Đã hết thời gian bổ sung hồ sơ", details: [] };
     if (code === "P2002") {
       const target = Array.isArray(meta?.target) ? meta.target.join(" ") : String(meta?.target ?? "");
       const key = target.toLowerCase().replace(/[_\s]/g, "");

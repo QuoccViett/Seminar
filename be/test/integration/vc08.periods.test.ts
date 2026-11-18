@@ -26,6 +26,7 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
   const { AppModule } = await import(new URL("app.module.js", dist).href);
   const { PrismaService } = await import(new URL("prisma/prisma.service.js", dist).href);
   const { ClockService } = await import(new URL("common/services/clock.service.js", dist).href);
+  const { EvaluationStateService } = await import(new URL("modules/evaluations/evaluation-state.service.js", dist).href);
   const { AuditService } = await import(new URL("common/services/audit.service.js", dist).href);
   const { AllExceptionsFilter } = await import(new URL("common/filters/all-exceptions.filter.js", dist).href);
   const { createApiValidationPipe } = await import(new URL("common/pipes/api-validation.pipe.js", dist).href);
@@ -45,6 +46,9 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
   const base = await app.getUrl();
   let instant = new Date("2026-11-28T16:29:59.999Z");
   clock.now = () => new Date(instant);
+  // Fixture biên thời gian VC08 điều khiển cùng một mốc cho Clock và nguồn giờ use-case chuyển phase
+  // Runtime dùng giờ DB thật, việc chờ khóa qua hạn và trigger statement được kiểm riêng tại VC12
+  app.get(EvaluationStateService).databaseNow = async () => new Date(instant);
 
   /** Gửi JSON tới server nội bộ và trả status cùng nội dung phản hồi để kiểm tra quyền
    * token là phiên đăng nhập thật, body tùy chọn và không ghi thông tin xác thực ra log

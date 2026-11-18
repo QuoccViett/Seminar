@@ -72,10 +72,12 @@ export class EvidencesService implements OnModuleInit, OnModuleDestroy {
       const context = await tx.evaluation.findFirst({ where: { id, ...this.scope(user) }, include });
       if (!context) throw this.missing();
       Object.assign(context, await this.state.reconcileInitial(tx, context, context.period, await this.state.databaseNow(tx)));
+      Object.assign(context, await this.state.reconcileSupplement(tx, context, context.period, await this.state.databaseNow(tx)));
       try { return { value: await work(tx, context) }; }
       catch (error) {
         if (!(error instanceof HttpException)) throw error;
         await this.state.reconcileInitial(tx, context, context.period, await this.state.databaseNow(tx));
+        await this.state.reconcileSupplement(tx, context, context.period, await this.state.databaseNow(tx));
         return { error };
       }
     }, { timeout: 60000, maxWait: 10000 });
@@ -93,6 +95,9 @@ export class EvidencesService implements OnModuleInit, OnModuleDestroy {
     if (!criterion || !score) throw this.missing();
     if (context.period.criteria.some((row) => row.parentId === criterionId)) throw this.rule("Chỉ được gắn minh chứng vào tiêu chí lá");
     const now = await this.state.databaseNow(tx);
+    // Khóa upload, xác nhận và xóa tại đúng deadline dựa trên giờ DB, kể cả khi job trễ
+    // Hồ sơ đã nộp sớm không bị gán nhầm lỗi quá hạn và vẫn dùng lý do khóa thông thường
+    if (context.status === "SUPPLEMENT_EXPIRED" || context.status === "SUPPLEMENT_REQUESTED" && context.supplementDeadline && now >= context.supplementDeadline) throw new ForbiddenException({ code: "DEADLINE_PASSED", message: "Đã hết thời gian bổ sung hồ sơ" });
     const reason = selfLockedReason(context.period, context, now, score.needsSupplement);
     if (reason) throw new ForbiddenException({ code: "EVALUATION_LOCKED", message: reason });
     return { criterion, score, now, round: context.status === "DRAFT" ? "INITIAL" : "SUPPLEMENT" };
@@ -187,6 +192,9 @@ export class EvidencesService implements OnModuleInit, OnModuleDestroy {
       if (mimeType !== pending.mimeType) throw invalidFile();
       await checkFile(bytes, pending.fileName, pending.mimeType, Number(pending.sizeBytes));
       await this.storage.put(pending.pendingPath, bytes, pending.mimeType);
+      // I/O có thể vượt deadline, kiểm lại sau khi ghi vùng chờ trước khi báo upload thành công
+      // Bytes chưa xác nhận không trở thành minh chứng và vẫn được cleanup bù khi request bị khóa
+      await this.writable(tx, context, ref.criterionScore.criterionId, user);
       return { message: "Đã tải tệp vào vùng chờ xác nhận" };
     });
   }
@@ -229,6 +237,12 @@ export class EvidencesService implements OnModuleInit, OnModuleDestroy {
       const { now } = await this.writable(tx, context, item.criterionId, user);
       const evidence = await tx.evidence.create({ data: { id: pending?.id ?? randomUUID(), criterionScoreId: score.id, uploaderId: user.id, kind: item.kind, round,
         fileName: pending?.fileName, mimeType: pending?.mimeType, sizeBytes: pending?.sizeBytes, storagePath: pending?.finalPath, externalUrl, description: item.description ?? null, createdAt: now } });
+      // Minh chứng bổ sung thay đổi cơ sở thẩm định, điểm duyệt cũ phải được xem lại
+      // Audit điểm cũ trước khi xóa để lịch sử giải thích vì sao ô trở về chưa duyệt
+      if (round === "SUPPLEMENT" && score.adminScore !== null) {
+        await tx.criterionScore.update({ where: { id: score.id }, data: { adminScore: null, adminComment: null, reviewedById: null, reviewedAt: null, updatedAt: now } });
+        await this.audit.record({ actorId: user.id, action: "REVIEW_INVALIDATED", entity: "CriterionScore", entityId: score.id, before: { adminScore: score.adminScore.toString(), adminComment: score.adminComment }, after: { adminScore: null, adminComment: null } }, tx);
+      }
       if (pending) await tx.evidenceUpload.update({ where: { id: pending.id }, data: { state: "CONFIRMED" } });
       await this.audit.record({ actorId: user.id, action: "CREATE", entity: "Evidence", entityId: evidence.id,
         after: { evaluationId: id, criterionId: item.criterionId, kind: evidence.kind, round, fileName: evidence.fileName, sizeBytes: evidence.sizeBytes?.toString() ?? null } }, tx);

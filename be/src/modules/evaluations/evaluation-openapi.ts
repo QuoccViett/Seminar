@@ -15,12 +15,13 @@ const finalResult: SchemaObject = { type: "object", properties: { score: nullabl
 export const evaluationMetadataSchema: SchemaObject = {
   type: "object", required: ["id", "periodId", "period", "unit", "status", "serverTime", "criteriaVisible", "canSubmit", "lockedReason"], properties: {
     id: { type: "string", format: "uuid" }, periodId: { type: "string", format: "uuid" },
-    period: { type: "object", properties: { id: { type: "string", format: "uuid" }, name: { type: "string" }, selfEvalStart: time, selfEvalDeadline: time } },
+    period: { type: "object", properties: { id: { type: "string", format: "uuid" }, name: { type: "string" }, phase: { type: "string" }, selfEvalStart: time, selfEvalDeadline: time } },
     unit: { type: "object", properties: { id: { type: "string", format: "uuid" }, code: { type: "string" }, name: { type: "string" } } },
     status: { type: "string", enum: ["DRAFT", "PENDING_REVIEW", "SUPPLEMENT_REQUESTED", "SUPPLEMENT_SUBMITTED", "SUPPLEMENT_EXPIRED", "FINALIZED"] },
-    submittedAt: time, autoLockedAt: time, supplementStartAt: time, supplementDeadline: time,
-    serverTime: { type: "string", format: "date-time" }, criteriaVisible: { type: "boolean" }, canSubmit: { type: "boolean" },
+    submittedAt: time, autoLockedAt: time, supplementStartAt: time, supplementDeadline: time, firstReviewedAt: time, supplementRequestedAt: time, supplementSubmittedAt: time,
+    serverTime: { type: "string", format: "date-time" }, criteriaVisible: { type: "boolean" }, canSubmit: { type: "boolean" }, canSubmitSupplement: { type: "boolean" },
     lockedReason: nullableText, deadlineWarning: nullableText, finalResult,
+    permissions: { type: "object", description: "Chỉ Admin nhận quyền thẩm định do server tính", properties: { canReview: { type: "boolean" }, canCompleteFirstReview: { type: "boolean" }, canRequestSupplement: { type: "boolean" }, canFinalize: { type: "boolean" } } },
   },
 };
 
@@ -37,6 +38,9 @@ export const evaluationDetailSchema: SchemaObject = {
       selfScore: nullableNumber, selfNote: nullableText, canEditSelf: { type: "boolean" }, lockedReason: nullableText, serverTime: { type: "string", format: "date-time" },
       needsSupplement: { type: "boolean" }, supplementNote: nullableText,
       adminScore: { ...nullableNumber, description: "Chỉ trả cho ADMIN" }, adminComment: { ...nullableText, description: "Chỉ trả cho ADMIN" },
+      reviewedById: { ...nullableText, description: "Chỉ trả cho ADMIN" }, reviewedByName: nullableText, reviewedAt: time, supplementedAt: time,
+      supplementChanged: { type: "boolean", description: "Chỉ Admin, nội dung cuối khác baseline" },
+      supplementBaseline: { type: "object", nullable: true, description: "Chỉ Admin, snapshot trước bổ sung không chứa storagePath", properties: { capturedAt: time, source: { type: "string" }, content: { type: "object", properties: { selfScore: nullableText, selfNote: nullableText, evidenceIds: { type: "array", items: { type: "string", format: "uuid" } } } }, review: { type: "object", properties: { adminScore: nullableText, adminComment: nullableText, reviewedById: nullableText, reviewedAt: time } } } },
       evidences: { type: "array", items: { type: "object", properties: { id: { type: "string", format: "uuid" }, kind: { type: "string", enum: ["FILE", "LINK"] }, round: { type: "string", enum: ["INITIAL", "SUPPLEMENT"] }, fileName: nullableText, mimeType: nullableText, sizeBytes: nullableText, externalUrl: nullableText, description: nullableText, previewStatus: { type: "string" } } } },
     },
   } } },

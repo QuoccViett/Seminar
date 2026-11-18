@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import type { Evaluation, EvaluationPeriod } from "../../generated/prisma/client.js";
+import type { Evaluation, EvaluationPeriod, Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ERROR_CODES } from "../../common/constants/error-codes.js";
 import { AuditService } from "../../common/services/audit.service.js";
@@ -57,14 +57,21 @@ export class PeriodWorkflowService {
    * Lệnh lặp hoặc chuyển lùi bị từ chối, vì vậy không tạo dấu vết hoặc thông báo trùng
    */
   async transition(periodId: string, target: PhaseTarget, actorId: string | null) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction((tx) => this.transitionInTransaction(tx, periodId, target, actorId), { timeout: 30_000, maxWait: 10_000 });
+  }
+
+  /** Dùng chung đồ thị chuyển phase trong transaction của yêu cầu bổ sung hoặc endpoint chuyên dụng
+   * Caller giữ cùng kết nối và thứ tự khóa kỳ trước hồ sơ, không mở transaction lồng nhau
+   * Trạng thái, history và outbox commit hoặc rollback cùng nghiệp vụ gọi, giờ lấy từ DB sau khóa
+   */
+  async transitionInTransaction(tx: Prisma.TransactionClient, periodId: string, target: PhaseTarget, actorId: string | null) {
       await lockPeriod(tx, periodId);
       const period = await tx.evaluationPeriod.findUnique({ where: { id: periodId } });
       if (!period) throw this.notFound();
       // Khóa cùng connection trước khi đọc để không chạy song song với lưu/nộp/chốt hồ sơ
       await tx.$queryRaw`SELECT id FROM evaluations WHERE period_id = ${periodId}::uuid ORDER BY id FOR UPDATE`;
       const evaluations = await tx.evaluation.findMany({ where: { periodId }, orderBy: { id: "asc" } });
-      const now = this.clock.now();
+      const now = await this.evaluationState.databaseNow(tx);
       const reason = this.rejection(period, evaluations, target, now);
       if (reason) throw new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message: reason });
 
@@ -97,9 +104,6 @@ export class PeriodWorkflowService {
         });
       }
       return after;
-    // Chuyển giai đoạn ghi history/audit và hộp thư cho cả kỳ, cần ngân sách hữu hạn lớn hơn mặc định 5 giây
-    // Nếu quá ngân sách vẫn rollback toàn bộ, không trả thành công khi chỉ một phần đơn vị được khóa
-    }, { timeout: 30_000, maxWait: 10_000 });
   }
 
   /** Tính lịch xem trước bằng cùng helper sẽ dùng khi VC12 lưu snapshot yêu cầu

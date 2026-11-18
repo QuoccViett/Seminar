@@ -76,4 +76,17 @@ export class EvaluationStateService {
     });
     return after;
   }
+
+  /** Ghi trạng thái nộp bổ sung sau khi caller đã khóa và kiểm thay đổi từng lá
+   * Thời gian từ DB và actor UNIT được ghi cùng history, audit và thông báo Admin
+   * Không tự chốt kết quả hoặc mở thêm vòng bổ sung khi đã nộp
+   */
+  async submitSupplement(tx: Prisma.TransactionClient, evaluation: Evaluation, now: Date, actorId: string): Promise<Evaluation> {
+    const after = await tx.evaluation.update({ where: { id: evaluation.id }, data: { status: "SUPPLEMENT_SUBMITTED", supplementSubmittedAt: now, updatedAt: now } });
+    await tx.statusHistory.create({ data: { id: randomUUID(), evaluationId: evaluation.id, actorId, fromStatus: evaluation.status, toStatus: after.status, comment: "Đơn vị đã nộp nội dung bổ sung", createdAt: now } });
+    await this.audit.record({ actorId, action: "SUPPLEMENT_SUBMIT", entity: "Evaluation", entityId: evaluation.id, before: { status: evaluation.status }, after: { status: after.status, supplementSubmittedAt: now.toISOString() } }, tx);
+    const admins = await tx.user.findMany({ where: { role: "ADMIN", isActive: true }, select: { id: true } });
+    for (const admin of admins) await this.notifications.notifyUser(tx, { userId: admin.id, type: "SUPPLEMENT_SUBMITTED", title: "Đơn vị đã nộp bổ sung", body: "Hồ sơ đã được nộp bổ sung và chờ thẩm định", dedupeKey: `SUPPLEMENT_SUBMITTED:${evaluation.id}`, refType: "EVALUATION", refId: evaluation.id });
+    return after;
+  }
 }

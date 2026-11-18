@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
+import { captureSupplementBaseline } from "../src/modules/evaluations/review-policy.js";
+import { calculateSupplementDeadline } from "../src/common/services/deadline-calculator.js";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -313,11 +315,22 @@ async function main(): Promise<void> {
           where: { id: evaluation.id }, data: { status: "PENDING_REVIEW", submittedAt, updatedAt: now },
         });
 
-        const supplementStartAt = new Date(now.getTime() - 30_000);
-        const supplementDeadline = new Date(now.getTime() + 30_000);
+        // Mẫu bổ sung dùng cùng lịch tạm với API, chọn phút tương lai gần nhất trong ngày thường Việt Nam
+        // Cuối tuần dời riêng mốc mẫu sang ngày thường kế tiếp, deadline luôn do helper chính sách tính
+        const supplementStartAt = new Date(now.getTime() + 60_000);
+        while ([0, 6].includes(new Date(+supplementStartAt + 7 * 3600000).getUTCDay())) supplementStartAt.setUTCDate(supplementStartAt.getUTCDate() + 1);
+        const supplementDeadline = calculateSupplementDeadline(supplementStartAt);
+        // Hồ sơ mẫu chờ bổ sung cần baseline nội dung hiện tại để trigger VC12 kiểm được thay đổi thật
+        // Chỉ tác động hồ sơ mới trong seed, lần chạy lại đã bỏ qua hồ sơ có dữ liệu để giữ lịch sử
+        if (status === "NEEDS_SUPPLEMENT") {
+          const flagged = await tx.criterionScore.findMany({ where: { evaluationId: evaluation.id, needsSupplement: true }, include: { evidences: true } });
+          for (const score of flagged) await tx.criterionScore.update({ where: { id: score.id }, data: { supplementBaseline: { ...captureSupplementBaseline(score, now), source: "SEED" } } });
+        }
+        // Nhánh mẫu đã chốt đi trực tiếp từ chờ duyệt, không giả mốc nộp bổ sung khi chưa có vòng bổ sung
+        // Mốc supplementSubmittedAt chỉ được use-case nộp thật cấp trong cửa sổ snapshot hợp lệ
         await tx.evaluation.update({
           where: { id: evaluation.id },
-          data: { status: dbEvaluationStatus, submittedAt, firstReviewedAt: inReview ? new Date(periodSeed.year, 1, 18 + index) : null, supplementRequestedAt: status === "NEEDS_SUPPLEMENT" ? now : null, supplementStartAt: status === "NEEDS_SUPPLEMENT" ? supplementStartAt : null, supplementDeadline: status === "NEEDS_SUPPLEMENT" ? supplementDeadline : null, supplementSubmittedAt: finalized ? new Date(periodSeed.year, 2, 1 + index) : null, finalizedAt: finalized ? new Date(periodSeed.year, 3, 10 + index) : null, finalizedById: finalized ? admin.id : null, finalScore, finalPercent: finalScore ? Number(finalScore) / 3 : null, finalRating: finalScore ? (Number(finalScore) >= 255 ? "EXCELLENT" : "GOOD") : null, updatedAt: now },
+          data: { status: dbEvaluationStatus, submittedAt, firstReviewedAt: inReview ? new Date(periodSeed.year, 1, 18 + index) : null, supplementRequestedAt: status === "NEEDS_SUPPLEMENT" ? now : null, supplementStartAt: status === "NEEDS_SUPPLEMENT" ? supplementStartAt : null, supplementDeadline: status === "NEEDS_SUPPLEMENT" ? supplementDeadline : null, supplementSubmittedAt: null, finalizedAt: finalized ? new Date(periodSeed.year, 3, 10 + index) : null, finalizedById: finalized ? admin.id : null, finalScore, finalPercent: finalScore ? Number(finalScore) / 3 : null, finalRating: finalScore ? (Number(finalScore) >= 255 ? "EXCELLENT" : "GOOD") : null, updatedAt: now },
         });
 
         for (const [historyIndex, toStatus] of statusChain(status).entries()) {
