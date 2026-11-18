@@ -12,9 +12,9 @@ import AdminLayout from "../layouts/AdminLayout";
 import NotificationInbox from "../pages/NotificationInbox";
 import PushOnboardingPage from "../pages/auth/PushOnboardingPage";
 import UnitRecords from "../pages/unit/UnitRecords";
+import AdminRecords from "../pages/admin/AdminRecords";
 
-// Tạm thời tạo các trang giả để test Layout
-const AdminRecords = () => <div style={{ fontSize: 24, fontWeight: "bold" }}>Xử lý Hồ sơ</div>;
+// Trang hồ sơ Admin dùng danh sách/chi tiết backend thật, thao tác thẩm định thuộc VC12
 const Forbidden = () => <div style={{ padding: 20, color: "red" }}>403 - Bạn không có quyền truy cập!</div>;
 
 export default function AppRoutes() {

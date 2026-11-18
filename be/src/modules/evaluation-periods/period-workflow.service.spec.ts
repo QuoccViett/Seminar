@@ -20,7 +20,8 @@ function fixture() {
     selfEvalStart: new Date("2026-11-18T00:00:00Z"), selfEvalDeadline: clock.now(), evaluations: [evaluation],
   };
   const prisma = { evaluationPeriod: { findUnique: async () => period } };
-  const service = new PeriodWorkflowService(prisma as never, {} as never, clock as never, new DeadlineCalculator(clock as never), {} as never);
+  // GET options không ghi trạng thái nên dependency reconcile không được gọi trong fixture này
+  const service = new PeriodWorkflowService(prisma as never, {} as never, clock as never, new DeadlineCalculator(clock as never), {} as never, {} as never);
   return { service, clock, period, evaluation };
 }
 

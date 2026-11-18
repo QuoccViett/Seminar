@@ -92,7 +92,7 @@ Giữ nguyên: `id`, `user_id` (FK), `token_hash` (UK), `expires_at`, `revoked_a
 | `max_total_score` | DECIMAL | Default 300 | Tổng điểm thang điểm (mẫu số tính %) |
 | `self_eval_start` | TIMESTAMP | Nullable | Thời điểm mở hệ thống (Giai đoạn 1) |
 | `self_eval_deadline` | TIMESTAMP | Nullable | Hạn đóng → **Auto-lock** |
-| `supplement_hours` | INT | Default 48 | Số giờ bổ sung hồ sơ (Giai đoạn 3), cấu hình riêng từng đợt |
+| `supplement_hours` | INT | Default 48 | Legacy để tương thích, không dùng tính lịch bổ sung mới |
 | `published_at` | TIMESTAMP | Nullable | Thời điểm Admin gửi thang điểm cho cơ sở (trước đó được tự do chỉnh sửa) |
 | `finalized_at` | TIMESTAMP | Nullable | Thời điểm khóa sổ toàn đợt |
 | `created_by_id` | UUID | FK | Admin tạo đợt |
@@ -144,18 +144,19 @@ Dữ liệu theo quy chế (mỗi mức lấy cận dưới, hàm `fn_rating_for
 
 ##### 7. `evaluations` (Hồ sơ thi đua của 1 đơn vị / 1 đợt)
 
-UNIQUE(`period_id`, `unit_id`) → 34 hồ sơ mỗi đợt.
+UNIQUE(`period_id`, `unit_id`) bảo đảm một hồ sơ mỗi đơn vị/kỳ, publish tạo theo số đơn vị hoạt động và VC09 cho tạo bù idempotent
 
 | Trường | Kiểu | Mô tả |
 | --- | --- | --- |
 | `id` | UUID PK | |
 | `period_id`, `unit_id` | UUID FK | |
-| `status` | VARCHAR | `DRAFT` (chưa nộp/đang làm dở) · `PENDING_REVIEW` (chờ duyệt, đã khóa) · `SUPPLEMENT_REQUESTED` (đang đếm ngược 48h) · `SUPPLEMENT_SUBMITTED` (đã bổ sung, chờ thẩm định) · `SUPPLEMENT_EXPIRED` (hết 48h, khóa vĩnh viễn) · `FINALIZED` (đã chốt) |
+| `status` | VARCHAR | `DRAFT` (đang làm dở) · `PENDING_REVIEW` (chờ duyệt, đã khóa) · `SUPPLEMENT_REQUESTED` (theo cửa sổ snapshot) · `SUPPLEMENT_SUBMITTED` (đã nộp bổ sung) · `SUPPLEMENT_EXPIRED` (hết hạn bổ sung, chờ thẩm định tiếp) · `FINALIZED` (đã chốt) |
 | `submitted_at` | TIMESTAMP | Đơn vị bấm nộp |
 | `auto_locked_at` | TIMESTAMP | Hệ thống Auto-lock khi hết hạn Giai đoạn 1 |
 | `first_reviewed_at` | TIMESTAMP | Admin hoàn tất thẩm định lần 1 |
 | `supplement_requested_at` | TIMESTAMP | Admin bấm "Yêu cầu bổ sung hồ sơ" |
-| `supplement_deadline` | TIMESTAMP | = requested_at + `supplement_hours` (đồng hồ đếm ngược riêng từng đơn vị) |
+| `supplement_start_at` | TIMESTAMP | Snapshot giờ mở Admin chọn, ngày Việt Nam thứ Hai–thứ Sáu; lịch tạm chờ hỏi thầy |
+| `supplement_deadline` | TIMESTAMP | UTC 00:00 sau ngày kết thúc theo lịch tạm, lưu snapshot, không tính từ giờ gửi hoặc supplement_hours |
 | `supplement_submitted_at` | TIMESTAMP | Đơn vị nộp bổ sung |
 | `finalized_at` / `finalized_by_id` | TIMESTAMP / FK | Admin bấm "Khóa sổ/Chốt điểm" |
 | `final_score`, `final_percent`, `final_rating` | DECIMAL / DECIMAL / VARCHAR | Kết quả chính thức, chốt khi khóa sổ (CHECK bắt buộc khi `FINALIZED`) |
@@ -170,10 +171,10 @@ UNIQUE(`evaluation_id`, `criterion_id`).
 | `id` | UUID PK | |
 | `evaluation_id`, `criterion_id` | UUID FK | |
 | `self_score` | DECIMAL | Điểm cơ sở tự chấm (≤ `max_score`) |
-| `self_note` | TEXT | Nội dung diễn giải (Text Editor) |
+| `self_note` | TEXT | Diễn giải văn bản thuần, VC09 giới hạn API 5000 ký tự, không xử lý HTML |
 | `admin_score` | DECIMAL | Điểm Admin chấm (mặc định = tự chấm, Admin sửa được) |
 | `admin_comment` | TEXT | Bình luận/ý kiến thẩm định. **Bắt buộc** (CHECK `criterion_scores_admin_reason_check`) khi `admin_score` khác `self_score` |
-| `needs_supplement` | BOOLEAN | Mục Admin yêu cầu bổ sung (chỉ các mục này được sửa trong 48h) |
+| `needs_supplement` | BOOLEAN | Chỉ lá được yêu cầu mới sửa trong `[supplement_start_at,supplement_deadline)` |
 | `supplement_note` | TEXT | Nội dung yêu cầu bổ sung cho mục này |
 | `reviewed_by_id`, `reviewed_at` | FK / TIMESTAMP | Admin thẩm định |
 | `created_at` / `updated_at` | TIMESTAMP | |
@@ -181,7 +182,9 @@ UNIQUE(`evaluation_id`, `criterion_id`).
 **Trigger `check_criterion_score_rules`** bảo vệ nghiệp vụ ngay tại DB:
 * Tiêu chí và hồ sơ phải cùng đợt; chỉ tiêu chí lá được chấm.
 * `self_score` và `admin_score` không vượt `max_score`.
-* **Cơ sở chỉ sửa phần tự chấm khi** hồ sơ `DRAFT`, hoặc `SUPPLEMENT_REQUESTED` + đúng mục `needs_supplement` + còn trong hạn 48h → hiện thực hóa Auto-lock.
+* Cơ sở chỉ sửa phần tự chấm khi DRAFT đã publish trong `[self_eval_start,self_eval_deadline)`, hoặc SUPPLEMENT_REQUESTED + đúng mục needs_supplement + trong snapshot `[supplement_start_at,supplement_deadline)`; API kiểm thêm phase và ownership, DB kiểm statement time
+
+VC09 thêm migration `20261118090000_vc09_submit_window` bảo vệ UPDATE submitted_at tại statement ghi; không backfill hoặc sửa các migration đã áp dụng. Service khóa kỳ → hồ sơ, đọc statement_timestamp UTC sau khóa, reconcile DRAFT quá hạn bằng use-case chung với chuyển phase/VC11; status/history/audit/outbox nguyên tử, submitted_at giữ null khi hệ thống tự khóa. Tổng UNIT dùng selfScore Decimal, không lấy currentTotal có điểm Admin từ view
 
 * Khi đơn vị sửa điểm tự chấm ở giai đoạn bổ sung, `admin_score`/`reviewed_*` tự reset về NULL để Admin chấm lại (tránh vi phạm ràng buộc lý do và tránh giữ điểm cũ).
 
@@ -205,7 +208,7 @@ Một dòng điểm có **nhiều** minh chứng (hỗ trợ tải nhiều file)
 
 **Preview file:** `preview_status` (`NOT_REQUIRED` cho ảnh/PDF xem trực tiếp, `PENDING`/`READY`/`FAILED` cho file Word cần worker convert sang PDF) và `preview_path` (bản xem trước). Worker cập nhật 2 cột này vẫn được khi hồ sơ đã khóa.
 
-**Trigger `check_evidence_edit_rules`** (INSERT / UPDATE / DELETE): chỉ cho thay đổi minh chứng khi hồ sơ `DRAFT` (round phải là `INITIAL`), hoặc `SUPPLEMENT_REQUESTED` + mục có `needs_supplement = true` + còn trong hạn 48h (minh chứng mới phải là `SUPPLEMENT`). Mọi trường hợp khác bị khóa; không cho chuyển minh chứng sang mục khác.
+**Trigger `check_evidence_edit_rules`** (INSERT / UPDATE / DELETE): chỉ cho thay đổi minh chứng khi DRAFT đã publish trong cửa sổ tự chấm (round INITIAL), hoặc SUPPLEMENT_REQUESTED + needs_supplement=true trong snapshot `[supplement_start_at,supplement_deadline)` (round SUPPLEMENT); không sửa/xóa minh chứng INITIAL trong vòng bổ sung hoặc chuyển minh chứng sang mục khác
 
 ##### 10. `evaluation_feedbacks` (Phản hồi / yêu cầu giải trình)
 

@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, ConfigProvider, Empty, Space, Table, Typography } from "antd";
+import { Alert, Button, Card, ConfigProvider, Empty, Space, Typography } from "antd";
 import viVN from "antd/locale/vi_VN";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
-import { criteriaService } from "../../services/criteriaService";
+import { createEvaluation, getEvaluation, getScoreSummary, listEvaluations } from "../../services/evaluationService";
+import SelfEvaluationCard from "../../components/records/SelfEvaluationCard";
 
-/** Hiển thị thời điểm máy chủ theo giờ Việt Nam mà không dùng giờ máy để cấp quyền
- * value là chuỗi thời gian ISO từ API hoặc rỗng khi kỳ chưa có lịch
- * Kết quả chỉ phục vụ trình bày, mọi quyền xem tiếp tục do backend quyết định
- */
-function vietnamTime(value) {
-  return value ? new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "Chưa xác định";
-}
-
-/** Hiển thị kỳ đã công bố và cây tiêu chí khi API xác nhận đã tới giờ mở
- * Không có đầu vào từ route, dữ liệu được tải theo tài khoản trong phiên hiện tại
- * Làm mới định kỳ và khi người dùng yêu cầu để thấy kỳ mở mà không đăng nhập lại
- * Nếu tải lỗi hoặc component bị hủy, không giữ dữ liệu cũ có thể đã bị thu hồi quyền
+/** Tải kỳ và hồ sơ thật theo phiên UNIT, giữ thẻ ổn định để không mất nháp khi polling
+ * Làm mới mỗi 15 giây và tại mốc mở do server trả, timer chỉ hỏi API xác nhận lại quyền
+ * Không dùng Date.now để mở tiêu chí, lỗi mạng giữ nội dung local và khóa ghi tới khi tải lại
  */
 export default function UnitRecords() {
   const [periods, setPeriods] = useState([]);
@@ -27,57 +19,47 @@ export default function UnitRecords() {
     let active = true;
     let busy = false;
     let openingTimer;
-    /** Lấy metadata trước rồi chỉ xin cây cho kỳ được server cho phép xem
-     * Không so sánh thời gian thiết bị, kể cả khi lịch thay đổi giữa hai yêu cầu
-     * Nếu một yêu cầu lỗi thì bỏ kết quả cũ và hiển thị thông báo tiếng Việt
+    /** Lấy metadata trước, sau đó detail và summary chỉ khi server cho xem tiêu chí
+     * Hồ sơ chưa có hiện nút tạo bù, polling đọc không tự tạo dữ liệu
+     * Lỗi một request giữ snapshot đang chỉnh sửa và không hiển thị thành công giả
      */
     async function load() {
       if (busy) return;
       busy = true;
       try {
         const result = await evaluationPeriodService.getEvaluationPeriods({ pageSize: 100 });
-        const rows = await Promise.all((result.items || []).map(async (period) => ({
-          ...period,
-          tree: period.criteriaVisible ? await criteriaService.getCriteria(period.id) : [],
-        })));
+        const rows = await Promise.all((result.items || []).map(async (period) => {
+          const records = await listEvaluations({ periodId: period.id, pageSize: 1 });
+          if (!records.items.length) return { ...period, record: null, summary: null };
+          const record = await getEvaluation(records.items[0].id);
+          return { ...period, record, summary: record.criteriaVisible ? await getScoreSummary(record.id) : null };
+        }));
         if (active) {
-          setPeriods(rows);
-          setError("");
-          clearTimeout(openingTimer);
-          // Chỉ lên lịch hỏi lại API theo chênh lệch hai mốc server, không tự mở quyền trên FE
+          setPeriods(rows); setError(""); clearTimeout(openingTimer);
           const delays = rows.filter((period) => !period.criteriaVisible && period.selfEvalStart && period.serverTime)
-            .map((period) => Date.parse(period.selfEvalStart) - Date.parse(period.serverTime))
-            .filter((delay) => Number.isFinite(delay) && delay > 0);
+            .map((period) => Date.parse(period.selfEvalStart) - Date.parse(period.serverTime)).filter((delay) => Number.isFinite(delay) && delay > 0);
           if (delays.length) openingTimer = setTimeout(load, Math.min(Math.min(...delays), 2147483647));
         }
-      } catch (failure) {
-        if (active) { setPeriods([]); setError(failure.message || "Không thể tải kỳ đánh giá"); }
-      } finally {
-        busy = false;
-        if (active) setLoading(false);
-      }
+      } catch (failure) { if (active) setError(failure.message || "Không thể tải hồ sơ tự chấm"); }
+      finally { busy = false; if (active) setLoading(false); }
     }
     void load();
     const timer = setInterval(load, 15000);
     return () => { active = false; clearInterval(timer); clearTimeout(openingTimer); };
   }, [refresh]);
 
+  /** Tạo bù idempotent bằng identity phiên, không gửi unitId hoặc trạng thái từ UNIT
+   * Backend kiểm lịch thật, lỗi giữ nguyên danh sách để người dùng tải lại hoặc thử có chủ đích
+   */
+  async function create(periodId) {
+    try { await createEvaluation(periodId); setRefresh((value) => value + 1); }
+    catch (failure) { setError(failure.message || "Không thể tạo hồ sơ"); }
+  }
+
   return <ConfigProvider locale={viVN}><Space orientation="vertical" size="large" style={{ width: "100%" }}>
-    <Space><Typography.Title level={2}>Kỳ đánh giá</Typography.Title><Button loading={loading} onClick={() => setRefresh((value) => value + 1)}>Làm mới</Button></Space>
+    <Space><Typography.Title level={2}>Hồ sơ tự chấm</Typography.Title><Button loading={loading} onClick={() => setRefresh((value) => value + 1)}>Làm mới</Button></Space>
     {error && <Alert type="error" showIcon title={error} />}
     {!loading && !error && periods.length === 0 && <Empty description="Chưa có kỳ đánh giá được công bố" />}
-    {periods.map((period) => <Card key={period.id} title={period.name}>
-      <Space orientation="vertical" style={{ width: "100%" }}>
-        <Typography.Text>Mở: {vietnamTime(period.selfEvalStart)} · Kết thúc: {vietnamTime(period.selfEvalDeadline)} (giờ Việt Nam)</Typography.Text>
-        {!period.criteriaVisible ? <Alert type="info" showIcon title="Kỳ đánh giá chưa đến giờ mở tiêu chí" /> : <>
-          <Typography.Text>{period.selfEvalState === "CLOSED" ? "Đã hết thời gian tự chấm" : "Đang trong thời gian tự chấm"}</Typography.Text>
-          <Table rowKey="id" dataSource={period.tree} pagination={false} columns={[
-            { title: "Mã", dataIndex: "code" },
-            { title: "Tiêu chí", dataIndex: "name" },
-            { title: "Điểm tối đa", dataIndex: "maxScore" },
-          ]} />
-        </>}
-      </Space>
-    </Card>)}
+    {periods.map((period) => period.record ? <SelfEvaluationCard key={period.id} period={period} record={period.record} summary={period.summary} disconnected={Boolean(error)} onReload={() => setRefresh((value) => value + 1)} /> : <Card key={period.id} title={period.name}><Space><Typography.Text>Đơn vị chưa có hồ sơ trong kỳ này</Typography.Text><Button onClick={() => create(period.id)}>Tạo hồ sơ tự chấm</Button></Space></Card>)}
   </Space></ConfigProvider>;
 }
