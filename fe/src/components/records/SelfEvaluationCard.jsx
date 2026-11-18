@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Table, Tag, Typography } from "antd";
-import { saveSelfScores, submitEvaluation } from "../../services/evaluationService";
+import { saveSelfScores, submitEvaluation, submitSupplement } from "../../services/evaluationService";
 import EvidencePanel from "./EvidencePanel";
 
 /** Định dạng ISO theo giờ Việt Nam để trình bày, không dùng kết quả để cấp quyền */
@@ -28,8 +28,24 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
   const [busy, setBusy] = useState(false);
   const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [remaining, setRemaining] = useState(null);
   const busyRef = useRef(false);
   const dirty = Object.keys(drafts).length > 0;
+
+  /** Hiển thị thời gian còn lại từ snapshot server và thời gian đã trôi đơn điệu
+   * Đồng hồ trình duyệt chỉ cập nhật nhãn, không quyết định quyền lưu hoặc nộp
+   * Mỗi lần polling nhận serverTime mới thì đặt lại điểm bắt đầu để giảm sai lệch
+   */
+  useEffect(() => {
+    if (record.status !== "SUPPLEMENT_REQUESTED" || !record.serverTime || !record.supplementDeadline) { setRemaining(null); return undefined; }
+    const serverTime = Date.parse(record.serverTime);
+    const deadline = Date.parse(record.supplementDeadline);
+    const started = performance.now();
+    const update = () => setRemaining(Math.max(0, Math.ceil((deadline - serverTime - (performance.now() - started)) / 60000)));
+    update();
+    const timer = setInterval(update, 30000);
+    return () => clearInterval(timer);
+  }, [record.status, record.serverTime, record.supplementDeadline]);
 
   /** Giữ cả điểm/diễn giải của lá trong nháp, thay đổi không sửa trực tiếp dữ liệu server
    * Mỗi lần nhập đánh dấu cần lưu và xóa thông báo cũ, 0/null không bị thay bằng giá trị mặc định
@@ -70,8 +86,9 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
     if (busyRef.current || dirty || evidenceBusy) return;
     busyRef.current = true; setBusy(true);
     try {
-      await submitEvaluation(record.id);
-      setNotice({ type: "success", text: "Đã nộp hồ sơ, nội dung tự chấm đã khóa chỉnh sửa" });
+      if (record.status === "SUPPLEMENT_REQUESTED") await submitSupplement(record.id);
+      else await submitEvaluation(record.id);
+      setNotice({ type: "success", text: record.status === "SUPPLEMENT_REQUESTED" ? "Đã nộp nội dung bổ sung và khóa chỉnh sửa" : "Đã nộp hồ sơ, nội dung tự chấm đã khóa chỉnh sửa" });
     } catch (error) {
       const details = (error.fieldErrors || []).flatMap((item) => item.messages).join("; ");
       setNotice({ type: "error", text: [error.message || "Không thể nộp hồ sơ", details].filter(Boolean).join(": ") });
@@ -98,13 +115,14 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
     <Space orientation="vertical" style={{ width: "100%" }} size="middle">
       <Typography.Text>Mở: {vietnamTime(record.period.selfEvalStart)} · Kết thúc: {vietnamTime(record.period.selfEvalDeadline)} (giờ Việt Nam)</Typography.Text>
       {record.supplementStartAt && <Typography.Text>Lịch bổ sung (tạm): {vietnamTime(record.supplementStartAt)} đến trước {vietnamTime(record.supplementDeadline)} · Chờ giảng viên xác nhận</Typography.Text>}
+      {remaining !== null && <Typography.Text>Thời gian đến hạn bổ sung: khoảng {remaining} phút · Quyền thao tác do máy chủ kiểm tra</Typography.Text>}
       {!record.criteriaVisible ? <Alert type="info" showIcon title="Kỳ đánh giá chưa đến giờ mở tiêu chí" /> : <>
         {record.lockedReason && <Alert type="info" showIcon title={record.lockedReason} />}
         {record.deadlineWarning && <Alert type="warning" showIcon title={record.deadlineWarning} />}
         {summary && <Typography.Text strong>Tổng tự chấm tạm tính: {summary.selfTotal}/{summary.maxTotalScore} · {summary.selfPercent}% · {summary.ratingLabel || "Chưa có xếp loại"} · Đã nhập {summary.scoredCount}/{summary.leafCount} tiêu chí</Typography.Text>}
         {record.finalResult && <Alert type="success" title={`Kết quả đã chốt: ${record.finalResult.score} điểm · ${record.finalResult.percent}%`} />}
         <Table rowKey="criterionId" dataSource={tableRows(record.criteria)} columns={columns} pagination={false} defaultExpandAllRows scroll={{ x: 1100 }} />
-        <Space wrap><Button type="primary" disabled={!dirty || busy || disconnected} loading={busy} onClick={() => save()}>Lưu tất cả thay đổi</Button><Popconfirm title="Nộp hồ sơ tự chấm?" description="Sau khi nộp, đơn vị không thể chỉnh sửa nội dung tự chấm" okText="Nộp hồ sơ" cancelText="Quay lại" onConfirm={submit} disabled={!record.canSubmit || dirty || busy || evidenceBusy || disconnected}><Button disabled={!record.canSubmit || dirty || busy || evidenceBusy || disconnected}>Nộp hồ sơ</Button></Popconfirm>{dirty && <Typography.Text type="warning">Có nội dung chưa lưu, cần lưu hết trước khi nộp</Typography.Text>}</Space>
+        <Space wrap><Button type="primary" disabled={!dirty || busy || disconnected} loading={busy} onClick={() => save()}>Lưu tất cả thay đổi</Button><Popconfirm title={record.status === "SUPPLEMENT_REQUESTED" ? "Nộp nội dung bổ sung?" : "Nộp hồ sơ tự chấm?"} description="Sau khi nộp, đơn vị không thể chỉnh sửa nội dung đã nộp" okText="Nộp hồ sơ" cancelText="Quay lại" onConfirm={submit} disabled={!(record.canSubmit || record.canSubmitSupplement) || dirty || busy || evidenceBusy || disconnected}><Button disabled={!(record.canSubmit || record.canSubmitSupplement) || dirty || busy || evidenceBusy || disconnected}>{record.status === "SUPPLEMENT_REQUESTED" ? "Nộp bổ sung" : "Nộp hồ sơ"}</Button></Popconfirm>{dirty && <Typography.Text type="warning">Có nội dung chưa lưu, cần lưu hết trước khi nộp</Typography.Text>}</Space>
       </>}
       {notice && <Alert type={notice.type} showIcon title={notice.text} />}
     </Space>

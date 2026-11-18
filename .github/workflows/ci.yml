@@ -148,6 +148,25 @@ jobs:
       - name: Run backend unit tests
         run: npm run test:unit
 
+      # Kiểm thẩm định và bổ sung trên PostgreSQL riêng, provider ngoài tắt để không gửi tin thật
+      # Ma trận quyền, baseline, rollback và cạnh tranh dùng HTTP Nest cùng trigger thật
+      - name: Kiểm VC12 trên database riêng
+        env:
+          VC12_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc12_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc12_test
+          DATABASE_URL="$VC12_TEST_DATABASE_URL" npx prisma migrate deploy
+          node --import tsx --test --test-concurrency=1 test/integration/vc12.review.test.ts test/integration/vc12.workflow.test.ts
+
+      # Nâng cấp riêng từ SQL nền để chứng minh cột baseline không làm mất dữ liệu đang tồn tại
+      # Database mới chỉ phục vụ phép nâng cấp, test từ chối chạy lại trên schema đã nâng cấp
+      - name: Kiểm migration VC12 giữ dữ liệu
+        env:
+          VC12_UPGRADE_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc12_upgrade_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc12_upgrade_test
+          node --import tsx --test test/integration/vc12.migration.test.ts
+
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=critical
 

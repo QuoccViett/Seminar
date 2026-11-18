@@ -223,7 +223,8 @@ test("VC10 upload nhiều minh chứng, quyền, quota, bù lỗi và preview qu
     await request("DELETE", `${path}/${added.data.id}`, unit);
     assert.equal(await storage.get(`final/${id}/${added.data.id}`), null);
     await prisma.evaluation.update({ where: { id }, data: { supplementDeadline: new Date() } });
-    assert.equal((await reserve()).error.code, "EVALUATION_LOCKED");
+    // VC12 phân biệt hết hạn với khóa trước mở, dù worker chưa reconcile trạng thái
+    assert.equal((await reserve()).error.code, "DEADLINE_PASSED");
 
     // Phiên quá hạn được cleanup sau restart giả lập, object CONFIRMED vẫn nguyên và idempotent còn giữ
     const staleId = randomUUID();

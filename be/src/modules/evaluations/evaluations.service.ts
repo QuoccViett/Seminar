@@ -9,11 +9,12 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import type { BatchSelfScoreDto, CreateEvaluationDto, EvaluationQueryDto, SelfScoreDto } from "./dto/evaluation.dto.js";
 import { EvaluationStateService } from "./evaluation-state.service.js";
 import { selfLockedReason, selfSummary } from "./evaluation-policy.js";
+import { reviewPermissions, supplementChanged } from "./review-policy.js";
 
 const contextInclude = {
   unit: true,
   period: { include: { criteria: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }, ratingThresholds: true } },
-  criterionScores: { include: { evidences: true } },
+  criterionScores: { include: { evidences: true, reviewedBy: { select: { fullName: true } } } },
 } satisfies Prisma.EvaluationInclude;
 type Context = Prisma.EvaluationGetPayload<{ include: typeof contextInclude }>;
 
@@ -55,24 +56,29 @@ export class EvaluationsService {
       if (!context) throw this.notFound();
       const now = await this.state.databaseNow(tx);
       Object.assign(context, await this.state.reconcileInitial(tx, context, context.period, now));
+      Object.assign(context, await this.state.reconcileSupplement(tx, context, context.period, now));
       const value = await work(tx, context, now);
       // Nếu kiểm nghiệp vụ vừa vượt deadline, vẫn commit auto-lock trước khi trả lỗi dự kiến
       // Không bắt lỗi SQL ở đây vì transaction lỗi phải rollback toàn bộ và được filter chuẩn hóa
-      if (value instanceof HttpException) await this.state.reconcileInitial(tx, context, context.period, await this.state.databaseNow(tx));
+      if (value instanceof HttpException) {
+        const rejectedAt = await this.state.databaseNow(tx);
+        Object.assign(context, await this.state.reconcileInitial(tx, context, context.period, rejectedAt));
+        await this.state.reconcileSupplement(tx, context, context.period, rejectedAt);
+      }
       return value instanceof HttpException ? { error: value } : { value };
     }, { timeout: 30_000, maxWait: 10_000 });
     if (result.error) throw result.error;
     return result.value as T;
   }
 
-  /** Reconcile trước lọc status và phân trang để hồ sơ quá hạn không còn nằm nhầm nhóm DRAFT
+  /** Reconcile trước lọc status và phân trang để hồ sơ quá hạn không còn nằm nhầm nhóm đang mở
    * Mỗi hồ sơ một transaction lấy khóa chung, thứ tự UUID cố định tránh khóa nhiều kỳ chéo nhau
-   * Chỉ lấy candidate DRAFT quá hạn theo giờ DB, run kiểm lại sau khóa chống tranh với submit
+   * Lấy DRAFT hoặc SUPPLEMENT_REQUESTED đã quá hạn theo giờ DB, run kiểm lại sau khóa chống tranh với submit
    */
   private async reconcileScope(user: CurrentUser, periodId?: string): Promise<void> {
     const now = await this.state.databaseNow(this.prisma);
     const rows = await this.prisma.evaluation.findMany({ where: {
-      AND: [this.scope(user), { status: "DRAFT", ...(periodId ? { periodId } : {}), period: { publishedAt: { not: null }, selfEvalDeadline: { lte: now } } }],
+      AND: [this.scope(user), { ...(periodId ? { periodId } : {}), OR: [{ status: "DRAFT", period: { publishedAt: { not: null }, selfEvalDeadline: { lte: now } } }, { status: "SUPPLEMENT_REQUESTED", supplementDeadline: { lte: now } }] }],
     }, select: { id: true }, orderBy: { id: "asc" } });
     for (const row of rows) await this.run(row.id, user, async () => null);
   }
@@ -146,8 +152,8 @@ export class EvaluationsService {
           ...(!children.length ? {
             selfScore: score?.selfScore?.toNumber() ?? null, selfNote: score?.selfNote ?? null,
             needsSupplement: score?.needsSupplement ?? false,
-            ...(context.status === "SUPPLEMENT_REQUESTED" && score?.needsSupplement ? { supplementNote: score.supplementNote } : {}),
-            ...(user.role === "ADMIN" ? { adminScore: score?.adminScore?.toNumber() ?? null, adminComment: score?.adminComment ?? null } : {}),
+            ...((user.role === "ADMIN" || context.status === "SUPPLEMENT_REQUESTED") && score?.needsSupplement ? { supplementNote: score.supplementNote } : {}),
+            ...(user.role === "ADMIN" ? { adminScore: score?.adminScore?.toNumber() ?? null, adminComment: score?.adminComment ?? null, reviewedById: score?.reviewedById ?? null, reviewedByName: score?.reviewedBy?.fullName ?? null, reviewedAt: score?.reviewedAt?.toISOString() ?? null, supplementedAt: score?.supplementedAt?.toISOString() ?? null, supplementBaseline: score?.supplementBaseline ?? null, supplementChanged: score ? supplementChanged(score) : false } : {}),
             // Quyền xóa lấy từ snapshot server, INITIAL được giữ bất biến khi đang bổ sung
             // Không đưa key hoặc URL ký vào polling detail, chỉ cấp URL sau thao tác đọc có Auth
             evidences: (score?.evidences ?? []).map((evidence) => ({ id: evidence.id, kind: evidence.kind, round: evidence.round, fileName: evidence.fileName, mimeType: evidence.mimeType, sizeBytes: evidence.sizeBytes?.toString() ?? null, externalUrl: evidence.externalUrl, description: evidence.description, previewStatus: evidence.previewStatus, createdAt: evidence.createdAt.toISOString(), canDelete: reason === null && (context.status === "DRAFT" || evidence.round === "SUPPLEMENT") })),
@@ -182,6 +188,9 @@ export class EvaluationsService {
       const now = await this.state.databaseNow(tx);
       const criterion = context.period.criteria.find((item) => item.id === criterionId);
       const score = context.criterionScores.find((item) => item.criterionId === criterionId);
+      // Kiểm deadline bằng giờ DB ngay cả khi scheduler chưa chuyển trạng thái hết hạn
+      // Hồ sơ đã nộp sớm giữ lỗi khóa thông thường, không biến thành lỗi quá hạn giả
+      if (context.status === "SUPPLEMENT_EXPIRED" || context.status === "SUPPLEMENT_REQUESTED" && context.supplementDeadline && now >= context.supplementDeadline) return new ForbiddenException({ code: "DEADLINE_PASSED", message: "Đã hết thời gian bổ sung hồ sơ" });
       const reason = selfLockedReason(context.period, context, now, score?.needsSupplement);
       if (reason) return this.locked(reason);
       if (!criterion) return this.notFound("Không tìm thấy tiêu chí trong hồ sơ");
@@ -195,12 +204,16 @@ export class EvaluationsService {
       const changed = (selfScore?.toString() ?? null) !== (score.selfScore?.toString() ?? null) || selfNote !== score.selfNote;
       if (!changed) return { evaluationId: id, criterionId, selfScore: score.selfScore?.toNumber() ?? null, selfNote: score.selfNote, updatedAt: score.updatedAt.toISOString() };
       const writeTime = await this.state.databaseNow(tx);
+      if (context.status === "SUPPLEMENT_REQUESTED" && context.supplementDeadline && writeTime >= context.supplementDeadline) return new ForbiddenException({ code: "DEADLINE_PASSED", message: "Đã hết thời gian bổ sung hồ sơ" });
       const writeReason = selfLockedReason(context.period, context, writeTime, score.needsSupplement);
       if (writeReason) return this.locked(writeReason);
-      const after = await tx.criterionScore.update({ where: { id: score.id }, data: { selfScore, selfNote, updatedAt: writeTime } });
+      // Nội dung bổ sung thay đổi làm điểm duyệt cũ không còn phản ánh bằng chứng mới
+      // Giữ lịch sử qua audit và buộc Admin thẩm định lại, kể cả chỉ sửa diễn giải
+      const invalidateReview = context.status === "SUPPLEMENT_REQUESTED";
+      const after = await tx.criterionScore.update({ where: { id: score.id }, data: { selfScore, selfNote, updatedAt: writeTime, ...(invalidateReview ? { adminScore: null, adminComment: null, reviewedById: null, reviewedAt: null } : {}) } });
       await this.audit.record({ actorId: user.id, action: "SELF_SCORE", entity: "CriterionScore", entityId: score.id,
-        before: { selfScore: score.selfScore?.toNumber() ?? null, selfNote: score.selfNote },
-        after: { selfScore: after.selfScore?.toNumber() ?? null, selfNote: after.selfNote },
+        before: { selfScore: score.selfScore?.toNumber() ?? null, selfNote: score.selfNote, adminScore: score.adminScore?.toNumber() ?? null, adminComment: score.adminComment },
+        after: { selfScore: after.selfScore?.toNumber() ?? null, selfNote: after.selfNote, adminScore: after.adminScore?.toNumber() ?? null, adminComment: after.adminComment },
       }, tx);
       return { evaluationId: id, criterionId, selfScore: after.selfScore?.toNumber() ?? null, selfNote: after.selfNote, updatedAt: after.updatedAt.toISOString() };
     });
@@ -252,6 +265,33 @@ export class EvaluationsService {
     });
   }
 
+  /** Nộp một vòng bổ sung trong cửa sổ snapshot sau khi từng lá thực sự thay đổi
+   * supplementedAt do trigger cấp khi sửa nội dung hoặc minh chứng, không lấy updatedAt đặt cờ
+   * Quá hạn đồng bộ trạng thái trong transaction rồi trả DEADLINE_PASSED sau commit
+   * Lệnh lặp sau khi nộp trả metadata đã lưu mà không tạo history hoặc thông báo trùng
+   */
+  submitSupplement(id: string, user: CurrentUser) {
+    return this.run(id, user, async (tx, context, now) => {
+      if (user.role !== "UNIT") return new ForbiddenException({ code: "FORBIDDEN", message: "Chỉ đơn vị được nộp nội dung bổ sung" });
+      if (context.status === "SUPPLEMENT_SUBMITTED") return this.metadata(context, now, user);
+      if (context.status === "SUPPLEMENT_EXPIRED" || context.status === "SUPPLEMENT_REQUESTED" && context.supplementDeadline && now >= context.supplementDeadline) {
+        Object.assign(context, await this.state.reconcileSupplement(tx, context, context.period, now));
+        return new ForbiddenException({ code: "DEADLINE_PASSED", message: "Đã hết thời gian nộp nội dung bổ sung" });
+      }
+      const reason = selfLockedReason(context.period, context, now, true);
+      if (context.status !== "SUPPLEMENT_REQUESTED" || reason) return this.locked(reason ?? "Hồ sơ không còn được nộp bổ sung");
+      const requested = context.criterionScores.filter((score) => score.needsSupplement);
+      if (!requested.length || requested.some((score) => !supplementChanged(score))) return new UnprocessableEntityException({ code: "INCOMPLETE_SUPPLEMENT", message: "Cần bổ sung nội dung thực tế cho từng tiêu chí được yêu cầu" });
+      const writeTime = await this.state.databaseNow(tx);
+      if (!context.supplementDeadline || writeTime >= context.supplementDeadline) {
+        Object.assign(context, await this.state.reconcileSupplement(tx, context, context.period, writeTime));
+        return new ForbiddenException({ code: "DEADLINE_PASSED", message: "Đã hết thời gian nộp nội dung bổ sung" });
+      }
+      Object.assign(context, await this.state.submitSupplement(tx, context, writeTime, user.id));
+      return this.metadata(context, writeTime, user);
+    });
+  }
+
   /** Chiếu metadata công khai và các quyền trình bày từ cùng snapshot giờ server
    * Không spread model DB, không trả finalResult trước chốt hoặc tiêu chí trước mở
    * Cảnh báo 24 giờ lấy từ server, FE không dùng Date.now để quyết định quyền
@@ -261,12 +301,15 @@ export class EvaluationsService {
     const deadline = context.status === "SUPPLEMENT_REQUESTED" ? context.supplementDeadline : context.period.selfEvalDeadline;
     return {
       id: context.id, periodId: context.periodId,
-      period: { id: context.periodId, name: context.period.name, selfEvalStart: context.period.selfEvalStart?.toISOString() ?? null, selfEvalDeadline: context.period.selfEvalDeadline?.toISOString() ?? null },
+      period: { id: context.periodId, name: context.period.name, phase: context.period.phase, selfEvalStart: context.period.selfEvalStart?.toISOString() ?? null, selfEvalDeadline: context.period.selfEvalDeadline?.toISOString() ?? null },
       unit: { id: context.unitId, code: context.unit.code, name: context.unit.name }, status: context.status,
       submittedAt: context.submittedAt?.toISOString() ?? null, autoLockedAt: context.autoLockedAt?.toISOString() ?? null,
       supplementStartAt: context.supplementStartAt?.toISOString() ?? null, supplementDeadline: context.supplementDeadline?.toISOString() ?? null,
+      supplementRequestedAt: context.supplementRequestedAt?.toISOString() ?? null, supplementSubmittedAt: context.supplementSubmittedAt?.toISOString() ?? null,
       serverTime: now.toISOString(), criteriaVisible: user.role === "ADMIN" || Boolean(context.period.publishedAt && context.period.selfEvalStart && now >= context.period.selfEvalStart),
       canSubmit: user.role === "UNIT" && context.status === "DRAFT" && reason === null, lockedReason: reason,
+      canSubmitSupplement: user.role === "UNIT" && context.status === "SUPPLEMENT_REQUESTED" && reason === null,
+      ...(user.role === "ADMIN" ? { firstReviewedAt: context.firstReviewedAt?.toISOString() ?? null, permissions: reviewPermissions(context.period, context, now) } : {}),
       deadlineWarning: reason === null && deadline && deadline.getTime() - now.getTime() <= 86_400_000 ? "Sắp hết thời gian chỉnh sửa, vui lòng lưu và nộp hồ sơ" : null,
       ...(context.status === "FINALIZED" ? { finalResult: this.finalResult(context) } : {}),
     };

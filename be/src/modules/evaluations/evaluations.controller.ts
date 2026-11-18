@@ -74,4 +74,13 @@ export class EvaluationsController {
   @ApiOkResponse({ schema: evaluationMetadataSchema })
   @ApiOperation({ summary: "Nộp hồ sơ tự chấm và khóa chỉnh sửa" })
   submit(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() _body: SubmitEvaluationDto, @GetCurrentUser() user: CurrentUser) { return this.service.submit(id, user); }
+
+  /** Nộp vòng bổ sung sau khi server kiểm lịch và thay đổi thực tế của từng mục
+   * Body rỗng không thể ghi đè trạng thái hay thời gian nộp do DB quyết định
+   */
+  @Post(":evaluationId/supplement-submit")
+  @HttpCode(200)
+  @Roles("UNIT")
+  @ApiBody({ type: SubmitEvaluationDto })
+  supplementSubmit(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() _body: SubmitEvaluationDto, @GetCurrentUser() user: CurrentUser) { return this.service.submitSupplement(id, user); }
 }

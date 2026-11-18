@@ -184,6 +184,8 @@ model CriterionScore {
   needsSupplement Boolean     @default(false) @map("needs_supplement")
   supplementNote  String?     @map("supplement_note") @db.Text
   supplementedAt  DateTime?   @map("supplemented_at") @db.Timestamp(6)
+  /// Snapshot nội dung và thẩm định trước yêu cầu để so sánh thay đổi thực tế và giữ lịch sử
+  supplementBaseline Json?   @map("supplement_baseline")
   reviewedById    String?     @map("reviewed_by_id") @db.Uuid
   reviewedAt      DateTime?   @map("reviewed_at") @db.Timestamp(6)
   createdAt       DateTime    @map("created_at") @db.Timestamp(6)

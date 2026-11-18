@@ -338,7 +338,7 @@ Response `201 Created`: resource tiêu chí đã lưu, gồm `id`, `periodId` v�
 - `POST /evaluations` body `{periodId,unitId?}`: UNIT không được gửi unitId; ADMIN bắt buộc unitId để tạo bù đơn vị hoạt động mới trong kỳ đã công bố chưa đóng, chỉ phase SETUP/SELF_EVAL và trước deadline; lần lặp trả cùng hồ sơ `200`, không tạo thêm score/history/audit
 - `GET /evaluations/:evaluationId`: metadata gồm period `{id,name,selfEvalStart,selfEvalDeadline}`, unit, status, submittedAt, autoLockedAt, supplementStartAt/supplementDeadline, serverTime, criteriaVisible, canSubmit, lockedReason, deadlineWarning và criteria là cây `children`; lá có criterionId, selfScore/selfNote, canEditSelf/lockedReason/serverTime, cấu hình minh chứng và metadata minh chứng an toàn
 - UNIT trước selfEvalStart chỉ nhận metadata, `criteria: []`, không score/ngưỡng/minh chứng/summary; summary endpoint trả `403 NOT_OPEN_YET` và mọi đường ghi bị chặn
-- UNIT trước FINALIZED không nhận adminScore/adminComment/reviewedById/currentTotal/currentPercent hoặc tổng có điểm Admin; ADMIN được đọc các trường thẩm định, UNIT sau chốt chỉ thêm `finalResult: {score,percent,rating}`
+- UNIT trước FINALIZED không nhận adminScore/adminComment/reviewedById/currentTotal/currentPercent hoặc tổng có điểm Admin; ADMIN được đọc `adminScore`, `adminComment`, `reviewedById`, `reviewedAt`, `supplementNote`, `supplementedAt` trên lá và `firstReviewedAt` trên metadata. Điểm Admin null biểu thị chưa duyệt, giao diện có thể hiển thị điểm tự chấm làm giá trị nhập ban đầu; UNIT sau chốt chỉ thêm `finalResult: {score,percent,rating}`
 - `GET /evaluations/:evaluationId/score-summary`: `{evaluationId,selfTotal,maxTotalScore,selfPercent,suggestedRating,ratingLabel,ratingColor,scoredCount,leafCount,isFinal,finalResult?}`; null tính 0, tổng bằng Decimal, xếp loại so ngưỡng chính xác trước làm tròn hiển thị, EXCELLENT >85, GOOD >=65, PASS >=50, FAIL >=0
 - `PUT /evaluations/:evaluationId/scores/:criterionId/self`: UNIT chính chủ, body có ít nhất một trong selfScore (số 0..maxScore tối đa hai chữ số thập phân hoặc null để xóa), selfNote (văn bản thuần tối đa 5000 ký tự hoặc null để xóa); trường bỏ qua giữ nguyên, `{}` và trường hệ thống bị từ chối; allowText=false không nhận diễn giải có nội dung
 - `PUT /evaluations/:evaluationId/scores/self-batch`: body `{items:[{criterionId,selfScore?,selfNote?}]}` từ 1..100 phần tử, không lặp criterionId; cấu trúc/nested sai trả 400 toàn request, dữ liệu nghiệp vụ sai trả `200 {results:[{criterionId,ok:true,data}|{criterionId,ok:false,error:{statusCode,code,message,details}}]}` theo thứ tự đầu vào; mỗi ô một transaction nên lỗi SQL một ô không làm mất ô khác, lỗi không nhận diện dùng INTERNAL_ERROR tiếng Việt
@@ -347,7 +347,7 @@ Response `201 Created`: resource tiêu chí đã lưu, gồm `id`, `periodId` v�
 - GET list/detail/summary hoặc ghi khi quá hạn reconcile DRAFT → PENDING_REVIEW ngay cả phase SETUP/job trễ, giữ submittedAt=null, đặt autoLockedAt, history actor=null/audit/outbox ADMIN cùng transaction đúng một lần; không yêu cầu đủ minh chứng; request ghi bị từ chối vẫn commit reconcile, không lưu điểm/nộp quá hạn
 - Lưu điểm ghi audit before/after, submit/auto-lock ghi history/audit/hộp thư và delivery qua kiến trúc Notifications sẵn có; không gọi provider trực tiếp, ZNS theo cờ mặc định tắt
 - Không đăng nhập 401, sai vai trò 403, hồ sơ khác đơn vị/kỳ nháp với UNIT 404, tiêu chí không thuộc hồ sơ 404, nhóm/điểm/nộp thiếu dữ liệu 422, cửa sổ khóa 403 SELF_EVALUATION_LOCKED; UUID/body/query sai 400 VALIDATION_ERROR tiếng Việt; không trả lỗi Prisma/SQL thô
-- FE tải lại mỗi 15 giây và khi lưu/nộp, quyền/cảnh báo lấy server; có lưu thủ công, giữ nội dung chưa lưu khi refresh, chặn nộp khi đang lưu/còn chỉnh sửa, tổng từ summary API; upload/preview thuộc VC10, request/submit bổ sung thuộc VC12
+- FE tải lại mỗi 15 giây và khi lưu/nộp, quyền/cảnh báo lấy server; có lưu thủ công, giữ nội dung chưa lưu khi refresh, chặn nộp khi đang lưu/còn chỉnh sửa, tổng từ summary API. Metadata bổ sung `canSubmitSupplement` là quyền theo lịch và trạng thái do server quyết định; backend vẫn kiểm từng mục đã thực sự thay đổi khi nộp
 
 ### Đọc hồ sơ
 
@@ -415,6 +415,8 @@ Request:
 
 ## 5. Thẩm định, bổ sung và trạng thái
 
+Giao ước VC12 hiện hành, quyền đọc review, baseline bổ sung, retry và chốt được mô tả đầy đủ tại [Hợp đồng VC12](./VC12_REVIEW_CONTRACT.md); khi phần mô tả cũ bên dưới thiếu chi tiết, áp dụng giao ước hiện hành này.
+
 ### Admin chấm một tiêu chí
 
 `PUT /admin/evaluations/:evaluationId/scores/:criterionId/review` — ADMIN.
@@ -422,9 +424,7 @@ Request:
 ```json
 {
   "adminScore": 6,
-  "adminComment": "Trừ 2 điểm do minh chứng chưa thể hiện đủ nội dung.",
-  "needsSupplement": true,
-  "supplementNote": "Vui lòng bổ sung báo cáo chi tiết."
+  "adminComment": "Trừ 2 điểm do minh chứng chưa thể hiện đủ nội dung."
 }
 ```
 
@@ -436,12 +436,24 @@ Request:
   "criterionId": "55555555-5555-4555-8555-555555555555",
   "adminScore": 6,
   "adminComment": "Trừ 2 điểm do minh chứng chưa thể hiện đủ nội dung.",
-  "needsSupplement": true,
+  "reviewedById": "33333333-3333-4333-8333-333333333333",
   "reviewedAt": "2026-10-17T08:30:00.000Z"
 }
 ```
 
-`adminComment` bắt buộc nếu điểm Admin khác điểm tự chấm. Người duyệt lấy từ CurrentUser.
+`adminScore` không âm, tối đa hai chữ số thập phân và không vượt điểm tối đa của lá. `adminComment` là văn bản thuần tối đa 5000 ký tự, bắt buộc không trắng khi điểm Admin khác điểm tự chấm hoặc điểm tự chấm chưa có. Chỉ chấm hồ sơ PENDING_REVIEW, SUPPLEMENT_SUBMITTED hoặc SUPPLEMENT_EXPIRED trong phase FIRST_REVIEW, SUPPLEMENT hoặc FINAL_REVIEW; hệ thống đồng bộ hết hạn bổ sung trước khi kiểm. Người duyệt và thời gian lấy từ phiên và đồng hồ cơ sở dữ liệu; audit điểm cũ, điểm mới và lý do trong cùng transaction. Cờ yêu cầu bổ sung được thiết lập bởi use-case yêu cầu bổ sung, không nhận tại endpoint này.
+
+`POST /admin/evaluations/:evaluationId/accept-all` — ADMIN, body `{}`: chấp nhận điểm tự chấm cho các lá chưa được duyệt và có điểm tự chấm; không thay đổi lá đã có điểm Admin. Trả `{evaluationId,acceptedCount}`. Các lá chưa có điểm tự chấm phải được thẩm định riêng.
+
+`POST /admin/evaluations/:evaluationId/first-review-complete` — ADMIN, body `{}`: chỉ trong FIRST_REVIEW hoặc SUPPLEMENT, hồ sơ PENDING_REVIEW và mọi lá đã có điểm Admin; ghi `firstReviewedAt` một lần, không chuyển giai đoạn hay chốt điểm. Gọi lại trả thời điểm đã lưu.
+
+`POST /admin/evaluations/:evaluationId/finalize` — ADMIN, body `{}`: chỉ phase FINAL_REVIEW, hồ sơ đã hoàn tất thẩm định lần đầu và ở PENDING_REVIEW, SUPPLEMENT_SUBMITTED hoặc SUPPLEMENT_EXPIRED. Máy chủ khóa hồ sơ, lấy tổng và phân loại cùng công thức với view, lưu kết quả, lịch sử, audit và thông báo trong một transaction; yêu cầu chốt lặp trả lỗi `REVIEW_LOCKED`.
+
+`PUT /admin/evaluations/:evaluationId/scores/review-batch` — ADMIN, body `{items:[{criterionId,adminScore,adminComment}]}` gồm 1–100 tiêu chí không trùng; trả `{results:[{criterionId,ok,data|error}]}`, mỗi mục có transaction riêng và lỗi chuẩn hóa, thứ tự giữ như đầu vào.
+
+`POST /admin/evaluations/finalize-batch` — ADMIN, body `{evaluationIds:[uuid,...]}` gồm 1–100 hồ sơ không trùng; trả `{results:[{evaluationId,ok,data|error}]}`, mỗi hồ sơ có transaction riêng, một lỗi không hoàn tác kết quả hồ sơ khác. Client phải kiểm từng `ok`.
+
+`POST /admin/evaluations/finalize-preview` — ADMIN, body cùng `finalize-batch`, trả kết quả dự kiến và `canFinalize` hoặc lỗi riêng từng hồ sơ. Đây chỉ là snapshot; lệnh chốt luôn khóa và kiểm lại phase, trạng thái và giờ.
 
 ### Yêu cầu bổ sung
 
@@ -449,11 +461,10 @@ Request:
 
 ```json
 {
-  "criterionIds": [
-    "55555555-5555-4555-8555-555555555555"
+  "items": [
+    { "criterionId": "55555555-5555-4555-8555-555555555555", "note": "Vui lòng bổ sung minh chứng cho tiêu chí này." }
   ],
-  "supplementStartAt": "2026-11-17T00:00:00.000Z",
-  "content": "Vui lòng bổ sung minh chứng cho tiêu chí được nêu."
+  "supplementStartAt": "2026-11-17T00:00:00.000Z"
 }
 ```
 
@@ -469,7 +480,7 @@ Request:
 }
 ```
 
-Admin chọn `supplementStartAt`; backend xác thực ngày mở theo phương án tạm mục 1.4, tự tính và lưu snapshot `supplementDeadline` tới 00:00 sau ngày kết thúc. Mọi API, job và thông báo dùng hai mốc đã lưu; không nhận deadline do client truyền và không tính thời hạn từ `supplementHours`. Luồng gửi bổ sung dùng `POST /evaluations/:evaluationId/supplement-submit` với body `{}`; backend xác thực cửa sổ `[supplementStartAt, supplementDeadline)`, đổi trạng thái, ghi lịch sử và phản hồi. Lịch bổ sung này đang chờ giảng viên xác nhận và chưa có API runtime.
+Admin chọn `supplementStartAt`; backend xác thực ngày mở theo phương án tạm mục 1.4, tự tính và lưu snapshot `supplementDeadline` tới 00:00 sau ngày kết thúc. Mọi API, job và thông báo dùng hai mốc đã lưu; không nhận deadline do client truyền và không tính thời hạn từ `supplementHours`. API yêu cầu chỉ nhận hồ sơ PENDING_REVIEW đã hoàn tất thẩm định lần đầu, mỗi lá một ghi chú không trắng, thời gian mở không trước thời gian DB sau khóa. Lệnh lặp đúng lịch và danh sách ghi chú trả lịch đã lưu; payload khác trả `409 SUPPLEMENT_ALREADY_REQUESTED`, không tạo vòng thứ hai. Luồng gửi bổ sung dùng `POST /evaluations/:evaluationId/supplement-submit` với body `{}`; backend xác thực cửa sổ `[supplementStartAt, supplementDeadline)`, chỉ nhận khi nội dung cuối của mọi lá yêu cầu khác baseline bất biến về điểm, diễn giải hoặc tập minh chứng đã xác nhận, đổi trạng thái, ghi lịch sử và phản hồi. Sửa rồi hoàn tác hoặc thêm rồi xóa minh chứng không được tính là bổ sung. Đúng hạn trả `DEADLINE_PASSED` và đồng bộ trạng thái hết hạn. Lịch bổ sung này đang chờ giảng viên xác nhận.
 
 ### State machine hồ sơ
 

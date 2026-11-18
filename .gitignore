@@ -2,6 +2,8 @@
 node_modules/
 # Kho tệp riêng tư của dev không đưa vào Git hoặc thư mục static
 **/.private-storage/
+# Fixture browser và kho local của kiểm thử chỉ nằm ở máy chạy, không đưa credential giả hoặc bytes vào Git
+be/.tmp/
 be/report-exports/
 .pnpm-store/
 
