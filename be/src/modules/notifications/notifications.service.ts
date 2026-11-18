@@ -29,6 +29,7 @@ export interface NotifyUserInput {
   refType?: string;
   refId?: string;
   channels?: Channel[];
+  expiresAt?: Date;
 }
 
 type Claimed = { id: string; claim_token: string };
@@ -75,14 +76,15 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       id: randomUUID(), userId: input.userId, channel: "SYSTEM", type: input.type, title: input.title,
       body: input.body, refType: input.refType ?? null, refId: input.refId ?? null,
       dedupeKey: input.dedupeKey ?? null, createdAt: now,
+      expiresAt: input.expiresAt ?? null,
       deliveries: { create: channels.map((channel) => ({ id: randomUUID(), channel, status: "PENDING", createdAt: now, updatedAt: now })) },
     };
     if (!input.dedupeKey) return tx.notification.create({ data: create, include: { deliveries: true } });
     // INSERT ON CONFLICT giải quyết đồng thời hai transaction cùng khóa mà không làm transaction thua cuộc bị lỗi unique
     // Chỉ transaction tạo bản ghi mới thêm delivery; lần gọi lại đọc bản cũ nên không đổi nội dung hoặc xếp hàng lần nữa
     const inserted = await tx.$queryRaw<{ id: string }[]>`
-      INSERT INTO notifications (id, user_id, channel, type, title, body, ref_type, ref_id, is_read, dedupe_key, created_at)
-      VALUES (${create.id}::uuid, ${input.userId}::uuid, 'SYSTEM', ${input.type}, ${input.title}, ${input.body}, ${input.refType ?? null}, ${input.refId ?? null}::uuid, false, ${input.dedupeKey}, ${now})
+      INSERT INTO notifications (id, user_id, channel, type, title, body, ref_type, ref_id, is_read, dedupe_key, created_at, expires_at)
+      VALUES (${create.id}::uuid, ${input.userId}::uuid, 'SYSTEM', ${input.type}, ${input.title}, ${input.body}, ${input.refType ?? null}, ${input.refId ?? null}::uuid, false, ${input.dedupeKey}, ${now}, ${input.expiresAt ?? null})
       ON CONFLICT (user_id, dedupe_key) DO NOTHING RETURNING id
     `;
     if (inserted.length) {
@@ -190,9 +192,27 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     } else {
       try {
         const hasRecipient = await provider.resolveRecipient(delivery.notification.userId);
-        result = hasRecipient
-          ? await provider.send({ userId: delivery.notification.userId, notificationId: delivery.notificationId, title: delivery.notification.title, body: delivery.notification.body, refType: delivery.notification.refType, refId: delivery.notification.refId })
-          : { kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Người nhận chưa có địa chỉ hoặc thiết bị phù hợp." };
+        // Kiểm giờ DB sau khi tìm người nhận để không khởi đầu gửi tin quá hạn sau lúc chờ provider
+        // Không thể kiểm soát thời điểm nhà cung cấp giao tin đã nhận trước deadline
+        const notice = delivery.notification;
+        let obsolete = false;
+        // Không gửi nhắc khi hồ sơ đã nộp hoặc lịch đã đổi trong lúc delivery chờ retry
+        // Snapshot deadline trên thông báo phải khớp hạn hiện tại, kể cả khi vẫn chưa quá hạn cũ
+        if ((notice.type === "SELF_EVAL_REMINDER" || notice.type === "SUPPLEMENT_REMINDER") && notice.refId) {
+          const evaluation = await this.prisma.evaluation.findUnique({ where: { id: notice.refId }, include: { period: true } });
+          const deadline = notice.type === "SELF_EVAL_REMINDER" ? evaluation?.period.selfEvalDeadline : evaluation?.supplementDeadline;
+          obsolete = !evaluation || evaluation.status !== (notice.type === "SELF_EVAL_REMINDER" ? "DRAFT" : "SUPPLEMENT_REQUESTED") || !deadline || deadline.getTime() !== notice.expiresAt?.getTime();
+        }
+        if (notice.type === "PERIOD_PHASE_CHANGED" && notice.expiresAt && notice.refId) {
+          const period = await this.prisma.evaluationPeriod.findUnique({ where: { id: notice.refId } });
+          obsolete = !period || period.phase !== "SELF_EVAL" || period.selfEvalDeadline?.getTime() !== notice.expiresAt.getTime();
+        }
+        const [clock] = await this.prisma.$queryRaw<{ now: Date }[]>`SELECT statement_timestamp() AT TIME ZONE 'UTC' AS now`;
+        result = obsolete || (notice.expiresAt && clock!.now >= notice.expiresAt)
+          ? { kind: "skip", reasonCode: "EXPIRED", message: "Thông báo đã hết thời hạn gửi." }
+          : hasRecipient
+            ? await provider.send({ userId: delivery.notification.userId, notificationId: delivery.notificationId, title: delivery.notification.title, body: delivery.notification.body, refType: delivery.notification.refType, refId: delivery.notification.refId, expiresAt: delivery.notification.expiresAt })
+            : { kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Người nhận chưa có địa chỉ hoặc thiết bị phù hợp." };
       } catch {
         result = { kind: "retry", reasonCode: "PROVIDER_ERROR", message: "Không thể gửi thông báo qua kênh này, hệ thống sẽ thử lại." };
       }
@@ -215,6 +235,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       RATE_LIMIT: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại.",
       TEMPORARY_FAILURE: "Kênh gửi tạm thời gián đoạn, hệ thống sẽ thử lại.",
       PERMANENT_FAILURE: "Không thể gửi thông báo qua kênh này.",
+      EXPIRED: "Thông báo đã hết thời hạn gửi.",
     };
     const reasonCode = result.kind === "sent" ? null : result.reasonCode in safeMessages ? result.reasonCode : "PROVIDER_ERROR";
     const message = reasonCode ? safeMessages[reasonCode] : null;
@@ -234,7 +255,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       while (count < limit) {
         const claim = await this.claimOne();
         if (!claim) break;
-        await this.processClaim(claim);
+        // Một bản ghi hỏng giữ lease để thử lại sau và không chặn các delivery khác trong lô
+        try { await this.processClaim(claim); }
+        catch { this.logger.error("Không thể xử lý một lượt gửi thông báo, hệ thống sẽ thử lại"); }
         count += 1;
       }
       return count;

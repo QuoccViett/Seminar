@@ -116,14 +116,21 @@ test("ràng buộc PostgreSQL VC03 trên cơ sở dữ liệu riêng", async () 
     assert.ok(changedScore.supplementedAt, "Nội dung bổ sung thực sự thay đổi phải có mốc thời gian riêng");
     const firstSupplementedAt = changedScore.supplementedAt;
     const evidenceId = id();
-    await prisma.evidence.create({
-      data: { id: evidenceId, criterionScoreId: supplementScoreId, uploaderId: admin.id, kind: "LINK", round: "SUPPLEMENT", externalUrl: "https://example.test/minh-chung", description: "Minh chứng bổ sung", createdAt: now },
-    });
+    // Trigger VC10 yêu cầu minh chứng bổ sung thuộc giai đoạn thẩm định hoặc bổ sung
+    // Fixture vẫn ở SELF_EVAL để kiểm DB từ chối đúng lý do trước khi chuyển sang FIRST_REVIEW
+    const supplementEvidence = { id: evidenceId, criterionScoreId: supplementScoreId, uploaderId: admin.id, kind: "LINK", round: "SUPPLEMENT", externalUrl: "https://example.test/minh-chung", description: "Minh chứng bổ sung", createdAt: now };
+    await assert.rejects(prisma.evidence.create({ data: supplementEvidence }), /Giai đoạn kỳ không cho phép chỉnh sửa minh chứng/);
+    await prisma.evaluationPeriod.update({ where: { id: periodId }, data: { phase: "FIRST_REVIEW", updatedAt: now } });
+    // Sau khi fixture vào đúng giai đoạn, kiểm tiếp trigger VC03 đánh dấu thay đổi thực sự
+    await prisma.evidence.create({ data: supplementEvidence });
     const markedByEvidence = await prisma.criterionScore.findUniqueOrThrow({ where: { id: supplementScoreId } });
     assert.ok(markedByEvidence.supplementedAt && markedByEvidence.supplementedAt >= firstSupplementedAt);
     await prisma.evidence.update({ where: { id: evidenceId }, data: { description: "Minh chứng bổ sung" } });
     const unchangedEvidence = await prisma.criterionScore.findUniqueOrThrow({ where: { id: supplementScoreId } });
     assert.equal(unchangedEvidence.supplementedAt?.toISOString(), markedByEvidence.supplementedAt?.toISOString(), "Cập nhật lặp cùng nội dung không được tạo dấu bổ sung mới");
+    // PostgreSQL lưu micro giây nhưng Date của JavaScript chỉ giữ mili giây
+    // Chờ qua độ phân giải đó để kiểm mốc mới không chập hai thời điểm hợp lệ thành một
+    await prisma.$queryRaw`SELECT pg_sleep(0.005)::text`;
     await prisma.evidence.update({ where: { id: evidenceId }, data: { description: "Nội dung minh chứng đã cập nhật" } });
     const changedEvidence = await prisma.criterionScore.findUniqueOrThrow({ where: { id: supplementScoreId } });
     assert.ok(changedEvidence.supplementedAt && changedEvidence.supplementedAt > unchangedEvidence.supplementedAt!);

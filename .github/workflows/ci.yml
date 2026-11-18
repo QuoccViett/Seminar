@@ -115,6 +115,36 @@ jobs:
       - name: Lint backend
         run: npm run lint
 
+      # Kiểm HTTP/PG và object local thật trên database riêng, không gọi provider hay gửi tin ra ngoài
+      # Migration deploy chỉ áp DB mới của CI, bài kiểm chặn mọi URL không mang tên vc10_test
+      - name: Kiểm storage và minh chứng VC10 trên database riêng
+        env:
+          VC10_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc10_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc10_test
+          DATABASE_URL="$VC10_TEST_DATABASE_URL" npx prisma migrate deploy
+          node --import tsx --test test/integration/vc10.evidences.test.ts
+
+      # Chạy scheduler với database mới, hai transaction cạnh tranh và provider giả không gửi mạng
+      # Bài kiểm tự từ chối database khác tên để tránh ghi vào môi trường dùng chung
+      - name: Kiểm scheduler VC11 trên database riêng
+        env:
+          VC11_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc11_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc11_test
+          DATABASE_URL="$VC11_TEST_DATABASE_URL" npx prisma migrate deploy
+          node --import tsx --test test/integration/vc11.scheduler.test.ts
+
+      # Dùng database mới cho các tiến trình worker tách biệt, không gửi Email hay Web Push thật
+      # Chứng minh nhận lại lease hết hạn và quét bù kỳ sau khi dừng qua toàn bộ cửa sổ
+      - name: Kiểm phục hồi worker VC11 trên database riêng
+        env:
+          VC11_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc11_recovery_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc11_recovery_test
+          DATABASE_URL="$VC11_TEST_DATABASE_URL" npx prisma migrate deploy
+          node --import tsx --test test/integration/vc11.recovery.test.ts
+
       - name: Run backend unit tests
         run: npm run test:unit
 

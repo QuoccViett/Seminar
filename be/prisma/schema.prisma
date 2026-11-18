@@ -51,6 +51,7 @@ model User {
   finalizedEvaluations  Evaluation[]         @relation("EvaluationFinalizer")
   reviewedScores        CriterionScore[]     @relation("CriterionReviewer")
   uploadedEvidences     Evidence[]           @relation("EvidenceUploader")
+  evidenceUploads       EvidenceUpload[]
   authoredFeedbacks     EvaluationFeedback[]
   statusHistories       StatusHistory[]
   notifications         Notification[]
@@ -191,6 +192,7 @@ model CriterionScore {
   criterion       Criterion  @relation(fields: [criterionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   reviewedBy      User?      @relation("CriterionReviewer", fields: [reviewedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   evidences       Evidence[]
+  evidenceUploads EvidenceUpload[]
 
   @@unique([evaluationId, criterionId], map: "criterion_scores_evaluation_id_criterion_id_idx")
   @@index([criterionId])
@@ -217,6 +219,31 @@ model Evidence {
 
   @@index([criterionScoreId])
   @@map("evidences")
+}
+
+/// Giữ reservation và hai key do server cấp để xác nhận idempotent và dọn object sau lỗi
+/// PENDING chưa là minh chứng; CONFIRMED giữ id bằng Evidence; DELETING chỉ còn chờ xóa bytes
+model EvidenceUpload {
+  id                String         @id @db.Uuid
+  criterionScoreId  String         @map("criterion_score_id") @db.Uuid
+  uploaderId        String         @map("uploader_id") @db.Uuid
+  credentialVersion Int            @map("credential_version")
+  round             String         @db.VarChar
+  fileName          String         @map("file_name") @db.VarChar(180)
+  mimeType          String         @map("mime_type") @db.VarChar
+  sizeBytes         BigInt         @map("size_bytes")
+  pendingPath       String         @unique @map("pending_path") @db.VarChar
+  finalPath         String         @unique @map("final_path") @db.VarChar
+  state             String         @default("PENDING") @db.VarChar
+  pendingPurged     Boolean        @default(false) @map("pending_purged")
+  expiresAt         DateTime       @map("expires_at") @db.Timestamp(6)
+  createdAt         DateTime       @map("created_at") @db.Timestamp(6)
+  criterionScore    CriterionScore @relation(fields: [criterionScoreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  uploader          User           @relation(fields: [uploaderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([state, expiresAt])
+  @@index([criterionScoreId])
+  @@map("evidence_uploads")
 }
 
 model EvaluationFeedback {
@@ -259,6 +286,8 @@ model Notification {
   refId       String?   @map("ref_id") @db.Uuid
   isRead      Boolean   @default(false) @map("is_read")
   scheduledAt DateTime? @map("scheduled_at") @db.Timestamp(6)
+  /// Hạn loại trừ cho delivery nhạy thời gian, không xóa thông báo trong hộp thư khi hết hạn
+  expiresAt   DateTime? @map("expires_at") @db.Timestamp(6)
   sentAt      DateTime? @map("sent_at") @db.Timestamp(6)
   dedupeKey   String?   @map("dedupe_key") @db.VarChar
   createdAt   DateTime  @map("created_at") @db.Timestamp(6)

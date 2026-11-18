@@ -282,6 +282,14 @@ Các GET kỳ của ADMIN trả thêm `serverTime` và `canEditConfiguration`; c
 
 `POST /evaluation-periods/supplement-schedule/preview` — ADMIN gửi `{supplementStartAt}` ISO đầy đủ offset/Z, nhận `{supplementStartAt,supplementDeadline,serverTime,policy:"TEMPORARY_WEEKDAY",displayUntil,notice}`. Chỉ xem trước, không tạo yêu cầu hoặc lưu lịch vào hồ sơ. Theo phương án tạm mục 1.4/5.4 chờ giảng viên xác nhận, ngày mở Việt Nam chỉ từ thứ Hai đến thứ Sáu; thứ Hai–thứ Năm kết thúc hết ngày kế tiếp, thứ Sáu hết chính ngày; deadline loại trừ lúc 00:00 sau ngày kết thúc. `displayUntil` ghi “đến hết 23:59 ngày …”. Cuối tuần trả `400 BUSINESS_RULE_VIOLATION`, không tự dời ngày. FE chỉ cho chọn ngày thường và dùng kết quả preview backend; không tính từ supplementHours. Snapshot lịch thật được lưu khi VC12 tạo yêu cầu bổ sung.
 
+Scheduler VC11 quét các kỳ đã công bố và snapshot bổ sung đã lưu bằng giờ cơ sở dữ liệu, khóa kỳ rồi hồ sơ trong transaction và ghi audit, lịch sử, hộp thư cùng transaction. Kỳ bỏ lỡ toàn bộ cửa sổ chuyển thẳng sang thẩm định, không gửi thông báo mở muộn. Nhắc hạn được tạo từ mốc trước hạn 24 giờ cho tới trước hạn nếu mốc nằm trong cửa sổ; khóa chống trùng bao gồm hạn đã lưu, nên tiến trình chạy lại sau gián đoạn vẫn có thể tạo nhắc còn hiệu lực. Nội dung lịch ghi giờ mở và thời điểm đóng theo giờ Việt Nam. Tin mở và nhắc có hạn hiệu lực lưu cùng thông báo; worker kiểm hạn ngay trước khi gọi provider, quá hạn đánh dấu SKIPPED với mã EXPIRED. Web Push giới hạn TTL theo thời gian còn lại; email đã được SMTP nhận trước hạn vẫn có thể đến sau hạn. Quyền thao tác do backend quyết định theo thời gian, không phụ thuộc lần quét hay đồng hồ giao diện.
+
+Scheduler và lệnh chuyển sang thẩm định cuối dùng chung xử lý hết hạn bổ sung: hồ sơ đủ điều kiện được chuyển một lần, ghi lịch sử, audit và thông báo Admin/UNIT trong cùng transaction; hồ sơ đã nộp hoặc đã chốt không bị thay đổi.
+
+Giới hạn của provider được xử lý theo phản hồi: SMTP 452 hoặc Web Push 429 chuyển `RATE_LIMIT`, giữ delivery chờ với backoff và giới hạn số lần thử như lỗi tạm khác. Đây là xử lý khi provider báo giới hạn, chưa cấu hình hạn mức chủ động chung cho nhiều tiến trình.
+
+`POST /admin/scheduler/run` chỉ dành cho ADMIN đã đổi mật khẩu và cấu hình `ENABLE_DEMO_TOOLS=true`, mặc định tắt; môi trường production từ chối bật. Lệnh chạy một lượt quét trạng thái và dọn token, không trực tiếp ép gửi provider, trả thông báo tiếng Việt và số kỳ lỗi. Các worker delivery và cleanup độc lập vẫn chạy theo nhịp riêng.
+
 `GET /evaluation-periods` và `GET /evaluation-periods/:id` — ADMIN đọc cấu hình nháp. Danh sách UNIT chỉ gồm kỳ đã công bố; đọc chi tiết hoặc ngưỡng kỳ chưa công bố trả `404 NOT_FOUND`. UNIT nhận `serverTime`, `selfEvalState` (`NOT_OPEN_YET`, `OPEN`, `CLOSED`) và `criteriaVisible`; trước giờ mở, tiêu chí/ngưỡng rỗng và không trả `maxTotalScore`. Sau công bố và khi thời gian server thỏa `now >= selfEvalStart`, UNIT nhận tiêu chí/ngưỡng. `GET /evaluation-periods/:periodId/criteria` trả `404 NOT_FOUND` nếu kỳ chưa công bố, `400 NOT_OPEN_YET` trước giờ mở và cây tiêu chí từ đúng giờ mở trở đi. Nội dung được trả cả trong kỳ nghỉ/cuối tuần và ngoài giờ hành chính. Quyền này do backend tính lại theo từng request, không dựa vào phase, job hay đồng hồ trình duyệt.
 
 `201 Created`:
@@ -401,101 +409,9 @@ Request:
 
 `selfScore` phải từ `0` đến `maxScore`; backend không nhận `unitId`, `adminScore`, trạng thái hoặc `reviewedById` từ UNIT.
 
-### Upload nhiều file và link ngoài
+### VC10
 
-1. Frontend xin signed URLs:
-
-`POST /evaluations/:evaluationId/evidences/upload-urls` — UNIT sở hữu hồ sơ.
-
-```json
-{
-  "items": [
-    {
-      "criterionScoreId": "66666666-6666-4666-8666-666666666666",
-      "fileName": "bao-cao.pdf",
-      "mimeType": "application/pdf",
-      "sizeBytes": 125000,
-      "round": "INITIAL"
-    },
-    {
-      "criterionScoreId": "66666666-6666-4666-8666-666666666666",
-      "fileName": "hoat-dong.png",
-      "mimeType": "image/png",
-      "sizeBytes": 280000,
-      "round": "INITIAL"
-    }
-  ]
-}
-```
-
-`200 OK`:
-
-```json
-{
-  "items": [
-    {
-      "uploadUrl": "https://storage.example/signed-upload",
-      "method": "PUT",
-      "requiredHeaders": {
-        "Content-Type": "application/pdf"
-      },
-      "storagePath": "private/evaluations/random-object-key.pdf",
-      "expiresAt": "2026-10-17T08:45:00.000Z"
-    }
-  ]
-}
-```
-
-Response `items` có một phần tử tương ứng cho mỗi item trong request. Upload bytes trực tiếp lên từng `uploadUrl` theo `method`/headers. Bucket phải private; `storagePath` do server tạo và không được client tự chọn.
-
-2. Sau khi upload thành công, ghi metadata minh chứng:
-
-`POST /evaluations/:evaluationId/evidences` — UNIT sở hữu hồ sơ.
-
-```json
-{
-  "items": [
-    {
-      "kind": "FILE",
-      "criterionScoreId": "66666666-6666-4666-8666-666666666666",
-      "storagePath": "private/evaluations/random-object-key.pdf",
-      "fileName": "bao-cao.pdf",
-      "mimeType": "application/pdf",
-      "sizeBytes": 125000,
-      "round": "INITIAL",
-      "description": "Báo cáo tổng kết hoạt động"
-    },
-    {
-      "kind": "LINK",
-      "criterionScoreId": "66666666-6666-4666-8666-666666666666",
-      "externalUrl": "https://example.org/hoat-dong",
-      "round": "INITIAL",
-      "description": "Bài viết hoạt động"
-    }
-  ]
-}
-```
-
-`201 Created`:
-
-```json
-{
-  "items": [
-    {
-      "id": "77777777-7777-4777-8777-777777777777",
-      "kind": "FILE",
-      "fileName": "bao-cao.pdf",
-      "mimeType": "application/pdf",
-      "sizeBytes": 125000,
-      "round": "INITIAL",
-      "previewStatus": "NOT_REQUIRED",
-      "createdAt": "2026-10-17T08:30:00.000Z"
-    }
-  ]
-}
-``
-
-Đọc minh chứng dùng `GET /evaluations/:evaluationId/evidences/:evidenceId`; preview dùng `GET /evaluations/:evaluationId/evidences/:evidenceId/preview`. Response cung cấp metadata và signed URL có thời hạn; ảnh/PDF mở inline, Word tải xuống trừ khi worker tạo preview PDF. Không trả bucket private hoặc storage credentials.
+[Contract storage, upload và preview hiện hành](./VC10_STORAGE_CONTRACT.md)
 
 ## 5. Thẩm định, bổ sung và trạng thái
 

@@ -8,6 +8,8 @@ export interface NotificationSendRequest {
   body: string;
   refType: string | null;
   refId: string | null;
+  /** Deadline loại trừ của thông báo nhạy thời gian, vắng mặt khi không giới hạn hạn giao */
+  expiresAt?: Date | null;
 }
 
 /** Kết quả đã chuẩn hóa để worker không lưu lỗi thô từ SQL, SMTP hoặc dịch vụ ngoài

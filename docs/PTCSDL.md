@@ -290,6 +290,28 @@ erDiagram
     UNITS ||--o{ EVALUATIONS : "có"
     EVALUATIONS ||--o{ CRITERION_SCORES : "gồm"
     CRITERION_SCORES ||--o{ EVIDENCES : "có"
+    CRITERION_SCORES ||--o{ EVIDENCE_UPLOADS : "dành chỗ"
+    USERS ||--o{ EVIDENCE_UPLOADS : "tải lên"
 ```
 
 Sơ đồ thể hiện khóa ngoại, không hàm ý xóa dây chuyền. `users.unit_id` được phép NULL và unique khi có giá trị; `evaluation_periods.year` unique. Thứ tự áp dụng SQL và định nghĩa CHECK/trigger chính xác nằm trong [các migration Prisma](../be/prisma/migrations/); [seminar_csdl.sql](./seminar_csdl.sql) là bản thiết kế lịch sử, không phải script tạo đầy đủ schema hiện hành
+
+## VC10 — Reservation storage và minh chứng
+
+[Migration mới](../be/prisma/migrations/20261118120000_vc10_evidence_uploads/migration.sql) bổ sung `evidence_uploads`, giữ nguyên dữ liệu và migration cũ
+
+| Nhóm cột | Ý nghĩa/ràng buộc |
+|---|---|
+| id, criterion_score_id, uploader_id | UUID; score và user FK NoAction, không xóa dây chuyền |
+| credential_version, round | Phiên bản xác thực lúc cấp URL, INITIAL/SUPPLEMENT do server suy ra |
+| file_name, mime_type, size_bytes | Metadata server kiểm, tên tối đa 180, kích thước 1..10485760 byte |
+| pending_path, final_path | Hai key unique do server cấp, không xuất ra contract |
+| state | PENDING/CONFIRMED/DELETING; chỉ CONFIRMED có Evidence tương ứng cùng UUID |
+| pending_purged | Mặc định false, sau cleanup CONFIRMED là true để không lặp xóa pending |
+| expires_at, created_at | timestamp UTC, expires_at lớn hơn created_at; index state/expiry và score |
+
+Reservation chưa phải minh chứng, được tính quota khi còn hạn; confirm FILE giữ idempotency bằng UUID phiên
+DB/object storage dùng bù lỗi: giữ PENDING sau copy lỗi, tombstone DELETING sau xóa metadata, cleanup không xóa final của Evidence còn tồn tại
+Trigger mới kiểm phase tại statement ghi; trigger cũ tiếp tục kiểm cửa sổ, round, bảo vệ INITIAL và đánh dấu supplementedAt
+Giới hạn quota, kiểm file và quyền sở hữu được service thực hiện dưới khóa kỳ → hồ sơ, không mặc định SQL đã phân quyền
+Chi tiết [contract VC10](./VC10_STORAGE_CONTRACT.md) và [vận hành storage](./VC10_STORAGE.md)

@@ -1,6 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
-import type { Evaluation, EvaluationPeriod, Prisma } from "../../generated/prisma/client.js";
+import type { Evaluation, EvaluationPeriod } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ERROR_CODES } from "../../common/constants/error-codes.js";
 import { AuditService } from "../../common/services/audit.service.js";
@@ -75,7 +74,8 @@ export class PeriodWorkflowService {
           // Reconcile cùng use-case GET/lưu/nộp để job trễ hoặc chuyển phase chỉ tạo một bộ dấu vết
           await this.evaluationState.reconcileInitial(tx, evaluation, period, now);
         } else if (target === "FINAL_REVIEW" && evaluation.status === "SUPPLEMENT_REQUESTED") {
-          await this.changeStatus(tx, evaluation, "SUPPLEMENT_EXPIRED", now, "Đã hết thời gian bổ sung");
+          // Dùng chung xử lý với scheduler để chuyển phase muộn vẫn tạo đủ audit và outbox
+          await this.evaluationState.reconcileSupplement(tx, evaluation, period, now);
         }
       }
       const after = await tx.evaluationPeriod.update({
@@ -145,18 +145,6 @@ export class PeriodWorkflowService {
     if (target === "CLOSED" && evaluations.some((item) => item.status !== "FINALIZED" || !item.finalizedAt || !item.finalizedById
       || item.finalScore === null || item.finalPercent === null || !item.finalRating)) return "Chỉ được đóng kỳ khi mọi hồ sơ đã chốt đủ kết quả";
     return null;
-  }
-
-  /** Ghi chuyển trạng thái do hạn thời gian trong cùng transaction giai đoạn
-   * evaluation là hàng đã khóa, status là đích tự động và extra mang dấu auto-lock nếu có
-   * actorId null thể hiện hệ thống, giữ submittedAt rỗng khi chưa nộp chủ động
-   */
-  private async changeStatus(tx: Prisma.TransactionClient, evaluation: Evaluation, status: string, now: Date, comment: string, extra: { autoLockedAt?: Date } = {}) {
-    await tx.evaluation.update({ where: { id: evaluation.id }, data: { status, updatedAt: now, ...extra } });
-    await tx.statusHistory.create({ data: { id: randomUUID(), evaluationId: evaluation.id, actorId: null, fromStatus: evaluation.status, toStatus: status, comment, createdAt: now } });
-    await this.audit.record({ actorId: null, action: "AUTO_STATUS", entity: "Evaluation", entityId: evaluation.id,
-      before: { status: evaluation.status }, after: { status, reason: comment },
-    }, tx);
   }
 
   /** Tạo lỗi 404 tiếng Việt, không trả chi tiết Prisma cho mã kỳ không tồn tại */

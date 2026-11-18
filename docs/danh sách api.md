@@ -90,7 +90,7 @@ Mã HTTP khuyến nghị: `400` dữ liệu sai; `401` chưa xác thực/token s
 
 ## 4. Hồ sơ, tự chấm và minh chứng (`/evaluations`)
 
-Các route VC09 sau đã triển khai, JSON dùng camelCase theo [API_CONTRACT.md](./API_CONTRACT.md); các route minh chứng bên dưới vẫn là thiết kế VC10
+Các route VC09 sau đã triển khai, JSON dùng camelCase theo [API_CONTRACT.md](./API_CONTRACT.md); minh chứng VC10 theo contract liên kết bên dưới
 
 - `GET /evaluations` — ADMIN xem toàn kỳ; UNIT chỉ hồ sơ đơn vị từ phiên và kỳ đã công bố; lọc `periodId`, `status`, phân trang `page/pageSize`, không nhận unitId tùy ý
 - `POST /evaluations` — body `{periodId,unitId?}`; UNIT không gửi unitId, ADMIN bắt buộc unitId; tạo bù idempotent trước hạn trong SETUP/SELF_EVAL, score null cho lá, không hardcode số đơn vị; luôn trả 200
@@ -100,32 +100,12 @@ Các route VC09 sau đã triển khai, JSON dùng camelCase theo [API_CONTRACT.m
 - `PUT /evaluations/:evaluationId/scores/self-batch` — `{items:[{criterionId,selfScore?,selfNote?}]}`; 1..100 ô không lặp, nested validation thật; transaction riêng từng ô và kết quả từng ô theo contract, không trả lỗi SQL/Prisma thô
 - Không có route `GET /evaluations/:evaluationId/scores` riêng, client đọc detail để luôn đi qua projection giờ mở
 - GET/list/summary và ghi reconcile DRAFT quá hạn bằng use-case chung, chỉ một history/audit/outbox với actor hệ thống; không bắt minh chứng đủ khi auto-lock, không biến autoLockedAt thành submittedAt
-- `POST /evaluations/:evaluationId/evidences/upload-urls` — UNIT sở hữu hồ sơ. Nhận danh sách file cần tải lên (tiêu chí/criterion score, tên file, MIME, kích thước và `round`); trả một URL upload có thời hạn và `storage_path` riêng cho mỗi file. Kiểm tra quyền sửa hồ sơ, tiêu chí, MIME được phép (`image/jpeg`, `image/png`, `application/pdf`, Word `.doc`/`.docx`), giới hạn dung lượng/số lượng và round trước khi cấp URL. Với Supabase Storage hoặc object storage tương tự, bucket phải private; browser tải trực tiếp lên storage bằng URL ký sẵn, không gửi nội dung qua API và không đưa service-role key vào frontend.
-- `POST /evaluations/:evaluationId/evidences` — UNIT sở hữu hồ sơ. Sau khi upload thành công, xác nhận/lưu metadata file; có thể gửi một hoặc nhiều file theo request. Backend kiểm tra object tồn tại, kích thước/MIME thực tế và quyền của `criterion_score_id`; không tin `storage_path` tùy ý do client gửi. Cũng nhận minh chứng link ngoài (`kind = LINK`, `external_url`), kiểm tra URL/host theo chính sách an toàn. Mỗi file/link được lưu thành một dòng `evidences`.
-- `GET /evaluations/:evaluationId/evidences/:evidenceId` — Theo quyền. Trả metadata cùng URL xem/tải có thời hạn; với ảnh/PDF cho phép xem inline, với Word có thể trả file để tải. Không công khai storage path hoặc bucket private.
-- `GET /evaluations/:evaluationId/evidences/:evidenceId/preview` — ADMIN hoặc UNIT sở hữu hồ sơ. Trả URL signed cho ảnh/PDF xem trực tiếp. Với Word, nếu đã có worker chuyển đổi thì trả preview PDF theo `preview_status`/`preview_path`; khi đang xử lý trả `202`, nếu chưa tích hợp worker thì thông báo preview không khả dụng và dùng endpoint file để tải Word.
-- `PATCH /evaluations/:evaluationId/evidences/:evidenceId` — UNIT sở hữu hồ sơ. Chỉ sửa minh chứng trong `DRAFT` hoặc đúng mục được yêu cầu bổ sung, theo trigger DB.
-- `DELETE /evaluations/:evaluationId/evidences/:evidenceId` — UNIT sở hữu hồ sơ. Cùng giới hạn thời gian/trạng thái như cập nhật.
+### Minh chứng VC10
 
-**Luồng upload nhiều file:** frontend xin URL cho các file được chọn → tải từng file trực tiếp lên storage bằng signed URL → gửi metadata để backend xác minh và ghi từng bản ghi `evidences`. Nếu bước xác nhận metadata thất bại, cần xóa object tải dở hoặc có tác vụ dọn object mồ côi. File không được public trực tiếp; endpoint xem/tải luôn xác thực hồ sơ và quyền.
+[Giao ước upload, xác nhận, đọc, preview, hủy và xóa hiện hành](./VC10_STORAGE_CONTRACT.md)
 
-Ví dụ request xin URL cho nhiều file:
-
-```json
-{
-  "items": [
-    {
-      "criterion_score_id": "UUID",
-      "file_name": "bao-cao.pdf",
-      "mime_type": "application/pdf",
-      "size_bytes": 125000,
-      "round": "INITIAL"
-    }
-  ]
-}
-```
-
-Response gồm một phần tử cho mỗi file, tối thiểu có `upload_url`, `method`, `required_headers`, `storage_path` và `expires_at`. Sau khi storage xác nhận upload thành công, frontend gửi `POST /evaluations/:evaluationId/evidences` với các metadata tương ứng để backend kiểm tra object và ghi DB. Tên file hiển thị (`file_name`) được tách khỏi object key ngẫu nhiên do server cấp.
+Client gửi criterionId/uploadId; server tự cấp round/key và kiểm bytes qua gateway Nest có URL ký ngắn hạn
+Batch trả kết quả từng tệp, metadata không chứa storagePath; chưa có endpoint PATCH hoặc worker chuyển Word sang PDF
 
 ### Tính điểm tức thời
 
@@ -192,4 +172,4 @@ Response gồm một phần tử cho mỗi file, tối thiểu có `upload_url`,
 - `GET /admin/reports/exports` — ADMIN. Danh sách lịch sử xuất; lọc theo `period_id`, `report_type`, `format`, phân trang.
 - `GET /admin/reports/exports/:exportId/download` — ADMIN. Xác minh quyền và file thuộc bản ghi export; trả redirect hoặc signed URL tải có thời hạn, không trả trực tiếp storage path. Trả `404` nếu export/file không tồn tại.
 
-**Định dạng theo yêu cầu đề tài:** bảng tổng hợp 34 cơ sở → Excel (`.xlsx`); biên bản thẩm định từng đơn vị → PDF (`.pdf`) hoặc Word (`.docx`). Xuất báo cáo và upload/storage ở trên là hợp đồng API cần triển khai, chưa có nghĩa là backend đã có các endpoint này trong code.
+**Định dạng theo yêu cầu đề tài:** bảng tổng hợp 34 cơ sở → Excel (`.xlsx`); biên bản thẩm định từng đơn vị → PDF (`.pdf`) hoặc Word (`.docx`). Minh chứng/storage VC10 đã có source và kiểm thử local theo contract liên kết; trạng thái nghiệm thu xuất báo cáo được theo dõi riêng trong kế hoạch.

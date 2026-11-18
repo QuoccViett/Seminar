@@ -148,7 +148,9 @@ export class EvaluationsService {
             needsSupplement: score?.needsSupplement ?? false,
             ...(context.status === "SUPPLEMENT_REQUESTED" && score?.needsSupplement ? { supplementNote: score.supplementNote } : {}),
             ...(user.role === "ADMIN" ? { adminScore: score?.adminScore?.toNumber() ?? null, adminComment: score?.adminComment ?? null } : {}),
-            evidences: (score?.evidences ?? []).map((evidence) => ({ id: evidence.id, kind: evidence.kind, round: evidence.round, fileName: evidence.fileName, mimeType: evidence.mimeType, sizeBytes: evidence.sizeBytes?.toString() ?? null, externalUrl: evidence.externalUrl, description: evidence.description, previewStatus: evidence.previewStatus })),
+            // Quyền xóa lấy từ snapshot server, INITIAL được giữ bất biến khi đang bổ sung
+            // Không đưa key hoặc URL ký vào polling detail, chỉ cấp URL sau thao tác đọc có Auth
+            evidences: (score?.evidences ?? []).map((evidence) => ({ id: evidence.id, kind: evidence.kind, round: evidence.round, fileName: evidence.fileName, mimeType: evidence.mimeType, sizeBytes: evidence.sizeBytes?.toString() ?? null, externalUrl: evidence.externalUrl, description: evidence.description, previewStatus: evidence.previewStatus, createdAt: evidence.createdAt.toISOString(), canDelete: reason === null && (context.status === "DRAFT" || evidence.round === "SUPPLEMENT") })),
           } : {}),
         };
       });
