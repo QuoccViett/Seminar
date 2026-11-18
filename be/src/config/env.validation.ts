@@ -52,6 +52,8 @@ export const envValidationSchema = Joi.object({
   SUPABASE_KEY: Joi.string().allow("").optional(),
   REPORT_EXPORT_DIR: Joi.string().allow("").optional(),
   REPORT_EXPORT_FONT_PATH: Joi.string().allow("").optional(),
+  // Giới hạn URL tải ở server, FE luôn xin metadata mới trước khi tải thay vì tin giờ máy
+  REPORT_EXPORT_DOWNLOAD_TTL_SECONDS: Joi.number().integer().min(30).max(300).default(120),
   OPENAPI_OUTPUT_FILE: Joi.string().allow("").optional(),
   SEED_CREDENTIALS_FILE: Joi.string().default(".seed-credentials.json"),
   SEED_ADMIN_PASSWORD: Joi.string().allow("").optional(),

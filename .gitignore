@@ -5,6 +5,8 @@ node_modules/
 # Fixture browser và kho local của kiểm thử chỉ nằm ở máy chạy, không đưa credential giả hoặc bytes vào Git
 be/.tmp/
 be/report-exports/
+# Bytes báo cáo private mặc định không đưa vào Git, metadata và audit nằm trong PostgreSQL
+be/storage/report-exports/
 .pnpm-store/
 
 # Environment Variables (Bảo mật thông tin nhạy cảm)

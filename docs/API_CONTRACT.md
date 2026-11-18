@@ -571,8 +571,21 @@ Biên bản thẩm định một đơn vị:
   "reportType": "SUMMARY_ALL_UNITS",
   "format": "XLSX",
   "createdAt": "2026-10-17T08:30:00.000Z",
-  "downloadUrl": "/api/v1/admin/reports/exports/99999999-9999-4999-8999-999999999999/download"
+  "status": "READY",
+  "fileName": "summary-all-units-2026.xlsx",
+  "sizeBytes": 16384,
+  "createdById": "11111111-1111-4111-8111-111111111111",
+  "downloadUrl": "/api/v1/admin/reports/exports/99999999-9999-4999-8999-999999999999/download?token=CHU_KY_NGAN_HAN",
+  "downloadExpiresAt": "2026-10-17T08:32:00.000Z"
 }
 ```
 
-Format hợp lệ: tổng hợp 34 đơn vị → `XLSX`; biên bản từng đơn vị → `PDF` hoặc `DOCX`. Evaluation phải thuộc `periodId` được gửi. `GET /admin/reports/exports` trả danh sách phân trang; `GET /admin/reports/exports/:exportId/download` xác minh ADMIN và trả redirect/file hoặc signed URL có thời hạn, không lộ storage path.
+Format hợp lệ: tổng hợp đơn vị trong kỳ → `XLSX`; biên bản từng đơn vị → `PDF` hoặc `DOCX`. Evaluation phải thuộc `periodId` được gửi. Loại/định dạng hoặc scope không khớp trả `400 BUSINESS_RULE_VIOLATION`; UUID/payload sai trả `400 VALIDATION_ERROR`, kỳ/hồ sơ không tồn tại trả `404 NOT_FOUND`. `evaluationId` bị cấm với SUMMARY_ALL_UNITS, bắt buộc với UNIT_APPRAISAL_MINUTES, không chấp nhận null.
+
+VC15 tạo đồng bộ: FE hiển thị đang tạo trong lúc POST chưa hoàn tất; `201` chỉ trả sau khi tệp private, metadata và audit `REPORT_EXPORTED` đã thành công. Không có trạng thái job giả hoặc bản ghi storagePath rỗng. Lỗi lưu tệp/generator/giao dịch trả lỗi tiếng Việt an toàn, bù xóa tệp mới; bộ dọn định kỳ thử lại với tệp mồ côi quá 24 giờ. Kho báo cáo local riêng `REPORT_EXPORT_DIR` mặc định `./storage/report-exports`, không được serve static; quyền thư mục/tệp lần lượt 0700/0600 trên hệ thống hỗ trợ. Không phụ thuộc secret của storage minh chứng hoặc provider thông báo.
+
+Metadata tạo/xem/danh sách có `id`, `periodId`, `evaluationId`, `reportType`, `format`, `fileName`, `sizeBytes`, `createdById`, `createdAt`, `status: "READY"`, `downloadUrl`, `downloadExpiresAt`. `sizeBytes` là số nguyên an toàn; metadata không có storagePath. `GET /admin/reports/exports` nhận `periodId`, `evaluationId`, `reportType`, `format`, `page` (mặc định 1), `pageSize` (mặc định 20, tối đa 100), `sortBy=createdAt`, `sortOrder=asc|desc`; trả `{items,total,page,pageSize}`, sắp xếp phụ theo ID để ổn định trang. `GET /admin/reports/exports/:id` cấp lại metadata cùng URL tải mới.
+
+`downloadUrl` có dạng `/api/v1/admin/reports/exports/:id/download?token=...`, chữ ký gắn người yêu cầu, mã báo cáo và mục đích riêng, hiệu lực mặc định 120 giây (`REPORT_EXPORT_DOWNLOAD_TTL_SECONDS`, 30–300 giây). Mọi đường vẫn yêu cầu access token ADMIN và đã đổi mật khẩu, kể cả khi biết URL. Tải bằng GET với Authorization, trả bytes XLSX/PDF/DOCX cùng Content-Type/Content-Disposition/Content-Length. Token sai, hết hạn, thuộc người khác hoặc báo cáo khác trả `403 FORBIDDEN` tiếng Việt; thiếu token trả `400 VALIDATION_ERROR`; tệp thiếu trả `404 NOT_FOUND`. FE lấy metadata mới ngay trước khi tải, không tự quyết định quyền bằng giờ máy. Mọi phản hồi báo cáo thành công đặt `Cache-Control: private, no-store`; không ghi signed token vào audit.
+
+Dữ liệu xuất được đọc trong transaction RepeatableRead: chỉ hồ sơ thuộc kỳ, tổng Decimal chỉ từ lá, điểm hiện tại là adminScore nếu có hoặc selfScore, điểm chính thức/tỷ lệ/nhãn chỉ hiển thị khi FINALIZED. XLSX có STT/đơn vị/self/admin tạm tính/chính thức/%/nhãn/ghi chú, chú giải ngưỡng, tổng hợp, font Việt, A4 ngang và header lặp; mọi chuỗi người dùng là text, không là công thức. PDF/Word có nhóm và tiêu chí, điểm/lý do/minh chứng theo ID và tên, lịch sử/nhận xét/lịch bổ sung từ snapshot, tổng/%/nhãn và ô ký trống; chưa chốt ghi `CHƯA CHỐT — TẠM TÍNH`. Thời điểm hiển thị `Asia/Ho_Chi_Minh`; không dùng supplementHours tính lịch, không nhúng signed URL hoặc đường dẫn private của minh chứng. Bố cục VC00 là mẫu làm việc, chưa thay thế mẫu hành chính chính thức nếu giảng viên cung cấp sau này.

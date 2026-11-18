@@ -160,6 +160,17 @@ jobs:
       - name: Run backend unit tests
         run: npm run test:unit
 
+      # Xuất và đọc lại bytes XLSX/PDF/DOCX trên Nest/PostgreSQL local riêng, không gửi provider ngoài
+      # Kiểm quyền, scope, chữ ký hết hạn, rollback audit/storage và dọn tệp mồ côi với font đóng gói
+      - name: Kiểm báo cáo VC15 trên database riêng
+        env:
+          VC15_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc15_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc15_test
+          DATABASE_URL="$VC15_TEST_DATABASE_URL" npx prisma migrate deploy
+          npm run build
+          node --import tsx --test test/integration/vc15.exports.test.ts
+
       # Kiểm thẩm định và bổ sung trên PostgreSQL riêng, provider ngoài tắt để không gửi tin thật
       # Ma trận quyền, baseline, rollback và cạnh tranh dùng HTTP Nest cùng trigger thật
       - name: Kiểm VC12 trên database riêng
