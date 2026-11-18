@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { Evaluation, EvaluationPeriod, Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -9,6 +9,7 @@ import { DeadlineCalculator } from "../../common/services/deadline-calculator.js
 import { lockPeriod } from "../../common/services/period-lock.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { PHASE_TARGETS, type PhaseTarget } from "./dto/transition-phase.dto.js";
+import { EvaluationStateService } from "../evaluations/evaluation-state.service.js";
 
 const PHASE_LABELS: Record<string, string> = {
   SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_REVIEW: "Thẩm định lần đầu",
@@ -25,11 +26,12 @@ export class PeriodWorkflowService {
    * Prisma giữ transaction, clock cấp giờ, helper tính lịch còn audit/thông báo ghi cùng kết nối
    */
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly audit: AuditService,
-    private readonly clock: ClockService,
-    private readonly deadlines: DeadlineCalculator,
-    private readonly notifications: NotificationsService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(ClockService) private readonly clock: ClockService,
+    @Inject(DeadlineCalculator) private readonly deadlines: DeadlineCalculator,
+    @Inject(NotificationsService) private readonly notifications: NotificationsService,
+    @Inject(EvaluationStateService) private readonly evaluationState: EvaluationStateService,
   ) {}
 
   /** Tính danh sách lệnh khả dụng từ snapshot DB và giờ server cho giao diện Admin
@@ -70,7 +72,8 @@ export class PeriodWorkflowService {
       // Các chuyển trạng thái theo hạn chỉ chạy sau khi đích đã hợp lệ để lệnh sai không ghi dở dang
       for (const evaluation of evaluations) {
         if (target === "FIRST_REVIEW" && evaluation.status === "DRAFT") {
-          await this.changeStatus(tx, evaluation, "PENDING_REVIEW", now, "Đã hết thời gian tự chấm", { autoLockedAt: now });
+          // Reconcile cùng use-case GET/lưu/nộp để job trễ hoặc chuyển phase chỉ tạo một bộ dấu vết
+          await this.evaluationState.reconcileInitial(tx, evaluation, period, now);
         } else if (target === "FINAL_REVIEW" && evaluation.status === "SUPPLEMENT_REQUESTED") {
           await this.changeStatus(tx, evaluation, "SUPPLEMENT_EXPIRED", now, "Đã hết thời gian bổ sung");
         }

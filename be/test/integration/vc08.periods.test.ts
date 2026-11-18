@@ -219,8 +219,10 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
     assert.equal((await prisma.evaluation.findUniqueOrThrow({ where: { id: secondEvaluation.id } })).status, "SUPPLEMENT_EXPIRED");
     assert.equal(await prisma.statusHistory.count({ where: { evaluationId: secondEvaluation.id, toStatus: "SUPPLEMENT_EXPIRED" } }), 1);
 
-    // Source chưa có route đọc score/evidence: xác nhận không có đường phụ làm lộ cấu hình
-    for (const path of [`criteria/${criterion.body.id}`, `evaluations/${secondEvaluation.id}`, `criterion-scores/${criterion.body.id}`, `evidences/${randomUUID()}`]) {
+    // VC09 đã thêm detail hồ sơ theo quyền, không còn mặc định route này phải 404
+    // Các route đọc đơn lẻ còn lại chưa có vẫn không được tạo đường phụ làm lộ cấu hình
+    assert.equal((await request("GET", `evaluations/${secondEvaluation.id}`, unitToken)).status, 200);
+    for (const path of [`criteria/${criterion.body.id}`, `criterion-scores/${criterion.body.id}`, `evidences/${randomUUID()}`]) {
       assert.equal((await request("GET", path, unitToken)).status, 404);
     }
     instant = new Date("2026-11-28T17:00:00.000Z");

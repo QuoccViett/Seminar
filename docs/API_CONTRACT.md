@@ -322,6 +322,25 @@ Response `201 Created`: resource tiêu chí đã lưu, gồm `id`, `periodId` v�
 
 ## 4. Hồ sơ, điểm và minh chứng
 
+### Giao ước VC09 — hồ sơ và tự chấm
+
+Đã triển khai VC09, giữ NestJS/Prisma/PostgreSQL và JSON camelCase
+
+- `GET /evaluations?periodId=&status=&page=1&pageSize=20`: ADMIN đọc mọi hồ sơ, UNIT chỉ hồ sơ đơn vị từ phiên và kỳ đã công bố; trả `{items,page,pageSize,total}` metadata, thứ tự createdAt/id giảm dần
+- `POST /evaluations` body `{periodId,unitId?}`: UNIT không được gửi unitId; ADMIN bắt buộc unitId để tạo bù đơn vị hoạt động mới trong kỳ đã công bố chưa đóng, chỉ phase SETUP/SELF_EVAL và trước deadline; lần lặp trả cùng hồ sơ `200`, không tạo thêm score/history/audit
+- `GET /evaluations/:evaluationId`: metadata gồm period `{id,name,selfEvalStart,selfEvalDeadline}`, unit, status, submittedAt, autoLockedAt, supplementStartAt/supplementDeadline, serverTime, criteriaVisible, canSubmit, lockedReason, deadlineWarning và criteria là cây `children`; lá có criterionId, selfScore/selfNote, canEditSelf/lockedReason/serverTime, cấu hình minh chứng và metadata minh chứng an toàn
+- UNIT trước selfEvalStart chỉ nhận metadata, `criteria: []`, không score/ngưỡng/minh chứng/summary; summary endpoint trả `403 NOT_OPEN_YET` và mọi đường ghi bị chặn
+- UNIT trước FINALIZED không nhận adminScore/adminComment/reviewedById/currentTotal/currentPercent hoặc tổng có điểm Admin; ADMIN được đọc các trường thẩm định, UNIT sau chốt chỉ thêm `finalResult: {score,percent,rating}`
+- `GET /evaluations/:evaluationId/score-summary`: `{evaluationId,selfTotal,maxTotalScore,selfPercent,suggestedRating,ratingLabel,ratingColor,scoredCount,leafCount,isFinal,finalResult?}`; null tính 0, tổng bằng Decimal, xếp loại so ngưỡng chính xác trước làm tròn hiển thị, EXCELLENT >85, GOOD >=65, PASS >=50, FAIL >=0
+- `PUT /evaluations/:evaluationId/scores/:criterionId/self`: UNIT chính chủ, body có ít nhất một trong selfScore (số 0..maxScore tối đa hai chữ số thập phân hoặc null để xóa), selfNote (văn bản thuần tối đa 5000 ký tự hoặc null để xóa); trường bỏ qua giữ nguyên, `{}` và trường hệ thống bị từ chối; allowText=false không nhận diễn giải có nội dung
+- `PUT /evaluations/:evaluationId/scores/self-batch`: body `{items:[{criterionId,selfScore?,selfNote?}]}` từ 1..100 phần tử, không lặp criterionId; cấu trúc/nested sai trả 400 toàn request, dữ liệu nghiệp vụ sai trả `200 {results:[{criterionId,ok:true,data}|{criterionId,ok:false,error:{statusCode,code,message,details}}]}` theo thứ tự đầu vào; mỗi ô một transaction nên lỗi SQL một ô không làm mất ô khác, lỗi không nhận diện dùng INTERNAL_ERROR tiếng Việt
+- Quyền ghi lá dùng giờ DB UTC đọc sau khóa kỳ → hồ sơ, kiểm lại sát ghi và trigger DB bảo vệ biên; INITIAL chỉ DRAFT trong SETUP/SELF_EVAL, đã publish, `[start,deadline)` mọi ngày/giờ; SUPPLEMENT_REQUESTED chỉ lá needsSupplement trong snapshot `[supplementStartAt,supplementDeadline)` và phase FIRST_REVIEW/SUPPLEMENT, không tính supplementHours
+- `POST /evaluations/:evaluationId/submit` body `{}`: UNIT chính chủ nộp INITIAL sớm trong cửa sổ; yêu cầu mọi lá đã có điểm (0 hợp lệ), lá evidenceRequired cần ít nhất một diễn giải không trắng được allowText cho phép hoặc FILE/LINK thuộc loại được phép đã lưu; trả metadata sau chuyển PENDING_REVIEW/submittedAt, khóa sửa; nộp lặp sau nộp chủ động trả cùng metadata không thêm history/audit/outbox; không mở lại hồ sơ
+- GET list/detail/summary hoặc ghi khi quá hạn reconcile DRAFT → PENDING_REVIEW ngay cả phase SETUP/job trễ, giữ submittedAt=null, đặt autoLockedAt, history actor=null/audit/outbox ADMIN cùng transaction đúng một lần; không yêu cầu đủ minh chứng; request ghi bị từ chối vẫn commit reconcile, không lưu điểm/nộp quá hạn
+- Lưu điểm ghi audit before/after, submit/auto-lock ghi history/audit/hộp thư và delivery qua kiến trúc Notifications sẵn có; không gọi provider trực tiếp, ZNS theo cờ mặc định tắt
+- Không đăng nhập 401, sai vai trò 403, hồ sơ khác đơn vị/kỳ nháp với UNIT 404, tiêu chí không thuộc hồ sơ 404, nhóm/điểm/nộp thiếu dữ liệu 422, cửa sổ khóa 403 SELF_EVALUATION_LOCKED; UUID/body/query sai 400 VALIDATION_ERROR tiếng Việt; không trả lỗi Prisma/SQL thô
+- FE tải lại mỗi 15 giây và khi lưu/nộp, quyền/cảnh báo lấy server; có lưu thủ công, giữ nội dung chưa lưu khi refresh, chặn nộp khi đang lưu/còn chỉnh sửa, tổng từ summary API; upload/preview thuộc VC10, request/submit bổ sung thuộc VC12
+
 ### Đọc hồ sơ
 
 `GET /evaluations/:evaluationId` — ADMIN hoặc UNIT sở hữu hồ sơ.
@@ -346,8 +365,6 @@ Response `201 Created`: resource tiêu chí đã lưu, gồm `id`, `periodId` v�
       "maxScore": 10,
       "selfScore": null,
       "selfNote": null,
-      "adminScore": null,
-      "adminComment": null,
       "needsSupplement": false,
       "evidences": []
     }
@@ -355,7 +372,7 @@ Response `201 Created`: resource tiêu chí đã lưu, gồm `id`, `periodId` v�
 }
 ```
 
-UNIT chỉ nhận hồ sơ đơn vị của mình. Có thể trả thêm các field cần thiết cho UI, nhưng không trả dữ liệu nhạy cảm hoặc dữ liệu đơn vị khác.
+UNIT chỉ nhận hồ sơ đơn vị của mình, dùng projection VC09 ở trên; các trường thẩm định chỉ dành cho ADMIN, UNIT trước mở không nhận mảng nội dung tiêu chí
 
 ### Lưu điểm tự chấm
 

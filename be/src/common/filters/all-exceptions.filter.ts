@@ -19,9 +19,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
    */
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<{ status(code: number): { json(body: ApiError): void } }>();
-    const error = this.databaseError(exception) ?? this.httpError(exception);
+    const error = this.toApiError(exception);
     if (error.statusCode >= 500) this.logger.error("Không thể hoàn tất yêu cầu do lỗi hệ thống");
     response.status(error.statusCode).json(error);
+  }
+
+  /** Chuẩn hóa một lỗi cho cả HTTP và kết quả từng ô batch đã rollback riêng
+   * Chỉ trả bốn trường công khai, tái dùng ánh xạ DB để batch không lộ lỗi Prisma/SQL
+   * Không ghi log tại đây vì caller có thể xử lý nhiều ô lỗi dự kiến trong một yêu cầu
+   */
+  toApiError(exception: unknown): ApiError {
+    return this.databaseError(exception) ?? this.httpError(exception);
   }
 
   /** Ánh xạ mã Prisma và SQLSTATE đã biết sang trạng thái công khai an toàn

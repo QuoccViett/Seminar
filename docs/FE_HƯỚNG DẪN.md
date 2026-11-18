@@ -1,5 +1,13 @@
 # Hướng dẫn cài đặt và chạy frontend
 
+## Hồ sơ tự chấm VC09
+
+UNIT mở `/unit/records` để đọc kỳ/hồ sơ thật, tạo bù khi đơn vị mới chưa có hồ sơ, nhập điểm/diễn giải, lưu từng lá hoặc tất cả thay đổi và nộp qua xác nhận. Giao diện giữ nháp khi polling hoặc lỗi lưu, có trạng thái từng ô, không cho nộp khi còn nháp. Reload sau lưu đọc lại dữ liệu đã lưu DB; bản nháp chưa lưu chỉ giữ trong phiên trang, không lưu xuống localStorage
+
+Tổng/xếp loại tạm tính lấy từ score-summary API, quyền từng tiêu chí và cảnh báo sắp hết hạn lấy từ backend; FE chỉ dùng chênh lệch start/serverTime để hẹn hỏi lại API, không dùng giờ thiết bị để cấp quyền. Trước mở không tải summary hoặc hiển thị nội dung tiêu chí, sau hạn vẫn đọc được nội dung nhưng API khóa mọi đường ghi
+
+ADMIN mở `/admin/records` để lọc kỳ, phân trang và xem cây/điểm tự chấm qua API thật. Thẩm định/yêu cầu bổ sung/nộp bổ sung thuộc VC12; upload/preview thuộc VC10. Không bật `VITE_API_MOCKING=enabled` khi nghiệm thu backend thật. Route, body, response và lỗi chi tiết tại [API_CONTRACT.md](./API_CONTRACT.md)
+
 
 
 Phạm vi công việc của hai thành viên FE được ghi trong [FE_PHÂN CÔNG.md](./FE_PHÂN%20C%C3%94NG.md).

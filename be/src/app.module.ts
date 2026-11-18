@@ -15,6 +15,7 @@ import { CommonModule } from "./common/common.module.js";
 import { DashboardModule } from "./modules/dashboard/dashboard.module.js";
 import { ExportsModule } from "./modules/exports/exports.module.js";
 import { NotificationsModule } from "./modules/notifications/notifications.module.js";
+import { EvaluationsModule } from "./modules/evaluations/evaluations.module.js";
 
 @Module({
   imports: [
@@ -37,6 +38,8 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
     DashboardModule,
     ExportsModule,
     NotificationsModule,
+    // Nối API hồ sơ thật vào ứng dụng, dùng chung Auth và Prisma với các module đã có
+    EvaluationsModule,
   ],
   controllers: [HealthController],
   providers: [HttpLoggingMiddleware],

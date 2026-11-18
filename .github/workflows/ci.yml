@@ -102,14 +102,15 @@ jobs:
           DATABASE_URL="$VC04_TEST_DATABASE_URL" npx prisma migrate deploy
           node --import tsx --test test/integration/vc04.management.test.ts
 
-      - name: Verify seed on an empty database
+      # Kiểm seed qua đủ trigger thật trên DB trống, rồi chạy lại để bắt lỗi reset hồ sơ đã nộp
+      # Test giữ nguyên dữ liệu con/credential và xác nhận chặn nộp ngoài lịch vẫn hoạt động sau seed
+      - name: Verify seed on an empty database and repeat safely
         env:
-          SEED_ADMIN_PASSWORD: ci-only-seed-password
-          SEED_CREDENTIALS_FILE: /tmp/seed-credentials.json
+          SEED_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci_seed
         run: |
           PGPASSWORD=ci createdb -h localhost -U ci ci_seed
-          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npx prisma migrate deploy
-          DATABASE_URL=postgresql://ci:ci@localhost:5432/ci_seed npm run db:seed
+          DATABASE_URL="$SEED_TEST_DATABASE_URL" npx prisma migrate deploy
+          node --import tsx --test test/integration/seed.integration.test.ts
 
       - name: Lint backend
         run: npm run lint

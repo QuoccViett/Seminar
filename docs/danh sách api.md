@@ -90,12 +90,16 @@ Mã HTTP khuyến nghị: `400` dữ liệu sai; `401` chưa xác thực/token s
 
 ## 4. Hồ sơ, tự chấm và minh chứng (`/evaluations`)
 
-- `GET /evaluations` — ADMIN xem toàn đợt; UNIT chỉ hồ sơ của mình. Lọc `period_id`, `unit_id` (ADMIN), `status`; phân trang.
-- `POST /evaluations` — ADMIN hoặc tác vụ khởi tạo đợt. Khởi tạo đúng một hồ sơ cho mỗi cặp `period_id` + `unit_id`; có thể tạo hàng loạt cho 34 đơn vị trong transaction. UNIT không tự chọn đơn vị.
-- `GET /evaluations/:evaluationId` — Theo quyền. Trả hồ sơ cùng tiêu chí lá, điểm, minh chứng và thông tin trạng thái.
-- `POST /evaluations/:evaluationId/submit` — UNIT sở hữu hồ sơ. Chỉ khi đợt `SELF_EVAL`, hồ sơ `DRAFT`, còn trong hạn; validate trường bắt buộc/minh chứng theo cấu hình. Ghi `submitted_at`, đổi sang `PENDING_REVIEW`, thêm `status_histories` và thông báo ADMIN trong transaction.
-- `GET /evaluations/:evaluationId/scores` — Theo quyền. Trả điểm theo tiêu chí cùng điểm tối đa và minh chứng.
-- `PUT /evaluations/:evaluationId/scores/:criterionId/self` — UNIT sở hữu hồ sơ. Upsert `self_score`, `self_note`; chỉ trong `DRAFT` khi đợt mở hoặc đúng tiêu chí được yêu cầu bổ sung trong hạn. Điểm phải từ 0 đến `max_score`.
+Các route VC09 sau đã triển khai, JSON dùng camelCase theo [API_CONTRACT.md](./API_CONTRACT.md); các route minh chứng bên dưới vẫn là thiết kế VC10
+
+- `GET /evaluations` — ADMIN xem toàn kỳ; UNIT chỉ hồ sơ đơn vị từ phiên và kỳ đã công bố; lọc `periodId`, `status`, phân trang `page/pageSize`, không nhận unitId tùy ý
+- `POST /evaluations` — body `{periodId,unitId?}`; UNIT không gửi unitId, ADMIN bắt buộc unitId; tạo bù idempotent trước hạn trong SETUP/SELF_EVAL, score null cho lá, không hardcode số đơn vị; luôn trả 200
+- `GET /evaluations/:evaluationId` — metadata trước mở, sau mở trả cây children và quyền từng lá; UNIT trước chốt không nhận điểm/bình luận Admin hoặc đường dẫn storage nội bộ
+- `POST /evaluations/:evaluationId/submit` — UNIT chủ hồ sơ, body `{}`; DRAFT đã publish trong `[selfEvalStart,selfEvalDeadline)`, SETUP hoặc SELF_EVAL vì job có thể trễ; kiểm mọi lá có điểm và minh chứng theo cấu hình; submittedAt/status/history/audit/outbox Admin nguyên tử, retry sau nộp chủ động không tạo trùng
+- `PUT /evaluations/:evaluationId/scores/:criterionId/self` — UNIT chủ hồ sơ, body selfScore/selfNote; không tạo score cho nhóm hoặc tiêu chí ngoài hồ sơ; điểm 0..maxScore tối đa hai chữ số thập phân, null xóa, field bỏ qua giữ nguyên, diễn giải tối đa 5000 ký tự; cửa sổ INITIAL hoặc đúng lá được yêu cầu trong snapshot bổ sung
+- `PUT /evaluations/:evaluationId/scores/self-batch` — `{items:[{criterionId,selfScore?,selfNote?}]}`; 1..100 ô không lặp, nested validation thật; transaction riêng từng ô và kết quả từng ô theo contract, không trả lỗi SQL/Prisma thô
+- Không có route `GET /evaluations/:evaluationId/scores` riêng, client đọc detail để luôn đi qua projection giờ mở
+- GET/list/summary và ghi reconcile DRAFT quá hạn bằng use-case chung, chỉ một history/audit/outbox với actor hệ thống; không bắt minh chứng đủ khi auto-lock, không biến autoLockedAt thành submittedAt
 - `POST /evaluations/:evaluationId/evidences/upload-urls` — UNIT sở hữu hồ sơ. Nhận danh sách file cần tải lên (tiêu chí/criterion score, tên file, MIME, kích thước và `round`); trả một URL upload có thời hạn và `storage_path` riêng cho mỗi file. Kiểm tra quyền sửa hồ sơ, tiêu chí, MIME được phép (`image/jpeg`, `image/png`, `application/pdf`, Word `.doc`/`.docx`), giới hạn dung lượng/số lượng và round trước khi cấp URL. Với Supabase Storage hoặc object storage tương tự, bucket phải private; browser tải trực tiếp lên storage bằng URL ký sẵn, không gửi nội dung qua API và không đưa service-role key vào frontend.
 - `POST /evaluations/:evaluationId/evidences` — UNIT sở hữu hồ sơ. Sau khi upload thành công, xác nhận/lưu metadata file; có thể gửi một hoặc nhiều file theo request. Backend kiểm tra object tồn tại, kích thước/MIME thực tế và quyền của `criterion_score_id`; không tin `storage_path` tùy ý do client gửi. Cũng nhận minh chứng link ngoài (`kind = LINK`, `external_url`), kiểm tra URL/host theo chính sách an toàn. Mỗi file/link được lưu thành một dòng `evidences`.
 - `GET /evaluations/:evaluationId/evidences/:evidenceId` — Theo quyền. Trả metadata cùng URL xem/tải có thời hạn; với ảnh/PDF cho phép xem inline, với Word có thể trả file để tải. Không công khai storage path hoặc bucket private.
@@ -125,14 +129,14 @@ Response gồm một phần tử cho mỗi file, tối thiểu có `upload_url`,
 
 ### Tính điểm tức thời
 
-- `GET /evaluation-periods/:periodId/units/:unitId/score-summary` — Theo quyền. Đọc `v_evaluation_totals`; gồm `self_total`, `current_total`, `current_percent`, `suggested_rating`, `max_total_score`.
-- UNIT chỉ được truyền đúng `unitId` của mình; có thể thay bằng endpoint `/evaluations/:evaluationId/score-summary` để không nhận unit ID từ client.
+- `GET /evaluations/:evaluationId/score-summary` — theo quyền hồ sơ, tổng Decimal chỉ từ selfScore, null tính 0; selfTotal/selfPercent/maxTotalScore/suggestedRating/ratingLabel/ratingColor/scoredCount/leafCount/isFinal, thêm finalResult khi đã chốt
+- Không dùng view currentTotal/currentPercent cho UNIT trước chốt; trước giờ mở trả 403 NOT_OPEN_YET, không có route nhận unitId do UNIT tự khai
 
 ## 5. Thẩm định và bổ sung (`/evaluations`)
 
 - `GET /admin/evaluations/:evaluationId/review` — ADMIN. Trả dữ liệu side-by-side: tiêu chí/điểm tối đa, điểm và diễn giải UNIT, minh chứng, điểm Admin/bình luận/cờ bổ sung.
 - `PUT /admin/evaluations/:evaluationId/scores/:criterionId/review` — ADMIN. Nhận `admin_score`, `admin_comment`, `needs_supplement`, `supplement_note`; bắt buộc lý do khi điểm khác tự chấm. Gán reviewer từ token và `reviewed_at` từ server.
-- `POST /admin/evaluations/:evaluationId/supplement-request` — ADMIN. Nhận danh sách tiêu chí cần bổ sung và phản hồi; kiểm tra hồ sơ đang chờ thẩm định, tạo deadline = thời điểm server + `supplement_hours`, đổi sang `SUPPLEMENT_REQUESTED`, lưu phản hồi/lịch sử và gửi thông báo trong transaction.
+- `POST /admin/evaluations/:evaluationId/supplement-request` — thiết kế VC12, ADMIN chọn supplementStartAt thứ Hai–thứ Sáu, server lưu snapshot deadline theo lịch tạm mục 1.4/5.4 của kế hoạch; không cộng supplementHours; chi tiết request và quy tắc chờ hỏi thầy tại API_CONTRACT
 - `POST /evaluations/:evaluationId/supplement-submit` — UNIT sở hữu hồ sơ. Chỉ trước deadline khi trạng thái `SUPPLEMENT_REQUESTED`; xác nhận hoàn tất bổ sung, đổi `SUPPLEMENT_SUBMITTED`, ghi thời gian/lịch sử và báo ADMIN.
 - `POST /admin/evaluations/:evaluationId/first-review/complete` — ADMIN. Đánh dấu đã hoàn tất thẩm định lần 1 bằng `first_reviewed_at`. Nếu cần bổ sung, dùng endpoint `supplement-request` để chuyển riêng hồ sơ đó sang `SUPPLEMENT_REQUESTED`; nếu không, hồ sơ giữ trạng thái chờ xử lý phù hợp cho vòng chốt. Không dùng endpoint này để tự chuyển phase toàn đợt.
 - `POST /admin/evaluations/:evaluationId/finalize` — ADMIN. Chỉ chốt hồ sơ hợp lệ ở giai đoạn `FINAL_REVIEW`; tính điểm hiệu lực từ điểm Admin nếu có, nếu không dùng điểm tự chấm; tính phần trăm trên `max_total_score`, phân loại theo `fn_rating_for_percent`; ghi `final_score`, `final_percent`, `final_rating`, `finalized_at`, `finalized_by_id`, trạng thái `FINALIZED`, lịch sử và audit trong transaction.
