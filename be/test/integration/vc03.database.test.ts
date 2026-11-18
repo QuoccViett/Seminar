@@ -112,12 +112,15 @@ test("ràng buộc PostgreSQL VC03 trên cơ sở dữ liệu riêng", async () 
     await prisma.criterionScore.create({
       data: { id: supplementScoreId, evaluationId: supplementEvaluationId, criterionId, selfScore: 1, needsSupplement: true, createdAt: now, updatedAt: now },
     });
+    // Nội dung bổ sung chỉ được sửa trong phase thẩm định, giữ fixture hợp lệ theo trigger VC12
+    await prisma.evaluationPeriod.update({ where: { id: periodId }, data: { phase: "FIRST_REVIEW", updatedAt: now } });
     const changedScore = await prisma.criterionScore.update({ where: { id: supplementScoreId }, data: { selfNote: "Nội dung bổ sung kiểm thử", updatedAt: now } });
     assert.ok(changedScore.supplementedAt, "Nội dung bổ sung thực sự thay đổi phải có mốc thời gian riêng");
     const firstSupplementedAt = changedScore.supplementedAt;
     const evidenceId = id();
     // Trigger VC10 yêu cầu minh chứng bổ sung thuộc giai đoạn thẩm định hoặc bổ sung
-    // Fixture vẫn ở SELF_EVAL để kiểm DB từ chối đúng lý do trước khi chuyển sang FIRST_REVIEW
+    // Chuyển fixture tạm về SELF_EVAL để kiểm nhánh từ chối phase rồi khôi phục trạng thái hợp lệ
+    await prisma.evaluationPeriod.update({ where: { id: periodId }, data: { phase: "SELF_EVAL", updatedAt: now } });
     const supplementEvidence = { id: evidenceId, criterionScoreId: supplementScoreId, uploaderId: admin.id, kind: "LINK", round: "SUPPLEMENT", externalUrl: "https://example.test/minh-chung", description: "Minh chứng bổ sung", createdAt: now };
     await assert.rejects(prisma.evidence.create({ data: supplementEvidence }), /Giai đoạn kỳ không cho phép chỉnh sửa minh chứng/);
     await prisma.evaluationPeriod.update({ where: { id: periodId }, data: { phase: "FIRST_REVIEW", updatedAt: now } });
