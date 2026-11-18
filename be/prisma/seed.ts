@@ -21,7 +21,8 @@ const credentialsFile = process.env.SEED_CREDENTIALS_FILE;
 const rotatePasswords = process.env.SEED_ROTATE_PASSWORDS === "true";
 const adminUsername = process.env.SEED_ADMIN_USERNAME ?? "admin";
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@seminar.local";
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+// Seed dùng phiên UTC giống PrismaService để timestamp lịch sử và trigger có cùng hệ quy chiếu
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString, options: "-c timezone=UTC" }) });
 const now = new Date();
 
 const uuid = (number: number): string =>
@@ -115,15 +116,14 @@ function statusChain(status: EvaluationStatus): EvaluationStatus[] {
   }
 }
 
-/** Tạo dữ liệu minh họa trong DB được cấu hình và lưu credential mới vào tệp riêng
- * Mật khẩu cũ chỉ thay khi bật tùy chọn xoay vòng, lỗi DB được xử lý tại biên script
- * Không chạy trên DB dùng chung khi chưa chỉ định đích seed an toàn
- */
 /** Tạo dữ liệu minh họa trong giao dịch để các bảng liên quan luôn nhất quán
  * Đầu vào là DATABASE_URL cùng cấu hình tài khoản seed; đầu ra là kỳ, đơn vị và hồ sơ mẫu đã ghi trong DB
- * Kỳ được mở tạm trong lúc dựng fixture vì trigger kiểm thời gian theo mốc đã lưu như môi trường thật
- * Fixture mới và chạy lại seed đều đi cùng nhánh mở tạm, rồi khôi phục lịch gốc trước khi giao dịch hoàn tất
+ * Chỉ hồ sơ chưa tồn tại được dựng từ DRAFT qua lần nộp PENDING_REVIEW, sau đó mới tới trạng thái minh họa
+ * Kỳ mở tạm ở SELF_EVAL theo giờ DB để trigger kiểm lần nộp như yêu cầu thật, cuối giao dịch khôi phục lịch và phase mẫu
+ * Chạy lại giữ nguyên hồ sơ, điểm, minh chứng và lịch sử đã có, không xóa submittedAt hoặc đặt hồ sơ đã nộp về DRAFT
+ * Mật khẩu cũ chỉ thay khi bật tùy chọn xoay vòng, credential mới được lưu vào tệp riêng sau khi commit
  * Nếu bất kỳ ghi nhận nào thất bại, giao dịch rollback để không lưu lịch tạm hoặc dữ liệu nửa chừng
+ * Không chạy trên DB dùng chung khi chưa chỉ định đích seed an toàn, lỗi DB được xử lý tại biên script
  */
 async function main(): Promise<void> {
   const generatedCredentials: { username: string; password: string }[] = [];
@@ -209,16 +209,23 @@ async function main(): Promise<void> {
     }
 
     for (const periodSeed of periods) {
-      // Cửa sổ tạm chỉ tồn tại trong giao dịch seed để fixture có thể đi qua cùng trigger với yêu cầu thật
+      // Đọc giờ statement sau bước tạo tài khoản để thời gian băm mật khẩu không làm hết cửa sổ trước khi dựng hồ sơ
+      // Cửa sổ dài bằng ngân sách giao dịch, chỉ tồn tại trong giao dịch và không vô hiệu hóa bất kỳ trigger nào
+      const [databaseClock] = await tx.$queryRaw<{ now: Date }[]>`SELECT statement_timestamp() AT TIME ZONE 'UTC' AS now`;
+      const seedWindowStart = new Date(databaseClock.now.getTime() - 60_000);
+      const seedWindowDeadline = new Date(databaseClock.now.getTime() + 120_000);
+      const seedPublishedAt = new Date(databaseClock.now.getTime() - 120_000);
       const originalSchedule = {
+        phase: periodSeed.phase,
         selfEvalStart: periodSeed.selfEvalStart,
         selfEvalDeadline: periodSeed.selfEvalDeadline,
         publishedAt: periodSeed.publishedAt,
+        finalizedAt: periodSeed.finalizedAt,
       };
       const period = await tx.evaluationPeriod.upsert({
         where: { year: periodSeed.year },
-        update: { name: periodSeed.name, phase: periodSeed.phase, maxTotalScore: periodSeed.maxTotalScore, selfEvalStart: new Date(now.getTime() - 60_000), selfEvalDeadline: new Date(now.getTime() + 60_000), supplementHours: periodSeed.supplementHours, publishedAt: new Date(now.getTime() - 120_000), finalizedAt: periodSeed.finalizedAt, updatedAt: now },
-        create: { ...periodSeed, selfEvalStart: new Date(now.getTime() - 60_000), selfEvalDeadline: new Date(now.getTime() + 60_000), publishedAt: new Date(now.getTime() - 120_000), createdById: admin.id, createdAt: now, updatedAt: now },
+        update: { name: periodSeed.name, phase: "SELF_EVAL", maxTotalScore: periodSeed.maxTotalScore, selfEvalStart: seedWindowStart, selfEvalDeadline: seedWindowDeadline, supplementHours: periodSeed.supplementHours, publishedAt: seedPublishedAt, finalizedAt: null, updatedAt: now },
+        create: { ...periodSeed, phase: "SELF_EVAL", selfEvalStart: seedWindowStart, selfEvalDeadline: seedWindowDeadline, publishedAt: seedPublishedAt, finalizedAt: null, createdById: admin.id, createdAt: now, updatedAt: now },
       });
 
       for (const [index, threshold] of thresholds.entries()) {
@@ -244,16 +251,21 @@ async function main(): Promise<void> {
       const evaluationCount = periodSeed.year === 2026 ? unitUsers.length : 8;
       for (let index = 0; index < evaluationCount; index += 1) {
         const unitUser = unitUsers[index];
+        // Không dựng lại hồ sơ đã có vì reset submittedAt vừa vi phạm trigger vừa làm mất nội dung người dùng đã chỉnh
+        // Bỏ qua toàn bộ phần con của hồ sơ để chạy lại seed không thay điểm, minh chứng hoặc ghi thêm history/audit
+        const existingEvaluation = await tx.evaluation.findUnique({
+          where: { periodId_unitId: { periodId: period.id, unitId: unitUser.unitId } },
+          select: { id: true },
+        });
+        if (existingEvaluation) continue;
         const status = statusFor(index, periodSeed.year);
         const evaluationId = uuid(2000 + (periodSeed.year - 2025) * 100 + index);
         const submittedAt = status === "DRAFT" ? null : new Date(periodSeed.year, 1, 10 + index);
         const inReview = status === "IN_REVIEW" || status === "NEEDS_SUPPLEMENT" || status === "FINALIZED";
         const finalized = status === "FINALIZED";
         const finalScore = finalized ? 210 + (index % 8) * 7 : null;
-        const evaluation = await tx.evaluation.upsert({
-          where: { periodId_unitId: { periodId: period.id, unitId: unitUser.unitId } },
-          update: { status: "DRAFT", submittedAt: null, firstReviewedAt: null, supplementRequestedAt: null, supplementDeadline: null, supplementSubmittedAt: null, finalizedAt: null, finalizedById: null, finalScore: null, finalPercent: null, finalRating: null, updatedAt: now },
-          create: { id: evaluationId, periodId: period.id, unitId: unitUser.unitId, status: "DRAFT", createdAt: now, updatedAt: now },
+        const evaluation = await tx.evaluation.create({
+          data: { id: evaluationId, periodId: period.id, unitId: unitUser.unitId, status: "DRAFT", createdAt: now, updatedAt: now },
         });
 
         const leafCriteria = criteria.filter((criterion) => criterion.parentId !== null);
@@ -294,6 +306,13 @@ async function main(): Promise<void> {
           });
         }
 
+        // Lần đầu gán submittedAt phải là DRAFT → PENDING_REVIEW trong kỳ SELF_EVAL đang mở
+        // Những hồ sơ minh họa bổ sung/chốt đi tiếp bằng UPDATE sau, giữ nguyên submittedAt để không giả thành lần nộp mới
+        // Timestamp nộp lịch sử vẫn lấy từ bộ dữ liệu mẫu, còn điều kiện được phép ghi do statement time hiện tại quyết định
+        if (submittedAt) await tx.evaluation.update({
+          where: { id: evaluation.id }, data: { status: "PENDING_REVIEW", submittedAt, updatedAt: now },
+        });
+
         const supplementStartAt = new Date(now.getTime() - 30_000);
         const supplementDeadline = new Date(now.getTime() + 30_000);
         await tx.evaluation.update({
@@ -332,7 +351,7 @@ async function main(): Promise<void> {
         }
       }
 
-      // Khôi phục đúng lịch kỳ đã cấu hình để seed không lưu lại cửa sổ kiểm thử tạm thời
+      // Khôi phục lịch, phase và mốc chốt mẫu sau khi mọi hồ sơ mới hoàn chỉnh, không commit kỳ SELF_EVAL tạm
       await tx.evaluationPeriod.update({
         where: { id: period.id },
         data: { ...originalSchedule, updatedAt: now },
