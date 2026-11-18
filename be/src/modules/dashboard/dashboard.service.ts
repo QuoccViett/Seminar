@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { ERROR_CODES } from "../../common/constants/error-codes.js";
 import { decimal, toApiNumber } from "../../common/utils/decimal.util.js";
 import { Prisma } from "../../generated/prisma/client.js";
@@ -38,6 +38,10 @@ export class DashboardService {
     private readonly prisma: PrismaService
   ) {}
 
+  /** Tổng hợp hồ sơ theo trạng thái trong một kỳ UUID
+   * Kết quả chính thức chỉ lấy FINALIZED; ba nhóm tiến độ loại trừ nhau và kỳ rỗng có tiến độ 0
+   * Không lấy số đơn vị hệ thống vì chỉ hồ sơ đã tạo cho kỳ mới thuộc mẫu số
+   */
   async getOverview(periodId: string) {
     const period = await this.findPeriodOrThrow(periodId);
     const [statusGroups, officialResults, scoreDistribution] = await Promise.all([
@@ -57,9 +61,9 @@ export class DashboardService {
     const statusCounts = this.createStatusCounts(statusGroups);
     const totalUnits = this.sumStatusCounts(statusCounts);
     const finalizedCount = officialResults._count._all;
-    const submittedCount = totalUnits - statusCounts.DRAFT;
-    const supplementPendingCount =
-      statusCounts.SUPPLEMENT_REQUESTED + statusCounts.SUPPLEMENT_SUBMITTED;
+    // Hồ sơ đang chờ bổ sung chưa tính vào nhóm đã nộp để ba nhóm tiến độ không chồng nhau
+    const supplementPendingCount = statusCounts.SUPPLEMENT_REQUESTED;
+    const submittedCount = totalUnits - statusCounts.DRAFT - supplementPendingCount;
 
     return {
       periodId,
@@ -81,6 +85,10 @@ export class DashboardService {
     };
   }
 
+  /** Cộng chênh lệch dương theo tiêu chí trên hồ sơ đã chốt
+   * Bỏ ô chưa có đủ hai điểm, ô không bị trừ và hồ sơ còn thẩm định để tránh báo sai điểm yếu
+   * Dùng Decimal đến bước serialize để tổng điểm không bị sai do số thực JavaScript
+   */
   async getDeductions(periodId: string) {
     await this.findPeriodOrThrow(periodId);
     const scores = await this.prisma.criterionScore.findMany({
@@ -150,7 +158,7 @@ export class DashboardService {
           return right.unitsDeducted - left.unitsDeducted;
         }
 
-        return left.sortOrder - right.sortOrder;
+        return left.sortOrder - right.sortOrder || left.criterionId.localeCompare(right.criterionId);
       })
       .map((deduction) => ({
         criterionId: deduction.criterionId,
@@ -163,6 +171,30 @@ export class DashboardService {
     return { periodId, items };
   }
 
+  /** Giải thích tổng điểm trừ bằng từng hồ sơ đã chốt của đúng tiêu chí trong kỳ
+   * Kiểm quan hệ kỳ trước khi đọc để ID tiêu chí khác kỳ không lộ thông tin
+   * Ô chưa thẩm định, điểm bằng nhau hoặc Admin cho thêm điểm không thuộc drill-down
+   */
+  async getDeductionDetail(periodId: string, criterionId: string) {
+    await this.findPeriodOrThrow(periodId);
+    const criterion = await this.prisma.criterion.findFirst({ where: { id: criterionId, periodId }, select: { id: true } });
+    if (!criterion) {
+      throw new NotFoundException({ code: ERROR_CODES.NOT_FOUND, message: "Không tìm thấy tiêu chí trong kỳ đánh giá" });
+    }
+    const scores = await this.prisma.criterionScore.findMany({
+      where: { criterionId, evaluation: { periodId, status: "FINALIZED" }, selfScore: { not: null }, adminScore: { not: null } },
+      select: { selfScore: true, adminScore: true, evaluation: { select: { id: true, unit: { select: { id: true, code: true, name: true } } } } },
+    });
+    const items = scores.flatMap((score) => {
+      if (score.selfScore === null || score.adminScore === null) return [];
+      const points = decimal(score.selfScore).minus(decimal(score.adminScore));
+      if (points.lessThanOrEqualTo(0)) return [];
+      return [{ evaluationId: score.evaluation.id, unitId: score.evaluation.unit.id, unitCode: score.evaluation.unit.code, unitName: score.evaluation.unit.name, selfScore: toApiNumber(score.selfScore) ?? 0, adminScore: toApiNumber(score.adminScore) ?? 0, pointsDeducted: toApiNumber(points) ?? 0 }];
+    }).sort((left, right) => right.pointsDeducted - left.pointsDeducted || left.unitCode.localeCompare(right.unitCode) || left.evaluationId.localeCompare(right.evaluationId));
+    return { periodId, criterionId, items };
+  }
+
+  /** Đọc phổ điểm theo loại và bucket của kỳ, chỉ từ điểm cuối đã được chốt */
   async getScoreDistribution(periodId: string) {
     await this.findPeriodOrThrow(periodId);
     const distribution = await this.getScoreDistributionForPeriod(periodId);
@@ -170,35 +202,52 @@ export class DashboardService {
     return { periodId, ...distribution };
   }
 
-  async getLeaderboard(periodId: string) {
+  /** Giới hạn số dòng nhưng giữ tổng hồ sơ toàn kỳ và thứ hạng do view SQL tính trên tất cả đơn vị
+   * limit mặc định 20 và chỉ nhận 1 đến 100; ngưỡng lấy theo periodId để label không lệch kỳ
+   * Bản ghi chưa FINALIZED được đánh dấu tạm tính dù đã có điểm và gợi ý xếp loại
+   */
+  async getLeaderboard(periodId: string, limit = 20) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new BadRequestException({ code: ERROR_CODES.VALIDATION_ERROR, message: "Giới hạn bảng xếp hạng phải từ 1 đến 100" });
+    }
     await this.findPeriodOrThrow(periodId);
-    const items = await this.prisma.leaderboard.findMany({
-      where: { periodId },
-      orderBy: { rank: "asc" },
-      select: {
-        rank: true,
-        scoreRank: true,
-        evaluationId: true,
-        unitId: true,
-        unitCode: true,
-        unitName: true,
-        status: true,
-        submittedAt: true,
-        maxTotalScore: true,
-        selfTotal: true,
-        currentTotal: true,
-        currentPercent: true,
-        suggestedRating: true,
-      },
-    });
+    const [items, totalUnits, thresholds] = await Promise.all([
+      this.prisma.leaderboard.findMany({
+        where: { periodId },
+        orderBy: { rank: "asc" },
+        take: limit,
+        select: {
+          rank: true,
+          scoreRank: true,
+          evaluationId: true,
+          unitId: true,
+          unitCode: true,
+          unitName: true,
+          status: true,
+          submittedAt: true,
+          maxTotalScore: true,
+          selfTotal: true,
+          currentTotal: true,
+          currentPercent: true,
+          suggestedRating: true,
+        },
+      }),
+      this.prisma.evaluation.count({ where: { periodId } }),
+      this.prisma.ratingThreshold.findMany({ where: { periodId }, select: { rating: true, label: true, color: true } }),
+    ]);
+    const ratingByCode = new Map(thresholds.map((threshold) => [threshold.rating, threshold]));
 
     return {
       periodId,
-      totalUnits: items.length,
-      items: items.map((item) => this.toLeaderboardItemDto(item)),
+      totalUnits,
+      items: items.map((item) => {
+        const rating = item.suggestedRating ? ratingByCode.get(item.suggestedRating) : null;
+        return { ...this.toLeaderboardItemDto(item), ratingLabel: rating?.label ?? null, ratingColor: rating?.color ?? null, isFinal: item.status === "FINALIZED" };
+      }),
     };
   }
 
+  /** Xác nhận kỳ tồn tại trước các truy vấn con để mọi route trả 404 có câu tiếng Việt thống nhất */
   private async findPeriodOrThrow(periodId: string) {
     const period = await this.prisma.evaluationPeriod.findUnique({
       where: { id: periodId },
@@ -221,6 +270,7 @@ export class DashboardService {
     return period;
   }
 
+  /** Chuyển Decimal và BigInt từ view sang JSON; giá trị vắng mặt giữ shape ổn định */
   private toLeaderboardItemDto(item: {
     rank: bigint | null;
     scoreRank: bigint | null;
@@ -237,8 +287,8 @@ export class DashboardService {
     suggestedRating: string | null;
   }): LeaderboardItemDto {
     return {
-      rank: Number(item.rank),
-      scoreRank: Number(item.scoreRank),
+      rank: this.safeRank(item.rank),
+      scoreRank: this.safeRank(item.scoreRank),
       evaluationId: item.evaluationId ?? "",
       unitId: item.unitId ?? "",
       unitCode: item.unitCode ?? "",
@@ -250,13 +300,19 @@ export class DashboardService {
       currentTotal: toApiNumber(item.currentTotal) ?? 0,
       currentPercent: toApiNumber(item.currentPercent) ?? 0,
       suggestedRating: item.suggestedRating,
+      ratingLabel: null,
+      ratingColor: null,
+      isFinal: item.status === "FINALIZED",
     };
   }
 
+  /** Phân nhóm phần trăm theo ranh giới nghiệp vụ và số hồ sơ đã chốt
+   * 85 thuộc bucket trước vì EXCELLENT yêu cầu lớn hơn 85, kỳ chưa chốt trả toàn số không
+   */
   private async getScoreDistributionForPeriod(
     periodId: string,
   ): Promise<ScoreDistributionDto> {
-    const [thresholds, ratingGroups] = await Promise.all([
+    const [thresholds, ratingGroups, finalPercents] = await Promise.all([
       this.prisma.ratingThreshold.findMany({
         where: { periodId },
         orderBy: { minPercent: "desc" },
@@ -271,6 +327,7 @@ export class DashboardService {
         where: { periodId, status: "FINALIZED" },
         _count: { _all: true },
       }),
+      this.prisma.evaluation.findMany({ where: { periodId, status: "FINALIZED" }, select: { finalPercent: true } }),
     ]);
     const countByRating = new Map<string, number>();
 
@@ -311,7 +368,19 @@ export class DashboardService {
         percent: this.calculatePercent(count, finalizedCount),
       } satisfies ScoreDistributionItemDto));
 
-    return { finalizedCount, items: [...configuredItems, ...unconfiguredItems] };
+    // Mốc 85 thuộc bucket 65–85; chỉ trên 85 mới thuộc bucket cuối theo quy tắc xếp loại
+    const buckets = [
+      { key: "0-50", label: "Dưới 50%", count: 0 },
+      { key: "50-65", label: "Từ 50% đến dưới 65%", count: 0 },
+      { key: "65-85", label: "Từ 65% đến 85%", count: 0 },
+      { key: "85-100", label: "Trên 85%", count: 0 },
+    ];
+    for (const row of finalPercents) {
+      const value = decimal(row.finalPercent ?? 0);
+      const index = value.lessThan(50) ? 0 : value.lessThan(65) ? 1 : value.lessThanOrEqualTo(85) ? 2 : 3;
+      buckets[index].count += 1;
+    }
+    return { finalizedCount, items: [...configuredItems, ...unconfiguredItems], buckets: buckets.map((bucket) => ({ ...bucket, percent: this.calculatePercent(bucket.count, finalizedCount) })) };
   }
 
   private createStatusCounts(
@@ -357,6 +426,12 @@ export class DashboardService {
 
   private calculatePercent(value: number, total: number): number {
     return total === 0 ? 0 : this.round((value / total) * 100);
+  }
+
+  /** Chỉ ép BigInt sang number trong miền chính xác của JSON, còn lại giữ chuỗi thập phân */
+  private safeRank(value: bigint | null): number | string {
+    const rank = value ?? 0n;
+    return rank <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rank) : rank.toString();
   }
 
   private round(value: number): number {

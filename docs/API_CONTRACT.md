@@ -524,18 +524,17 @@ VC13: giao ước chi tiết tại [VC13_FEEDBACK_AUDIT_CONTRACT.md](./VC13_FEED
 
 `GET /admin/dashboard?periodId=<UUID>` — ADMIN.
 
-```json
-{
-  "periodId": "33333333-3333-4333-8333-333333333333",
-  "totalUnits": 34,
-  "submittedCount": 12,
-  "notSubmittedCount": 18,
-  "supplementPendingCount": 4,
-  "progressPercent": 35.29
-}
-```
+Trả `periodId`, `period` (`id/year/name/phase/maxTotalScore`), `totalUnits` bằng số hồ sơ kỳ, `statusCounts` cho từng trạng thái, `notSubmittedCount = DRAFT`, `supplementPendingCount = SUPPLEMENT_REQUESTED`, `submittedCount = totalUnits - DRAFT - SUPPLEMENT_REQUESTED`, `progressPercent = submittedCount / totalUnits * 100` (0 khi kỳ rỗng), `finalizedCount`, `notFinalizedCount`, `officialResults` (chỉ hồ sơ FINALIZED) và `scoreDistribution`
 
-Leaderboard, score distribution và criteria deductions trả JSON theo dữ liệu view SQL, luôn kèm `periodId`. Shape chi tiết của chart dataset cần được nhóm FE/BE chốt theo loại biểu đồ trước khi triển khai trang dashboard.
+`GET /admin/dashboard/leaderboard?periodId=<UUID>&limit=20` — ADMIN, `limit` tùy chọn từ 1 đến 100, mặc định 20, trả `totalUnits` và `items` theo `rank` ổn định từ view; mỗi item có `rank`, `scoreRank`, `evaluationId`, `unitId`, `unitCode`, `unitName`, `status`, `submittedAt`, `maxTotalScore`, `selfTotal`, `currentTotal`, `currentPercent`, `suggestedRating`, `ratingLabel`, `ratingColor`, `isFinal`; `isFinal=false` phải hiển thị là tạm tính. `rank/scoreRank` là số khi an toàn JSON, chuỗi thập phân khi vượt `Number.MAX_SAFE_INTEGER`
+
+`GET /admin/dashboard/score-distribution?periodId=<UUID>` — ADMIN, trả `finalizedCount`, `items` theo xếp loại chính thức (`rating/label/color/count/percent`) và `buckets` phần trăm `[0,50)`, `[50,65)`, `[65,85]`, `(85,100]`, chỉ tính hồ sơ FINALIZED; kỳ rỗng trả số không và mảng bucket số không
+
+`GET /admin/dashboard/criteria-deductions?periodId=<UUID>` — ADMIN, chỉ tính các ô của hồ sơ FINALIZED có `selfScore` và `adminScore` cùng tồn tại và `selfScore > adminScore`; trả `periodId`, `items` gồm `criterionId/code/name/unitsDeducted/totalPointsDeducted`, sắp theo tổng trừ giảm dần rồi số đơn vị, thứ tự tiêu chí và ID
+
+`GET /admin/dashboard/criteria-deductions/:criterionId?periodId=<UUID>` — ADMIN, drill-down đúng một tiêu chí thuộc kỳ; trả `periodId`, `criterionId`, `items` gồm `evaluationId/unitId/unitCode/unitName/selfScore/adminScore/pointsDeducted`, chỉ từ hồ sơ FINALIZED có chênh lệch dương, sắp theo điểm trừ giảm dần rồi mã đơn vị và hồ sơ; tiêu chí không thuộc kỳ trả 404 tiếng Việt
+
+Mọi endpoint dashboard yêu cầu ADMIN, trả `Cache-Control: no-store`; UUID/limit sai trả lỗi tiếng Việt và không trả lỗi Prisma/SQL thô
 
 ### Tạo và tải báo cáo
 

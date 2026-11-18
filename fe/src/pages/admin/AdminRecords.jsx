@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Alert, Button, ConfigProvider, Empty, Modal, Popconfirm, Select, Space, Table, Typography } from "antd";
 import viVN from "antd/locale/vi_VN";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
@@ -14,6 +15,7 @@ const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_RE
  * Kết quả request tới muộn bị bỏ qua khi đổi hồ sơ, polling không remount nháp của cùng hồ sơ
  */
 export default function AdminRecords() {
+  const [searchParams] = useSearchParams();
   const [periods, setPeriods] = useState([]); const [periodId, setPeriodId] = useState();
   const [page, setPage] = useState(1); const [rows, setRows] = useState({ items: [], total: 0 });
   const [detail, setDetail] = useState(null); const [detailError, setDetailError] = useState(false);
@@ -23,7 +25,18 @@ export default function AdminRecords() {
   const [selected, setSelected] = useState([]); const [phaseOptions, setPhaseOptions] = useState(null);
   const [phaseTarget, setPhaseTarget] = useState(); const [finalize, setFinalize] = useState(null);
   const activeId = useRef(null); const sending = useRef(false);
+  const openedFromDashboard = useRef(false);
   const busy = recordBusy || actionBusy || detailLoading;
+
+  /** Mở đúng hồ sơ được dashboard trỏ tới một lần; API chi tiết vẫn kiểm quyền và kỳ thực */
+  useEffect(() => {
+    const linkedPeriodId = searchParams.get("periodId");
+    const linkedEvaluationId = searchParams.get("evaluationId");
+    if (openedFromDashboard.current || !linkedPeriodId || !linkedEvaluationId) return;
+    openedFromDashboard.current = true;
+    setPeriodId(linkedPeriodId);
+    void inspect(linkedEvaluationId);
+  }, [searchParams]);
 
   /** Tải bộ lọc kỳ một lần, bỏ kết quả đến sau khi trang đã đóng */
   useEffect(() => {
