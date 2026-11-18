@@ -35,6 +35,26 @@ export class EvaluationStateService {
     return this.pendingReview(tx, evaluation, now, null, true);
   }
 
+  /** Đồng bộ yêu cầu bổ sung đã hết hạn từ snapshot của hồ sơ đã khóa
+   * Caller giữ khóa kỳ trước hồ sơ và cấp giờ sau khóa, chỉ SUPPLEMENT_REQUESTED tới deadline được đổi
+   * History, audit và outbox cùng transaction để scheduler và API chuyển phase không ghi trùng
+   * Không tính lại lịch, không đổi hồ sơ đã nộp hoặc tự chốt kết quả
+   */
+  async reconcileSupplement(tx: Prisma.TransactionClient, evaluation: Evaluation, period: EvaluationPeriod, now: Date): Promise<Evaluation> {
+    if (evaluation.status !== "SUPPLEMENT_REQUESTED" || !evaluation.supplementDeadline || now < evaluation.supplementDeadline) return evaluation;
+    const after = await tx.evaluation.update({ where: { id: evaluation.id }, data: { status: "SUPPLEMENT_EXPIRED", updatedAt: now } });
+    await tx.statusHistory.create({ data: { id: randomUUID(), evaluationId: evaluation.id, actorId: null, fromStatus: evaluation.status, toStatus: after.status, comment: "Đã hết thời gian bổ sung", createdAt: now } });
+    await this.audit.record({ actorId: null, action: "AUTO_STATUS", entity: "Evaluation", entityId: evaluation.id, before: { status: evaluation.status }, after: { status: after.status } }, tx);
+    const users = await tx.user.findMany({ where: { isActive: true, OR: [{ role: "ADMIN" }, { role: "UNIT", unitId: evaluation.unitId }] }, select: { id: true } });
+    const formatter = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
+    const window = evaluation.supplementStartAt ? ` từ ${formatter.format(evaluation.supplementStartAt)} đến trước ${formatter.format(evaluation.supplementDeadline)} theo giờ Việt Nam` : "";
+    for (const user of users) await this.notifications.notifyUser(tx, {
+      userId: user.id, type: "SUPPLEMENT_EXPIRED", title: "Đã hết hạn bổ sung", body: `Hồ sơ kỳ ${period.name} đã hết thời gian bổ sung${window}`,
+      dedupeKey: `SUPPLEMENT_EXPIRED:${evaluation.id}`, refType: "EVALUATION", refId: evaluation.id,
+    });
+    return after;
+  }
+
   /** Ghi nguyên tử trạng thái chờ duyệt, dấu thời gian, lịch sử và thông báo Admin
    * actorId có giá trị khi UNIT nộp sớm, null cho auto-lock; caller đã kiểm điều kiện
    * Dedupe theo hồ sơ/sự kiện giúp retry không tạo thêm delivery, không gọi provider trực tiếp

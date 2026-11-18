@@ -6,6 +6,8 @@ import Joi from "joi";
  */
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid("development", "test", "production").default("development"),
+  // Công cụ chạy quét thủ công mặc định tắt và không được bật tại production
+  ENABLE_DEMO_TOOLS: Joi.when("NODE_ENV", { is: "production", then: Joi.boolean().valid(false).default(false), otherwise: Joi.boolean().default(false) }),
   PORT: Joi.number().port().default(3000),
   WEB_ORIGINS: Joi.string().optional(),
   CORS_ORIGINS: Joi.string().optional(),
@@ -42,8 +44,12 @@ export const envValidationSchema = Joi.object({
   ZALO_OA_ID: Joi.when("ZALO_ZNS_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   ZALO_TEMPLATE_MAP: Joi.when("ZALO_ZNS_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   STORAGE_ENABLED: Joi.boolean().default(false),
-  SUPABASE_URL: Joi.when("STORAGE_ENABLED", { is: true, then: Joi.string().uri().required(), otherwise: Joi.string().uri().allow("").optional() }),
-  SUPABASE_KEY: Joi.when("STORAGE_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
+  // Kho local phục vụ dev/test, Supabase chỉ yêu cầu secret khi chọn provider và bật storage
+  STORAGE_PROVIDER: Joi.string().valid("local", "supabase").default("local"),
+  STORAGE_LOCAL_DIR: Joi.string().default(".private-storage"),
+  STORAGE_BUCKET: Joi.string().pattern(/^[a-z0-9][a-z0-9-]{1,62}$/).default("evidences"),
+  SUPABASE_URL: Joi.string().uri({ scheme: ["https"] }).allow("").optional(),
+  SUPABASE_KEY: Joi.string().allow("").optional(),
   REPORT_EXPORT_DIR: Joi.string().allow("").optional(),
   REPORT_EXPORT_FONT_PATH: Joi.string().allow("").optional(),
   OPENAPI_OUTPUT_FILE: Joi.string().allow("").optional(),
@@ -72,6 +78,10 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
     } catch { return true; }
   })) throw new Error("Cấu hình CORS_ORIGINS hoặc WEB_ORIGINS phải là origin HTTP hoặc HTTPS cụ thể");
   const normalized = result.value as Record<string, unknown>;
+  // Không kích hoạt provider ngoài khi thiếu cấu hình, không dùng kho local trong production
+  // Bucket private được provider kiểm thực tế trước I/O, không tự thay ACL của môi trường
+  if (normalized.STORAGE_ENABLED && normalized.STORAGE_PROVIDER === "supabase" && (!normalized.SUPABASE_URL || !normalized.SUPABASE_KEY)) throw new Error("Cần cấu hình SUPABASE_URL và SUPABASE_KEY khi bật kho Supabase");
+  if (normalized.STORAGE_ENABLED && normalized.NODE_ENV === "production" && normalized.STORAGE_PROVIDER === "local") throw new Error("Môi trường production cần kho riêng tư Supabase, không dùng kho cục bộ");
   // Chuẩn hóa bí danh Gmail về tên canonical trước khi kiểm tra điều kiện và khởi tạo provider
   // Cho phép môi trường cũ tiếp tục chạy mà không làm thay đổi mặc định Email đang tắt
   if (!normalized.MAIL_FROM && normalized.SMTP_FROM) normalized.MAIL_FROM = normalized.SMTP_FROM;

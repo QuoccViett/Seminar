@@ -16,6 +16,8 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module.js";
 import { ExportsModule } from "./modules/exports/exports.module.js";
 import { NotificationsModule } from "./modules/notifications/notifications.module.js";
 import { EvaluationsModule } from "./modules/evaluations/evaluations.module.js";
+import { EvidencesModule } from "./modules/evidences/evidences.module.js";
+import { SchedulerModule } from "./modules/scheduler/scheduler.module.js";
 
 @Module({
   imports: [
@@ -40,6 +42,10 @@ import { EvaluationsModule } from "./modules/evaluations/evaluations.module.js";
     NotificationsModule,
     // Nối API hồ sơ thật vào ứng dụng, dùng chung Auth và Prisma với các module đã có
     EvaluationsModule,
+    // Nối storage private và minh chứng thật, dùng chung policy khóa hồ sơ của VC09
+    EvidencesModule,
+    // Chạy quét mốc kỳ bằng transaction và giữ quyền API độc lập với nhịp quét
+    SchedulerModule,
   ],
   controllers: [HealthController],
   providers: [HttpLoggingMiddleware],

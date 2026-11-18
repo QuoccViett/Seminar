@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Table, Tag, Typography } from "antd";
 import { saveSelfScores, submitEvaluation } from "../../services/evaluationService";
+import EvidencePanel from "./EvidencePanel";
 
 /** Định dạng ISO theo giờ Việt Nam để trình bày, không dùng kết quả để cấp quyền */
 export function vietnamTime(value) {
@@ -25,6 +26,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
   const [drafts, setDrafts] = useState({});
   const [states, setStates] = useState({});
   const [busy, setBusy] = useState(false);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const busyRef = useRef(false);
   const dirty = Object.keys(drafts).length > 0;
@@ -65,7 +67,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
    * Lỗi hiển thị cả details để không nuốt lý do thiếu điểm/minh chứng, sau lỗi vẫn tải lại quyền
    */
   async function submit() {
-    if (busyRef.current || dirty) return;
+    if (busyRef.current || dirty || evidenceBusy) return;
     busyRef.current = true; setBusy(true);
     try {
       await submitEvaluation(record.id);
@@ -87,8 +89,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
     { title: "Diễn giải / minh chứng", width: 320, render: (_, row) => row.children?.length ? null : <Space orientation="vertical" style={{ width: "100%" }}>
       {row.allowText && <Input.TextArea aria-label={`Diễn giải ${row.code}`} maxLength={5000} showCount value={drafts[row.criterionId]?.selfNote !== undefined ? drafts[row.criterionId].selfNote ?? "" : row.selfNote ?? ""} disabled={!row.canEditSelf || busy || disconnected} onChange={(event) => change(row, "selfNote", event.target.value)} />}
       {row.evidenceRequired && <Typography.Text type="secondary">Cần minh chứng thuộc loại được phép{row.allowText ? ", có thể dùng diễn giải" : ""}</Typography.Text>}
-      {(row.evidences || []).map((item) => <Typography.Text key={item.id}>{item.kind === "FILE" ? item.fileName : item.externalUrl}</Typography.Text>)}
-      <Typography.Text type="secondary">Chức năng tải tệp đang được hoàn thiện</Typography.Text>
+      <EvidencePanel evaluationId={record.id} row={row} disabled={busy || disconnected || evidenceBusy} onBusyChange={setEvidenceBusy} onReload={onReload} />
     </Space> },
     { title: "Lưu", width: 180, render: (_, row) => row.children?.length ? null : <Space orientation="vertical"><Button onClick={() => save(row.criterionId)} disabled={!drafts[row.criterionId] || !row.canEditSelf || busy || disconnected}>Lưu tiêu chí {row.code}</Button><Typography.Text role="status">{states[row.criterionId] || row.lockedReason || "Đã tải từ máy chủ"}</Typography.Text></Space> },
   ];
@@ -103,7 +104,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
         {summary && <Typography.Text strong>Tổng tự chấm tạm tính: {summary.selfTotal}/{summary.maxTotalScore} · {summary.selfPercent}% · {summary.ratingLabel || "Chưa có xếp loại"} · Đã nhập {summary.scoredCount}/{summary.leafCount} tiêu chí</Typography.Text>}
         {record.finalResult && <Alert type="success" title={`Kết quả đã chốt: ${record.finalResult.score} điểm · ${record.finalResult.percent}%`} />}
         <Table rowKey="criterionId" dataSource={tableRows(record.criteria)} columns={columns} pagination={false} defaultExpandAllRows scroll={{ x: 1100 }} />
-        <Space wrap><Button type="primary" disabled={!dirty || busy || disconnected} loading={busy} onClick={() => save()}>Lưu tất cả thay đổi</Button><Popconfirm title="Nộp hồ sơ tự chấm?" description="Sau khi nộp, đơn vị không thể chỉnh sửa nội dung tự chấm" okText="Nộp hồ sơ" cancelText="Quay lại" onConfirm={submit} disabled={!record.canSubmit || dirty || busy || disconnected}><Button disabled={!record.canSubmit || dirty || busy || disconnected}>Nộp hồ sơ</Button></Popconfirm>{dirty && <Typography.Text type="warning">Có nội dung chưa lưu, cần lưu hết trước khi nộp</Typography.Text>}</Space>
+        <Space wrap><Button type="primary" disabled={!dirty || busy || disconnected} loading={busy} onClick={() => save()}>Lưu tất cả thay đổi</Button><Popconfirm title="Nộp hồ sơ tự chấm?" description="Sau khi nộp, đơn vị không thể chỉnh sửa nội dung tự chấm" okText="Nộp hồ sơ" cancelText="Quay lại" onConfirm={submit} disabled={!record.canSubmit || dirty || busy || evidenceBusy || disconnected}><Button disabled={!record.canSubmit || dirty || busy || evidenceBusy || disconnected}>Nộp hồ sơ</Button></Popconfirm>{dirty && <Typography.Text type="warning">Có nội dung chưa lưu, cần lưu hết trước khi nộp</Typography.Text>}</Space>
       </>}
       {notice && <Alert type={notice.type} showIcon title={notice.text} />}
     </Space>

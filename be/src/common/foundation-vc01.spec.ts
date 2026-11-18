@@ -33,7 +33,11 @@ test("cấu hình theo tính năng và mật khẩu demo", () => {
   assert.throws(() => validateEnvironment({ ...base, NODE_ENV: "production" }), /INITIAL_ACCOUNT_PASSWORD/);
   assert.throws(() => validateEnvironment({ ...base, WEB_PUSH_ENABLED: true }), /WEB_PUSH_VAPID/);
   assert.throws(() => validateEnvironment({ ...base, ZALO_ZNS_ENABLED: true }), /ZALO_/);
-  assert.throws(() => validateEnvironment({ ...base, STORAGE_ENABLED: true }), /SUPABASE_/);
+  // Kho local mới không cần secret ngoài khi dev/test, Supabase vẫn bắt buộc cấu hình khi được chọn
+  // Production từ chối local để tệp demo không vô tình trở thành phương án triển khai thật
+  assert.doesNotThrow(() => validateEnvironment({ ...base, STORAGE_ENABLED: true }));
+  assert.throws(() => validateEnvironment({ ...base, STORAGE_ENABLED: true, STORAGE_PROVIDER: "supabase" }), /SUPABASE_/);
+  assert.throws(() => validateEnvironment({ ...base, NODE_ENV: "production", INITIAL_ACCOUNT_PASSWORD: "123456", STORAGE_ENABLED: true }), /Supabase/);
   assert.throws(() => validateEnvironment({ ...base, CORS_ORIGINS: "*" }), /CORS/);
   assert.throws(() => validateEnvironment({ ...base, CREDENTIALS_ENCRYPTION_KEY: Buffer.alloc(31).toString("base64") }), /32 byte/);
   assert.doesNotThrow(() => validateEnvironment({ ...base, CREDENTIALS_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64") }));

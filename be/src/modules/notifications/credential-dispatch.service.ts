@@ -219,7 +219,8 @@ export class CredentialDispatchService implements OnModuleInit, OnModuleDestroy 
       await this.prisma.credentialDispatch.updateMany({ where: { expiresAt: { lte: now }, ciphertext: { not: null } }, data: { canceledAt: now, ciphertext: null, nonce: null, authTag: null } });
       await this.prisma.credentialDelivery.updateMany({ where: { status: "PENDING", dispatch: { expiresAt: { lte: now } } }, data: { status: "SKIPPED", errorCode: "EXPIRED", claimToken: null, claimedAt: null, leaseUntil: null, nextAttemptAt: null, updatedAt: now } });
       let count = 0;
-      while (count < limit) { const claim = await this.claimOne(); if (!claim) break; await this.processClaim(claim); count += 1; }
+      // Lỗi một delivery giữ lease đến hạn và không làm mất cơ hội xử lý các bản ghi còn lại
+      while (count < limit) { const claim = await this.claimOne(); if (!claim) break; try { await this.processClaim(claim); } catch { this.logger.error("Không thể xử lý một lượt gửi thông tin đăng nhập, hệ thống sẽ thử lại"); } count += 1; }
       return count;
     } finally { this.processing = false; }
   }

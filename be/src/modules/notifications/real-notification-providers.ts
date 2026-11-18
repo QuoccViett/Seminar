@@ -35,6 +35,8 @@ export class EmailNotificationProvider implements NotificationProvider {
     } catch (error) {
       // SMTP 5xx là lỗi vĩnh viễn của địa chỉ/cấu hình, 4xx và timeout có thể thử lại
       const responseCode = typeof error === "object" && error !== null && "responseCode" in error ? Number(error.responseCode) : 0;
+      // SMTP 452 thường báo tài nguyên hoặc hạn mức tạm hết, không lưu phản hồi thô của server
+      if (responseCode === 452) return { kind: "retry", reasonCode: "RATE_LIMIT", message: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại." };
       return responseCode >= 500 ? { kind: "skip", reasonCode: "PERMANENT_FAILURE", message: "Không thể gửi thông báo qua kênh này." } : { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Kênh gửi tạm thời gián đoạn, hệ thống sẽ thử lại." };
     }
   }
@@ -67,11 +69,17 @@ export class WebPushNotificationProvider implements NotificationProvider {
         let trusted = false;
         try { const url = new URL(row.endpoint); trusted = url.protocol === "https:" && !url.port && allowed.includes(url.hostname.toLowerCase()); } catch { trusted = false; }
         if (!trusted) return "invalid";
-        try { await webpush.sendNotification({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, JSON.stringify({ title: request.title, body: request.body, notificationId: request.notificationId, url }), { timeout: 8000, TTL: 3600 }); return "sent"; }
-        catch (error) { const status = typeof error === "object" && error !== null && "statusCode" in error ? Number(error.statusCode) : 0; if (status === 404 || status === 410) { await this.prisma.webPushSubscription.updateMany({ where: { id: row.id, revokedAt: null }, data: { revokedAt: new Date(), updatedAt: new Date() } }); return "expired"; } return "retry"; }
+        // TTL không vượt deadline đã lưu để dịch vụ push không giữ nhắc quá hạn sau khi nhận
+        // Làm tròn xuống, nếu còn chưa đầy một giây thì bỏ gửi thay vì kéo dài sang sau hạn
+        const ttl = request.expiresAt ? Math.min(3600, Math.floor((request.expiresAt.getTime() - Date.now()) / 1000)) : 3600;
+        if (ttl <= 0) return "deadline";
+        try { await webpush.sendNotification({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, JSON.stringify({ title: request.title, body: request.body, notificationId: request.notificationId, url }), { timeout: 8000, TTL: ttl }); return "sent"; }
+        catch (error) { const status = typeof error === "object" && error !== null && "statusCode" in error ? Number(error.statusCode) : 0; if (status === 404 || status === 410) { await this.prisma.webPushSubscription.updateMany({ where: { id: row.id, revokedAt: null }, data: { revokedAt: new Date(), updatedAt: new Date() } }); return "expired"; } return status === 429 ? "rate_limit" : "retry"; }
       }));
       if (outcomes.includes("sent")) return { kind: "sent" };
+      if (outcomes.includes("rate_limit")) return { kind: "retry", reasonCode: "RATE_LIMIT", message: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại." };
       if (outcomes.includes("retry")) return { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Kênh gửi tạm thời gián đoạn, hệ thống sẽ thử lại." };
+      if (outcomes.includes("deadline")) return { kind: "skip", reasonCode: "EXPIRED", message: "Thông báo đã hết thời hạn gửi." };
       return { kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Người nhận chưa có địa chỉ hoặc thiết bị phù hợp." };
     } catch { return { kind: "retry", reasonCode: "PROVIDER_ERROR", message: "Không thể gửi thông báo qua kênh này, hệ thống sẽ thử lại." }; }
   }

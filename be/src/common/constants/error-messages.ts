@@ -19,4 +19,5 @@ export const ERROR_MESSAGES: Record<string, string> = {
   [ERROR_CODES.METHOD_NOT_ALLOWED]: "Phương thức yêu cầu không được hỗ trợ.",
   [ERROR_CODES.DATABASE_UNAVAILABLE]: "Chưa thể kết nối cơ sở dữ liệu. Vui lòng thử lại sau.",
   [ERROR_CODES.INTERNAL_ERROR]: "Hệ thống đang gặp sự cố. Vui lòng thử lại sau.",
+  [ERROR_CODES.STORAGE_UNAVAILABLE]: "Kho tệp chưa sẵn sàng, vui lòng thử lại sau.",
 };

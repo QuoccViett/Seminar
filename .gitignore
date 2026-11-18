@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+# Kho tệp riêng tư của dev không đưa vào Git hoặc thư mục static
+**/.private-storage/
 be/report-exports/
 .pnpm-store/
 

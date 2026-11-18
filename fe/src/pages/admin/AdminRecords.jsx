@@ -4,6 +4,7 @@ import viVN from "antd/locale/vi_VN";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
 import { getEvaluation, getScoreSummary, listEvaluations } from "../../services/evaluationService";
 import { statusLabels, tableRows } from "../../components/records/SelfEvaluationCard";
+import EvidencePanel from "../../components/records/EvidencePanel";
 
 /** Tra cứu hồ sơ Admin bằng API thật và phân trang server, chưa mở use-case thẩm định VC12
  * Chọn kỳ rồi xem cây/điểm, lỗi xóa chi tiết cũ để không nhầm hồ sơ đang chọn
@@ -55,7 +56,8 @@ export default function AdminRecords() {
     ]} />
     {detail && <Card title={`${detail.record.unit.name} · ${detail.record.period.name}`}><Space orientation="vertical" style={{ width: "100%" }}>
       <Typography.Text>Tổng tự chấm tạm tính: {detail.summary.selfTotal}/{detail.summary.maxTotalScore} · {detail.summary.ratingLabel}</Typography.Text>
-      <Table rowKey="criterionId" pagination={false} defaultExpandAllRows dataSource={tableRows(detail.record.criteria)} columns={[{ title: "Mã", dataIndex: "code" }, { title: "Tiêu chí", dataIndex: "name" }, { title: "Tối đa", dataIndex: "maxScore" }, { title: "Tự chấm", dataIndex: "selfScore" }, { title: "Diễn giải", dataIndex: "selfNote" }, { title: "Thẩm định", dataIndex: "adminScore" }]} />
+      {/* Minh chứng Admin chỉ đọc, dùng URL ký mới mỗi lần xem để không giữ quyền theo đồng hồ FE */}
+      <Table rowKey="criterionId" pagination={false} defaultExpandAllRows dataSource={tableRows(detail.record.criteria)} columns={[{ title: "Mã", dataIndex: "code" }, { title: "Tiêu chí", dataIndex: "name" }, { title: "Tối đa", dataIndex: "maxScore" }, { title: "Tự chấm", dataIndex: "selfScore" }, { title: "Diễn giải", dataIndex: "selfNote" }, { title: "Minh chứng", render: (_, row) => row.children?.length ? null : <EvidencePanel evaluationId={detail.record.id} row={{ ...row, canEditSelf: false }} /> }, { title: "Thẩm định", dataIndex: "adminScore" }]} />
     </Space></Card>}
   </Space></ConfigProvider>;
 }
