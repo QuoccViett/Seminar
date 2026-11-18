@@ -1,6 +1,10 @@
 ﻿import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import { IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Matches, MaxLength, Min } from "class-validator";
 
+/** Chỉ nhận cấu hình Admin có thể sửa trước khi kỳ mở
+ * Giai đoạn và dấu thời gian công bố/chốt do các thao tác nghiệp vụ phía máy chủ quản lý
+ * changeReason được yêu cầu khi sửa lịch đã công bố để lưu vết nguyên nhân thay đổi
+ */
 export class UpdateEvaluationPeriodDto {
   @ApiPropertyOptional({ example: 2026 })
   @IsOptional()
@@ -12,12 +16,8 @@ export class UpdateEvaluationPeriodDto {
   @IsOptional()
   @IsString({ message: "Tên đợt đánh giá phải là chuỗi" })
   @IsNotEmpty({ message: "Tên đợt đánh giá không được để trống" })
+  @MaxLength(255, { message: "Tên đợt đánh giá không được vượt quá 255 ký tự" })
   name?: string;
-
-  @ApiPropertyOptional({ example: "SELF_EVAL" })
-  @IsOptional()
-  @IsString({ message: "Giai đoạn đánh giá phải là chuỗi" })
-  phase?: string;
 
   @ApiPropertyOptional({ example: 300 })
   @IsOptional()
@@ -27,27 +27,20 @@ export class UpdateEvaluationPeriodDto {
 
   @ApiPropertyOptional({ type: String, format: "date-time", nullable: true })
   @IsOptional()
-  @IsDateString({}, { message: "Thời gian bắt đầu không hợp lệ" })
+  @IsDateString({ strict: true }, { message: "Thời gian bắt đầu không hợp lệ" })
+  @Matches(/(?:Z|[+-]\d{2}:\d{2})$/i, { message: "Thời gian phải kèm múi giờ Z hoặc độ lệch UTC" })
   selfEvalStart?: string | null;
 
   @ApiPropertyOptional({ type: String, format: "date-time", nullable: true })
   @IsOptional()
-  @IsDateString({}, { message: "Thời hạn tự đánh giá không hợp lệ" })
+  @IsDateString({ strict: true }, { message: "Thời hạn tự đánh giá không hợp lệ" })
+  @Matches(/(?:Z|[+-]\d{2}:\d{2})$/i, { message: "Thời gian phải kèm múi giờ Z hoặc độ lệch UTC" })
   selfEvalDeadline?: string | null;
 
-  @ApiPropertyOptional({ example: 48 })
+  @ApiPropertyOptional({ example: "Điều chỉnh theo thông báo của đơn vị" })
   @IsOptional()
-  @IsInt({ message: "Số giờ bổ sung phải là số nguyên" })
-  @Min(0, { message: "Số giờ bổ sung không được âm" })
-  supplementHours?: number;
-
-  @ApiPropertyOptional({ type: String, format: "date-time", nullable: true })
-  @IsOptional()
-  @IsDateString({}, { message: "Thời gian công bố không hợp lệ" })
-  publishedAt?: string | null;
-
-  @ApiPropertyOptional({ type: String, format: "date-time", nullable: true })
-  @IsOptional()
-  @IsDateString({}, { message: "Thời gian hoàn tất không hợp lệ" })
-  finalizedAt?: string | null;
+  @IsString({ message: "Lý do thay đổi phải là chuỗi" })
+  @IsNotEmpty({ message: "Lý do thay đổi không được để trống" })
+  @MaxLength(500, { message: "Lý do thay đổi không được vượt quá 500 ký tự" })
+  changeReason?: string;
 }
