@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import FeedbackPanel from "./FeedbackPanel";
 import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Table, Tag, Typography } from "antd";
 import { saveSelfScores, submitEvaluation, submitSupplement } from "../../services/evaluationService";
 import EvidencePanel from "./EvidencePanel";
@@ -125,6 +126,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
         <Space wrap><Button type="primary" disabled={!dirty || busy || disconnected} loading={busy} onClick={() => save()}>Lưu tất cả thay đổi</Button><Popconfirm title={record.status === "SUPPLEMENT_REQUESTED" ? "Nộp nội dung bổ sung?" : "Nộp hồ sơ tự chấm?"} description="Sau khi nộp, đơn vị không thể chỉnh sửa nội dung đã nộp" okText="Nộp hồ sơ" cancelText="Quay lại" onConfirm={submit} disabled={!(record.canSubmit || record.canSubmitSupplement) || dirty || busy || evidenceBusy || disconnected}><Button disabled={!(record.canSubmit || record.canSubmitSupplement) || dirty || busy || evidenceBusy || disconnected}>{record.status === "SUPPLEMENT_REQUESTED" ? "Nộp bổ sung" : "Nộp hồ sơ"}</Button></Popconfirm>{dirty && <Typography.Text type="warning">Có nội dung chưa lưu, cần lưu hết trước khi nộp</Typography.Text>}</Space>
       </>}
       {notice && <Alert type={notice.type} showIcon title={notice.text} />}
+      {record.criteriaVisible && <FeedbackPanel key={record.id} evaluationId={record.id} status={record.status} />}
     </Space>
   </Card>;
 }

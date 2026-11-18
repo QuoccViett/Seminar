@@ -1,3 +1,5 @@
+import { ClockService } from "../../src/common/services/clock.service.js";
+import { AuditService } from "../../src/common/services/audit.service.js";
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -91,7 +93,8 @@ test("VC11 chạy bù và cạnh tranh trên PostgreSQL cùng công cụ demo đ
 
     // Tin quá hạn bị bỏ qua ngay trước lời gọi mạng dù provider báo có người nhận
     let sends = 0;
-    const worker = new NotificationsService(db, { get: () => false } as never, [{ channel: "EMAIL", resolveRecipient: async () => true, send: async () => { sends += 1; return { kind: "sent" as const }; } }]);
+    // Dùng audit thật cùng DB để worker độc lập cũng kiểm giao dịch dấu vết hệ thống
+    const worker = new NotificationsService(db, { get: () => false } as never, [{ channel: "EMAIL", resolveRecipient: async () => true, send: async () => { sends += 1; return { kind: "sent" as const }; } }], new AuditService(db, new ClockService()));
     const expiredId = randomUUID(); const deliveryId = randomUUID(); const claimToken = randomUUID();
     await db.notification.create({ data: { id: expiredId, userId, type: "SELF_EVAL_REMINDER", title: "Nhắc hạn", body: "Nhắc kiểm thử", expiresAt: new Date(+now - 1000), createdAt: now, deliveries: { create: { id: deliveryId, channel: "EMAIL", status: "PENDING", claimToken, claimedAt: now, leaseUntil: new Date(+now + 30000), createdAt: now, updatedAt: now } } } });
     await worker.processClaim({ id: deliveryId, claim_token: claimToken });
@@ -100,7 +103,7 @@ test("VC11 chạy bù và cạnh tranh trên PostgreSQL cùng công cụ demo đ
 
     // Provider giả lỗi tạm rồi thành công kiểm backoff và nhận lại claim đã được cấp mới
     let attempts = 0;
-    const retryWorker = new NotificationsService(db, { get: () => false } as never, [{ channel: "EMAIL", resolveRecipient: async () => true, send: async () => { attempts += 1; return attempts === 1 ? { kind: "retry" as const, reasonCode: "TEMPORARY_FAILURE", message: "Lỗi tạm thời" } : { kind: "sent" as const }; } }]);
+    const retryWorker = new NotificationsService(db, { get: () => false } as never, [{ channel: "EMAIL", resolveRecipient: async () => true, send: async () => { attempts += 1; return attempts === 1 ? { kind: "retry" as const, reasonCode: "TEMPORARY_FAILURE", message: "Lỗi tạm thời" } : { kind: "sent" as const }; } }], new AuditService(db, new ClockService()));
     const retryId = randomUUID(); const retryDeliveryId = randomUUID(); const firstClaim = randomUUID();
     await db.notification.create({ data: { id: retryId, userId, type: "TEST", title: "Kiểm thử", body: "Thử gửi lại", expiresAt: new Date(+now + 3600000), createdAt: now, deliveries: { create: { id: retryDeliveryId, channel: "EMAIL", status: "PENDING", claimToken: firstClaim, claimedAt: now, leaseUntil: new Date(+now + 30000), createdAt: now, updatedAt: now } } } });
     await retryWorker.processClaim({ id: retryDeliveryId, claim_token: firstClaim });

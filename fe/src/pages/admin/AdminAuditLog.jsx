@@ -1,171 +1,67 @@
-import { useEffect, useState } from "react";
-import { Table, message, Tag, Card, Segmented } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Card, ConfigProvider, Descriptions, Empty, Form, Input, Modal, Space, Table, Typography } from "antd";
+import viVN from "antd/locale/vi_VN";
 import { auditLogService } from "../../services/auditLogService";
-import PageHeader from "../../components/common/PageHeader";
-import styles from "./AdminAuditLog.module.css";
-import { Line } from "@ant-design/charts";
 
+/** Đổi bộ lọc giờ Việt Nam sang ISO có offset để server kiểm khoảng thời gian rõ ràng
+ * Input datetime-local không có timezone nên gắn +07:00, không phụ thuộc múi giờ máy
+ */
+function filters(values) {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value?.trim()).map(([key, value]) => [key, ["from", "to"].includes(key) ? `${value}:00+07:00` : value.trim()]));
+}
+
+/** Truy vấn audit thật theo trang, lọc người/đối tượng/hành động/thời gian và xem snapshot
+ * Bỏ chart không có API, hiển thị lỗi/empty rõ và hủy kết quả tải muộn khi đổi bộ lọc
+ */
 export default function AdminAuditLog() {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20); 
+  const [query, setQuery] = useState({}); const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
+  const [rows, setRows] = useState({ items: [], total: 0 }); const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(""); const [refresh, setRefresh] = useState(0);
+  const [detail, setDetail] = useState(null); const [detailError, setDetailError] = useState(""); const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequest = useRef(0);
 
-  // State cho biểu đồ
-  const [chartData, setChartData] = useState([]);
-  const [timeRange, setTimeRange] = useState("7d");
-
-  // --- HÀM GỌI API LẤY BẢNG ---
-  const fetchLogs = async (currentPage = page, currentPageSize = pageSize) => {
-    try {
-      setLoading(true);
-      const res = await auditLogService.getAuditLogs({ page: currentPage, pageSize: currentPageSize });
-      setLogs(res.items || []);
-      setTotal(res.total || 0);
-    } catch (error) {
-      message.error("Lỗi khi tải lịch sử thao tác");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- HÀM GỌI API LẤY BIỂU ĐỒ ---
-  /** Tải số liệu biểu đồ theo khoảng thời gian và cập nhật giao diện khi thành công
-   * Khi API lỗi chỉ ghi câu chung, không in dữ liệu nhật ký hoặc phản hồi thô
-   */
-  const fetchChartData = async (range) => {
-    try {
-      const res = await auditLogService.getAuditLogStats({ range });
-      setChartData(res.items || []);
-    } catch (error) {
-      console.error("Lỗi tải biểu đồ");
-    }
-  };
-
+  /** Tải cùng bộ lọc phân trang, lỗi xóa kết quả cũ để không nhầm đó là dữ liệu mới */
   useEffect(() => {
-    fetchLogs(1, 20);
-    fetchChartData("7d");
-  }, []);
+    let active = true; setLoading(true); setError("");
+    auditLogService.getAuditLogs({ ...query, page, pageSize }).then((result) => { if (active) setRows(result); })
+      .catch((failure) => { if (active) { setRows({ items: [], total: 0 }); setError(failure.message || "Không thể tải nhật ký hoạt động"); } })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [query, page, pageSize, refresh]);
 
-  const handleRangeChange = (value) => {
-    setTimeRange(value);
-    fetchChartData(value);
-  };
+  /** Đọc chi tiết riêng theo ID, bỏ response của lần mở trước để không hiện nhầm snapshot
+   * Modal mở cả khi lỗi để người dùng thấy nguyên nhân và có thể thử lại
+   */
+  async function inspect(id) {
+    const request = ++detailRequest.current; setDetail({ id }); setDetailError(""); setDetailLoading(true);
+    try { const result = await auditLogService.getAuditLog(id); if (request === detailRequest.current) setDetail(result); }
+    catch (failure) { if (request === detailRequest.current) setDetailError(failure.message || "Không thể tải chi tiết nhật ký"); }
+    finally { if (request === detailRequest.current) setDetailLoading(false); }
+  }
 
-  // --- CẤU HÌNH CỘT CHO BẢNG ---
-  const columns = [
-    { title: "Thời gian", dataIndex: "createdAt", key: "createdAt", width: 180, render: (date) => new Date(date).toLocaleString("vi-VN") },
-    { title: "Người thực hiện", dataIndex: "actorName", key: "actorName", render: (text) => <strong>{text}</strong> },
-    {
-      title: "Hành động",
-      dataIndex: "action",
-      key: "action",
-      render: (action) => {
-        let color = "blue";
-        
-        const actionLower = action.toLowerCase(); 
-
-        if (actionLower.includes("xóa")) color = "red";          
-        if (actionLower.includes("thêm")) color = "green";         
-        if (actionLower.includes("cập nhật") || actionLower.includes("sửa")) color = "orange"; 
-        if (actionLower.includes("đổi trạng thái")) color = "purple"; 
-
-        return <Tag color={color}>{action.toUpperCase()}</Tag>;
-      },
-    },
-
-
-    { title: "Đối tượng", dataIndex: "entity", key: "entity" },
-    { title: "Chi tiết", dataIndex: "detail", key: "detail", ellipsis: true },
-    { title: "Địa chỉ IP", dataIndex: "ipAddress", key: "ipAddress", render: (ip) => <span style={{ color: "#888" }}>{ip}</span> },
-  ];
-
-  // --- CẤU HÌNH CHO BIỂU ĐỒ ĐƯỜNG ---
-  const chartConfig = {
-    data: chartData,
-    xField: "label", // Trục ngang
-    yField: "count", // Trục dọc (số lượng)
-    height: 280,
-    smooth: true, // Vẽ đường cong mượt mà
-    color: "#52c41a", // Màu xanh lá (giống ảnh Liên Quân)
-    point: {
-      size: 5,
-      shape: "circle",
-      style: { fill: "#fff", stroke: "#52c41a", lineWidth: 2 } // Tâm trắng viền xanh
-    },
-    tooltip: {
-      title: (d) => `Mốc: ${d.label}`,
-    },
-    xAxis: {
-      line: null, 
-    },
-    yAxis: {
-      grid: {
-        line: { style: { stroke: "#f0f0f0", lineDash: [4, 4] } } 
-      }
-    }
-  };
-
-  return (
-    <div className={styles.pageContainer}>
-      
-      {/* 1. BIỂU ĐỒ THỐNG KÊ */}
-      <Card 
-        bordered={false} 
-        className={styles.chartCard}
-        title={<span style={{ fontSize: "18px", fontWeight: 700, color: "#111" }}>Biểu đồ lượng thao tác</span>}
-
-        extra={
-          <Segmented 
-            options={[
-              { label: '7 Ngày', value: '7d' },
-              { label: '30 Ngày', value: '30d' },
-              { label: '3 Tháng', value: '3m' },
-              { label: '6 Tháng', value: '6m' },
-            ]}
-            value={timeRange}
-            onChange={handleRangeChange}
-          />
-        }
-      >
-        <div style={{ marginTop: 20 }}>
-          {/* Component Line của Ant Design Charts */}
-          <Line {...chartConfig} />
-        </div>
+  return <ConfigProvider locale={viVN}><Space orientation="vertical" size="large" style={{ width: "100%" }}>
+    <Typography.Title level={2}>Nhật ký hoạt động</Typography.Title>
+    <Card title="Tìm và lọc nhật ký">
+      <Form layout="inline" onFinish={(values) => { setQuery(filters(values)); setPage(1); }}>
+        {[['actorId', 'Mã người thực hiện hoặc SYSTEM'], ['entity', 'Loại đối tượng'], ['entityId', 'Mã đối tượng'], ['action', 'Hành động']].map(([name, label]) => <Form.Item key={name} name={name}><Input aria-label={label} placeholder={label} allowClear /></Form.Item>)}
+        <Form.Item name="from" label="Từ giờ Việt Nam"><Input aria-label="Từ giờ Việt Nam" type="datetime-local" /></Form.Item>
+        <Form.Item name="to" label="Đến giờ Việt Nam"><Input aria-label="Đến giờ Việt Nam" type="datetime-local" /></Form.Item>
+        <Button htmlType="submit" type="primary">Lọc nhật ký</Button>
+      </Form>
+      <Button onClick={() => setRefresh((value) => value + 1)} loading={loading}>Tải lại nhật ký</Button>
+    </Card>
+    {error && <Alert type="error" title={error} showIcon />}
+    <Table rowKey="id" loading={loading} dataSource={rows.items} locale={{ emptyText: <Empty description="Không có nhật ký phù hợp" /> }} pagination={{ current: page, pageSize, total: rows.total, showSizeChanger: true, onChange: (next, size) => { setPage(next); setPageSize(size); } }} columns={[
+      { title: "Thời gian (Việt Nam)", dataIndex: "createdAt", render: (value) => new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) },
+      { title: "Người thực hiện", dataIndex: "actorName" }, { title: "Hành động", dataIndex: "action" }, { title: "Loại đối tượng", dataIndex: "entity" }, { title: "Mã đối tượng", dataIndex: "entityId" }, { title: "IP", dataIndex: "ip" },
+      { title: "Chi tiết", render: (_, row) => <Button onClick={() => inspect(row.id)}>Xem thay đổi</Button> },
+    ]} />
+    <Modal open={Boolean(detail)} title="Chi tiết nhật ký" width={900} onCancel={() => { ++detailRequest.current; setDetail(null); }} footer={<Button onClick={() => { ++detailRequest.current; setDetail(null); }}>Đóng</Button>}>
+      {detailError && <Alert type="error" title={detailError} action={<Button onClick={() => inspect(detail.id)}>Thử lại</Button>} />}
+      <Card loading={detailLoading}>
+        {detail?.action && <Descriptions column={1} items={[{ key: "actor", label: "Người thực hiện", children: detail.actorName }, { key: "action", label: "Hành động", children: detail.action }, { key: "entity", label: "Đối tượng", children: `${detail.entity} · ${detail.entityId}` }, { key: "time", label: "Thời gian", children: new Date(detail.createdAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) }]} />}
+        {detail?.action && ["before", "after"].map((key) => <section key={key}><Typography.Title level={5}>{key === "before" ? "Trước thay đổi" : "Sau thay đổi"}</Typography.Title><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(detail[key], null, 2)}</pre></section>)}
       </Card>
-
-      {/* 2. BẢNG DỮ LIỆU */}
-      <div className={styles.toolbar} style={{ marginTop: 24 }}>
-        <PageHeader
-          title={
-            <span style={{ fontSize: "18px", fontWeight: 700, color: "#111" }}>
-              Chi tiết lịch sử
-            </span>
-          }
-        />
-      </div>
-
-      <div className={styles.tableContainer}>
-        <Table
-          columns={columns}
-          dataSource={logs}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            current: page,
-            pageSize: pageSize,
-            total: total,
-            showSizeChanger: true,
-            onChange: (p, s) => {
-              setPage(p);
-              setPageSize(s);
-              fetchLogs(p, s);
-            },
-            showTotal: (total, range) => `${range[0]}-${range[1]} của ${total} bản ghi`
-          }}
-        />
-      </div>
-    </div>
-  );
+    </Modal>
+  </Space></ConfigProvider>;
 }

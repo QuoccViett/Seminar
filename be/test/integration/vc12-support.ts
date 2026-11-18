@@ -29,10 +29,11 @@ export interface Vc12Payload {
 /** Khởi động Nest/PostgreSQL thật chỉ trên database local mang tên dành riêng VC12
  * Provider ngoài tắt, timer được dừng để test chủ động tạo cạnh tranh và chứng minh job trễ
  * Fixture thêm UUID mới, không reset hoặc xóa dữ liệu cũ và không thay đồng hồ hệ thống
+ * VC13 tái sử dụng điều kiện trước VC12 qua cấu hình tên DB allowlist, không ghi vào DB dùng chung
  */
-export async function createVc12Harness() {
-  const url = process.env.VC12_TEST_DATABASE_URL;
-  assert.ok(url && new URL(url).pathname === "/vc12_test" && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local vc12_test riêng");
+export async function createVc12Harness(database = { url: process.env.VC12_TEST_DATABASE_URL, name: "vc12_test" }) {
+  const url = database.url;
+  assert.ok(["vc12_test", "vc13_test"].includes(database.name) && url && new URL(url).pathname === `/${database.name}` && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local kiểm thử VC12 hoặc VC13 riêng");
   Object.assign(process.env, { DATABASE_URL: url, JWT_SECRET: "vc12-test-secret-only-at-least-32-characters", NODE_ENV: "test", WEB_ORIGINS: "http://127.0.0.1:5182", PUBLIC_APP_URL: "http://127.0.0.1:5182", INITIAL_ACCOUNT_PASSWORD: "123456", EMAIL_ENABLED: "false", WEB_PUSH_ENABLED: "false", ZALO_ZNS_ENABLED: "false", STORAGE_ENABLED: "true", STORAGE_PROVIDER: "local", STORAGE_LOCAL_DIR: ".tmp/vc12-private-storage" });
   const dist = new URL("../../dist/", import.meta.url);
   const { AppModule } = await import(new URL("app.module.js", dist).href);

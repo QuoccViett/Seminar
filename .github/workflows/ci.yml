@@ -115,6 +115,18 @@ jobs:
       - name: Lint backend
         run: npm run lint
 
+      # Kiểm VC13 trên database riêng, dùng HTTP và PostgreSQL thật với mọi provider ngoài tắt
+      # Nâng cấp 10 → 11 không reset dữ liệu, xác nhận append-only và snapshot được giữ nguyên
+      - name: Kiểm phản hồi lịch sử và audit VC13
+        env:
+          VC13_TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc13_test
+          VC13_UPGRADE_DATABASE_URL: postgresql://ci:ci@localhost:5432/vc13_upgrade_test
+        run: |
+          PGPASSWORD=ci createdb -h localhost -U ci vc13_test
+          PGPASSWORD=ci createdb -h localhost -U ci vc13_upgrade_test
+          DATABASE_URL="$VC13_TEST_DATABASE_URL" npx prisma migrate deploy
+          node --import tsx --test test/integration/vc13.feedback-audit.test.ts test/integration/vc13.migration.test.ts
+
       # Kiểm HTTP/PG và object local thật trên database riêng, không gọi provider hay gửi tin ra ngoài
       # Migration deploy chỉ áp DB mới của CI, bài kiểm chặn mọi URL không mang tên vc10_test
       - name: Kiểm storage và minh chứng VC10 trên database riêng

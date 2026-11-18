@@ -228,57 +228,7 @@ export const handlers = [
     return HttpResponse.json({ items, total: filtered.length, page, pageSize });
   }),
 
-    // ---------- AUDIT LOGS ----------
-  http.get("*/api/v1/audit-logs", ({ request }) => {
-    const url = new URL(request.url);
-    const page = Number(url.searchParams.get("page")) || 1;
-    const pageSize = Number(url.searchParams.get("pageSize")) || 20;
-
-    // Tạo giả 50 dòng lịch sử
-    const actions = ["Cập nhật điểm", "Thêm tài khoản", "Xóa đơn vị", "Đổi trạng thái"];
-    const entities = ["Hồ sơ Đoàn A", "Tài khoản coso01", "Đơn vị Quận 1", "Hồ sơ Đoàn B"];
-
-    const allLogs = Array.from({ length: 50 }).map((_, i) => ({
-      id: `log-${i}`,
-      actorName: i % 2 === 0 ? "Quản trị viên" : "Admin cấp 2",
-      action: actions[i % 4],
-      entity: entities[i % 4],
-      detail: "Thay đổi từ 8 điểm thành 7 điểm", // Chi tiết ngắn gọn
-      ipAddress: "192.168.1." + (i + 10),
-      createdAt: new Date(Date.now() - i * 3600000).toISOString(), // Lùi thời gian 1 giờ mỗi dòng
-    }));
-
-    const start = (page - 1) * pageSize;
-    const items = allLogs.slice(start, start + pageSize);
-
-    return HttpResponse.json({
-      items,
-      total: allLogs.length,
-      page,
-      pageSize,
-    });
-  }),
-
-
-    // ---------- AUDIT LOGS STATS ----------
-  http.get("*/api/v1/audit-logs/stats", ({ request }) => {
-    const url = new URL(request.url);
-    const range = url.searchParams.get("range") || "7d";
-
-    let data = [];
-    if (range === "7d") {
-      data = [
-        { label: "T2", count: 12 }, { label: "T3", count: 19 }, { label: "T4", count: 5 },
-        { label: "T5", count: 25 }, { label: "T6", count: 32 }, { label: "T7", count: 10 }, { label: "CN", count: 8 }
-      ];
-    } else {
-      data = Array.from({ length: 10 }).map((_, i) => ({
-        label: `Tuần ${i + 1}`,
-        count: Math.floor(Math.random() * 50) + 10
-      }));
-    }
-    return HttpResponse.json({ items: data });
-  }),
+  // Nhật ký VC13 chỉ đọc backend thật, không giữ handler audit hoặc thống kê giả
 
   // ---------- CREATE EVALUATION PERIOD ----------
   // ---------- CREATE EVALUATION PERIOD ----------

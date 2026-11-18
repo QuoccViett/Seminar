@@ -17,6 +17,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { ERROR_CODES } from "../../common/constants/error-codes.js";
+import { AuditService } from "../../common/services/audit.service.js";
 import { buildPaginationOptions, createPaginatedResult } from "../../common/utils/pagination.util.js";
 import type { CreateReportExportDto, ReportFormat } from "./dto/create-report-export.dto.js";
 import type { ReportExportQueryDto } from "./dto/report-export-query.dto.js";
@@ -32,7 +33,9 @@ import type {
 
 @Injectable()
 export class ExportsService {
+  /** Tiêm audit cùng các generator để metadata và dấu vết xuất báo cáo commit nguyên tử */
   constructor(
+    @Inject(AuditService) private readonly audit: AuditService,
     @Inject(PrismaService)
     private readonly prisma: PrismaService,
 
@@ -49,6 +52,10 @@ export class ExportsService {
     private readonly wordGenerator: WordReportGenerator,
   ) {}
 
+  /** Tạo tệp bằng generator hiện có, sau đó ghi metadata và audit trong cùng giao dịch
+   * Đầu vào là người đã qua guard và scope báo cáo, đầu ra là metadata không chứa đường dẫn private
+   * Nếu DB hoặc audit lỗi thì dọn tệp vừa tạo, không báo thành công khi dấu vết chưa được ghi
+   */
   async create(createdById: string, dto: CreateReportExportDto) {
     const period = await this.prisma.evaluationPeriod.findUnique({
       where: { id: dto.periodId },
@@ -116,19 +123,23 @@ export class ExportsService {
     await writeFile(absolutePath, generated.buffer, { flag: "wx" });
 
     try {
-      const record = await this.prisma.reportExport.create({
-        data: {
-          id,
-          periodId: dto.periodId,
-          evaluationId,
-          reportType: dto.reportType,
-          format: dto.format,
-          storagePath: relativePath,
-          fileName,
-          sizeBytes: BigInt(generated.buffer.length),
-          createdById,
-          createdAt: new Date(),
-        },
+      const record = await this.prisma.$transaction(async (tx) => {
+        const saved = await tx.reportExport.create({
+          data: {
+            id,
+            periodId: dto.periodId,
+            evaluationId,
+            reportType: dto.reportType,
+            format: dto.format,
+            storagePath: relativePath,
+            fileName,
+            sizeBytes: BigInt(generated.buffer.length),
+            createdById,
+            createdAt: new Date(),
+          },
+        });
+        await this.audit.record({ actorId: createdById, action: "REPORT_EXPORTED", entity: "ReportExport", entityId: id, after: { periodId: dto.periodId, evaluationId, reportType: dto.reportType, format: dto.format, fileName, sizeBytes: generated.buffer.length } }, tx);
+        return saved;
       });
 
       return this.toMetadata(record);
