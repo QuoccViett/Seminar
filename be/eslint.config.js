@@ -16,4 +16,10 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // Các tên này chỉ xuất hiện bên trong callback Playwright chạy ở trình duyệt thật
+    // Giới hạn vào browser harness để không cấp nhầm global trình duyệt cho source backend
+    files: ["test/browser/*.mjs"],
+    languageOptions: { globals: { window: "readonly", document: "readonly", location: "readonly", sessionStorage: "readonly", fetch: "readonly", DataTransfer: "readonly", File: "readonly", Event: "readonly", innerWidth: "readonly" } },
+  },
 );

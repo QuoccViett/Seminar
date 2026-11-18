@@ -7,6 +7,8 @@ import { finalizeEvaluations, getReview, getScoreSummary, listEvaluations, previ
 import { statusLabels } from "../../components/records/SelfEvaluationCard";
 import ReviewCard from "../../components/records/ReviewCard";
 import FeedbackPanel from "../../components/records/FeedbackPanel";
+import { usePeriodSelection } from "../../services/periodSelection";
+import { allPages } from "../../services/pagination";
 
 const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_REVIEW: "Thẩm định lần đầu", SUPPLEMENT: "Bổ sung", FINAL_REVIEW: "Thẩm định cuối", CLOSED: "Đã đóng" };
 
@@ -15,8 +17,8 @@ const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_RE
  * Kết quả request tới muộn bị bỏ qua khi đổi hồ sơ, polling không remount nháp của cùng hồ sơ
  */
 export default function AdminRecords() {
-  const [searchParams] = useSearchParams();
-  const [periods, setPeriods] = useState([]); const [periodId, setPeriodId] = useState();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [periods, setPeriods] = useState([]); const [periodId, setPeriodId] = usePeriodSelection();
   const [page, setPage] = useState(1); const [rows, setRows] = useState({ items: [], total: 0 });
   const [detail, setDetail] = useState(null); const [detailError, setDetailError] = useState(false);
   const [error, setError] = useState(""); const [listLoading, setListLoading] = useState(false);
@@ -25,15 +27,15 @@ export default function AdminRecords() {
   const [selected, setSelected] = useState([]); const [phaseOptions, setPhaseOptions] = useState(null);
   const [phaseTarget, setPhaseTarget] = useState(); const [finalize, setFinalize] = useState(null);
   const activeId = useRef(null); const sending = useRef(false);
-  const openedFromDashboard = useRef(false);
   const busy = recordBusy || actionBusy || detailLoading;
 
-  /** Mở đúng hồ sơ được dashboard trỏ tới một lần; API chi tiết vẫn kiểm quyền và kỳ thực */
+  /** Mở hồ sơ từ URL cả khi quay lại lịch sử trình duyệt, bỏ lệnh trùng hồ sơ đang chọn
+   * API vẫn kiểm quyền và kỳ thực, query không được dùng làm dữ liệu hoặc identity
+   */
   useEffect(() => {
     const linkedPeriodId = searchParams.get("periodId");
     const linkedEvaluationId = searchParams.get("evaluationId");
-    if (openedFromDashboard.current || !linkedPeriodId || !linkedEvaluationId) return;
-    openedFromDashboard.current = true;
+    if (!linkedPeriodId || !linkedEvaluationId || activeId.current === linkedEvaluationId) return;
     setPeriodId(linkedPeriodId);
     void inspect(linkedEvaluationId);
   }, [searchParams]);
@@ -41,7 +43,7 @@ export default function AdminRecords() {
   /** Tải bộ lọc kỳ một lần, bỏ kết quả đến sau khi trang đã đóng */
   useEffect(() => {
     let active = true;
-    evaluationPeriodService.getEvaluationPeriods({ pageSize: 100 }).then((result) => { if (active) setPeriods(result.items); }).catch((failure) => { if (active) setError(failure.message || "Không thể tải kỳ đánh giá"); });
+    allPages((params) => evaluationPeriodService.getEvaluationPeriods(params)).then((items) => { if (active) setPeriods(items); }).catch((failure) => { if (active) setError(failure.message || "Không thể tải kỳ đánh giá"); });
     return () => { active = false; };
   }, []);
 
@@ -69,6 +71,7 @@ export default function AdminRecords() {
     try {
       const [record, summary] = await Promise.all([getReview(id), getScoreSummary(id)]);
       if (activeId.current === id) { setDetail({ record, summary }); setDetailError(false); }
+      return record;
     } catch (failure) {
       if (activeId.current === id) { setDetailError(true); setError(failure.message || "Không thể tải chi tiết hồ sơ"); }
       throw failure;
@@ -80,13 +83,22 @@ export default function AdminRecords() {
   useEffect(() => {
     if (!detailId) return undefined;
     const timer = setInterval(() => { if (!sending.current) void reloadDetail(detailId).catch(() => {}); }, 15000);
-    return () => clearInterval(timer);
+    const onVisible = () => { if (document.visibilityState === "visible" && !sending.current) { void reloadDetail(detailId).catch(() => {}); setRefresh((value) => value + 1); } };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
   }, [detailId, reloadDetail]);
 
   /** Chọn hồ sơ mới có chủ đích, xóa chi tiết cũ để không nhầm dữ liệu khi đang tải */
   async function inspect(id) {
     activeId.current = id; setDetail(null); setDetailError(false); setDetailLoading(true); setError("");
-    try { await reloadDetail(id); } catch { /* Lỗi công khai đã được reloadDetail hiển thị */ }
+    try {
+      const record = await reloadDetail(id);
+      if (activeId.current === id) {
+        setPeriodId(record.period.id);
+        setSearchParams({ periodId: record.period.id, evaluationId: id }, { replace: true });
+      }
+    } catch { /* Lỗi công khai đã được reloadDetail hiển thị */ }
     finally { setDetailLoading(false); }
   }
 

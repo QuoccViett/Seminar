@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { Button, Form, Input, InputNumber, Modal, Select, Switch, Table, Tag, message } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Form, Input, InputNumber, Modal, Select, Switch, Table, Tag, message } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import { unitService } from "../../services/unitService";
 import PageHeader from "../../components/common/PageHeader";
 import styles from "./AdminUnits.module.css";
+import { applyFormError } from "../../services/formErrors";
 
 const UNIT_TYPES = [
   { value: "CONG_AN_QUAN_HUYEN", label: "Công an quận/huyện" },
@@ -15,9 +16,7 @@ const UNIT_TYPES = [
  * Lỗi không có trường được báo bằng thông điệp tiếng Việt đã chuẩn hóa ở apiClient
  */
 function showFormError(error, form) {
-  const fields = error.fieldErrors?.filter((item) => item.field && Array.isArray(item.messages)) ?? [];
-  if (fields.length) form.setFields(fields.map((item) => ({ name: item.field, errors: item.messages })));
-  message.error(error.message || "Không thể lưu đơn vị. Vui lòng thử lại.");
+  message.error(applyFormError(form, error, "Không thể lưu đơn vị. Vui lòng thử lại."));
 }
 
 /** Quản trị danh sách đơn vị bằng API thật với tìm kiếm, phân trang và form tạo/sửa
@@ -26,7 +25,9 @@ function showFormError(error, form) {
 export default function AdminUnits() {
   const [form] = Form.useForm();
   const [units, setUnits] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const loadVersion = useRef(0);
   const [saving, setSaving] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -37,17 +38,18 @@ export default function AdminUnits() {
 
   /** Tải trang đơn vị theo bộ lọc đang chọn và giữ trạng thái lỗi rõ ràng
    * Kết quả rỗng được Table hiển thị; các lệnh gọi đều đi qua backend thật
+   * Lỗi có cảnh báo và nút thử lại cố định, phiên bản yêu cầu bỏ phản hồi cũ khi đổi bộ lọc nhanh
    */
   async function load(nextPage = page, nextSize = pageSize, nextQ = q) {
-    setLoading(true);
+    const version = ++loadVersion.current;
+    setLoading(true); setLoadError("");
     try {
       const result = await unitService.getUnits({ page: nextPage, pageSize: nextSize, q: nextQ });
-      setUnits(result.items ?? []);
-      setTotal(result.total ?? 0);
+      if (version === loadVersion.current) { setUnits(result.items ?? []); setTotal(result.total ?? 0); }
     } catch (error) {
-      message.error(error.message || "Không thể tải danh sách đơn vị.");
+      if (version === loadVersion.current) setLoadError(error.message || "Không thể tải danh sách đơn vị.");
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }
 
@@ -105,8 +107,9 @@ export default function AdminUnits() {
   return <div className={styles.pageContainer}>
     {/* Thanh tìm kiếm và nút tạo điều khiển dữ liệu từ API */}
     <div className={styles.toolbar}><PageHeader title="Quản lý đơn vị" searchPlaceholder="Tìm mã hoặc tên đơn vị" onSearch={search} onAdd={() => openForm()} addButtonText="Thêm đơn vị" /></div>
+    {loadError && <Alert type="error" title={loadError} showIcon action={<Button onClick={() => load()}>Thử tải lại đơn vị</Button>} />}
     <div className={styles.tableContainer}>
-      <Table columns={columns} dataSource={units} rowKey="id" loading={loading} locale={{ emptyText: "Không có đơn vị phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} đơn vị` }} />
+      <Table columns={columns} dataSource={units} rowKey="id" loading={loading} locale={{ emptyText: loadError ? "Chưa tải được danh sách đơn vị" : "Không có đơn vị phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} đơn vị` }} />
     </div>
     {/* Cùng một form tạo và sửa để giữ quy tắc kiểm tra dữ liệu nhất quán */}
     <Modal title={editing ? "Sửa đơn vị" : "Thêm đơn vị"} open={open} confirmLoading={saving} okText="Lưu" cancelText="Hủy" onOk={() => form.submit()} onCancel={() => setOpen(false)}>

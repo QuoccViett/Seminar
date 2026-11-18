@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Card, Empty, Input, Pagination, Select, Space, Timeline, Typography } from "antd";
 import apiClient from "../../services/apiClient";
+import { useRecordDrafts } from "../../contexts/WorkspaceContext";
 
 const typeLabels = { GENERAL: "Nhận xét chung", EXPLANATION_REQUEST: "Yêu cầu giải trình", UNIT_REPLY: "Đơn vị phản hồi", SUPPLEMENT_REQUEST: "Yêu cầu bổ sung" };
 const statusLabels = { DRAFT: "Đang tự chấm", PENDING_REVIEW: "Chờ thẩm định", SUPPLEMENT_REQUESTED: "Yêu cầu bổ sung", SUPPLEMENT_SUBMITTED: "Đã nộp bổ sung", SUPPLEMENT_EXPIRED: "Hết hạn bổ sung", FINALIZED: "Đã chốt" };
@@ -15,7 +16,10 @@ function time(value) { return new Date(value).toLocaleString("vi-VN", { timeZone
 export default function FeedbackPanel({ evaluationId, status }) {
   const [feedback, setFeedback] = useState(null); const [history, setHistory] = useState(null);
   const [page, setPage] = useState(1); const [historyPage, setHistoryPage] = useState(1);
-  const [content, setContent] = useState(""); const [type, setType] = useState();
+  const [draft, setDraft] = useRecordDrafts(`feedback:${evaluationId}`);
+  const content = draft.content ?? "";
+  const setContent = (value) => setDraft(value ? { content: value } : {});
+  const [type, setType] = useState();
   const [error, setError] = useState(""); const [notice, setNotice] = useState("");
   const [sendError, setSendError] = useState("");
   const [loading, setLoading] = useState(false); const [sending, setSending] = useState(false);
@@ -42,14 +46,19 @@ export default function FeedbackPanel({ evaluationId, status }) {
     try {
       await apiClient.post(`/evaluations/${evaluationId}/feedback`, { type: type || feedback.allowedTypes[0], content });
       setContent(""); setNotice("Đã gửi phản hồi"); setPage(1); setRefresh((value) => value + 1);
-    } catch (failure) { setSendError(failure.message || "Không thể gửi phản hồi"); setRefresh((value) => value + 1); }
+    } catch (failure) {
+      // Lỗi validation như nội dung có thẻ HTML cần nêu chi tiết để người dùng sửa đúng ô
+      // Giữ nháp và tải lại quyền sau từ chối, không ghi đè nội dung bằng snapshot server
+      setSendError([failure.message || "Không thể gửi phản hồi", ...(failure.fieldErrors ?? []).flatMap((item) => item.messages)].join("; "));
+      setRefresh((value) => value + 1);
+    }
     finally { busy.current = false; setSending(false); }
   }, [content, evaluationId, feedback, type]);
 
   return <Card title="Trao đổi và lịch sử hồ sơ" loading={loading} extra={<Button disabled={sending} onClick={() => setRefresh((value) => value + 1)}>Tải lại trao đổi</Button>}>
     <Space orientation="vertical" style={{ width: "100%" }}>
       {error && <Alert type="error" title={error} showIcon />}
-      {sendError && <Alert type="error" title={sendError} showIcon />}
+      {sendError && <Alert id={`feedback-error-${evaluationId}`} type="error" title={sendError} showIcon />}
       {notice && <Alert type="success" title={notice} showIcon />}
       {feedback && <>
         {feedback.items.length === 0 && <Empty description="Chưa có phản hồi" />}
@@ -58,7 +67,7 @@ export default function FeedbackPanel({ evaluationId, status }) {
         {feedback.lockedReason && <Alert type="info" title={feedback.lockedReason} />}
         {feedback.canPost && <>
           <Select aria-label="Loại phản hồi" value={type || feedback.allowedTypes[0]} options={feedback.allowedTypes.map((value) => ({ value, label: typeLabels[value] }))} onChange={setType} disabled={sending} style={{ width: 240 }} />
-          <Input.TextArea aria-label="Nội dung phản hồi" value={content} onChange={(event) => setContent(event.target.value)} maxLength={4000} showCount disabled={sending} />
+          <Input.TextArea aria-label="Nội dung phản hồi" aria-invalid={Boolean(sendError)} aria-describedby={sendError ? `feedback-error-${evaluationId}` : undefined} status={sendError ? "error" : undefined} value={content} onChange={(event) => setContent(event.target.value)} maxLength={4000} showCount disabled={sending} />
           <Typography.Text type="secondary">Văn bản thuần, tối đa 4000 ký tự · Mỗi lần cách 30 giây, tối đa 20 phản hồi mỗi giờ</Typography.Text>
           <Button type="primary" loading={sending} disabled={!content.trim() || sending} onClick={send}>Gửi phản hồi</Button>
         </>}

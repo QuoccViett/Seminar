@@ -11,10 +11,16 @@ import {
 
 const AuthContext = createContext(null);
 
+/** Xác thực hồ sơ bằng backend trước khi mở nghiệp vụ, khôi phục lỗi mạng có đường thử lại
+ * Mọi refresh/đổi mật khẩu cập nhật danh tính cùng token, cache không được cấp quyền khi server chưa xác nhận
+ */
 export function AuthProvider({ children }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [restoreError, setRestoreError] = useState("");
+  const [sessionMessage, setSessionMessage] = useState("");
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     // Mỗi lần effect chạy đều khôi phục phiên riêng để StrictMode có thể hủy lần đầu và chạy lại
@@ -28,8 +34,7 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      const cached = getCurrentUser();
-      if (cached) setUser(cached);
+      setLoading(true); setRestoreError("");
 
       try {
         const fresh = await authService.getMe();
@@ -42,12 +47,9 @@ export function AuthProvider({ children }) {
         });
       } catch (err) {
         if (cancelled) return;
-        // 401 đã được apiClient xử lý (clear + event)
-        // lỗi khác: nếu không có cached thì coi như chưa đăng nhập
-        if (!cached) {
-          clearSession();
-          setUser(null);
-        }
+        // Hồ sơ cache không xác nhận được quyền, lỗi mạng cho thử lại thay vì mở trang bằng role cũ
+        setUser(null);
+        if (err.status !== 401) setRestoreError(err.message || "Không thể kiểm tra phiên đăng nhập, vui lòng thử lại");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -55,10 +57,13 @@ export function AuthProvider({ children }) {
 
     restore();
     return () => { cancelled = true; };
-  }, []);
+  }, [retry]);
 
   useEffect(() => {
     const onUnauthorized = () => {
+      // Guard cũng điều hướng khi user thành null và có thể ghi đè location.state của lệnh navigate
+      // Giữ câu thông báo trong provider tới lần đăng nhập/đăng xuất có chủ đích để nhiều 401 không làm mất lý do
+      setSessionMessage("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
       clearSession();
       setUser(null);
       navigate("/login", {
@@ -67,10 +72,17 @@ export function AuthProvider({ children }) {
       });
     };
     window.addEventListener("auth:unauthorized", onUnauthorized);
-    return () => window.removeEventListener("auth:unauthorized", onUnauthorized);
+    /** Nhận hồ sơ refresh và yêu cầu đổi mật khẩu từ BE, không tin role từ form hoặc cache */
+    const onSession = (event) => { if (event.detail) setUser(event.detail); };
+    const onPassword = () => { setUser((current) => current ? { ...current, mustChangePassword: true } : null); navigate("/change-password", { replace: true }); };
+    window.addEventListener("auth:session", onSession);
+    window.addEventListener("auth:password-required", onPassword);
+    return () => { window.removeEventListener("auth:unauthorized", onUnauthorized); window.removeEventListener("auth:session", onSession); window.removeEventListener("auth:password-required", onPassword); };
   }, [navigate]);
 
-  // ---------- Login ----------
+  /** Gửi credential và nhận toàn bộ cặp token/hồ sơ/TTL từ backend, thiếu dữ liệu thì từ chối phiên
+   * Không dùng role nhập từ client để dựng user, sự kiện session đồng bộ các thành phần cùng tab
+   */
   const login = useCallback(async (username, password) => {
     const result = await authService.login(username, password);
     // contract login: { accessToken, refreshToken, tokenType, expiresIn, user }
@@ -82,7 +94,8 @@ export function AuthProvider({ children }) {
       };
     }
 
-    setSession({ accessToken, refreshToken, user: nextUser });
+    setSession(result);
+    setSessionMessage("");
     setUser(nextUser);
     return nextUser;
   }, []);
@@ -99,6 +112,7 @@ export function AuthProvider({ children }) {
       console.warn("Không thể thu hồi phiên trên máy chủ, phiên cục bộ đã được xóa");
     } finally {
       clearSession();
+      setSessionMessage("");
       setUser(null);
       navigate("/login", { replace: true });
     }
@@ -114,11 +128,15 @@ export function AuthProvider({ children }) {
     }
     setSession(result);
     setUser(result.user);
+    window.dispatchEvent(new CustomEvent("workspace:clear"));
     return result.user;
   }, []);
   const value = {
     user,
     loading,
+    restoreError,
+    sessionMessage,
+    retryRestore: () => setRetry((value) => value + 1),
     isAuthenticated: !!user,
     login,
     logout,

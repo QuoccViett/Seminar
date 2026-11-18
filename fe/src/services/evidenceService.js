@@ -1,5 +1,5 @@
 import axios from "axios";
-import apiClient from "./apiClient";
+import apiClient, { normalizeError } from "./apiClient";
 
 const backend = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -16,16 +16,19 @@ export const deleteEvidence = (id, evidenceId) => apiClient.delete(`/evaluations
 export const cancelEvidenceUpload = (id, uploadId) => apiClient.delete(`/evaluations/${id}/evidences/uploads/${uploadId}`);
 
 /** Tải bytes bằng client riêng không gắn Bearer vào capability URL, báo tiến độ chỉ cho giai đoạn truyền
- * Lỗi API có code/câu tiếng Việt được giữ, lỗi mạng/provider lạ thay bằng câu an toàn
+ * Chỉ lỗi từ origin backend mới qua adapter chung, provider ngoài không được phản chiếu payload kể cả có dấu Việt
+ * Mạng/provider lạ dùng câu cố định để không làm lộ thông tin nội bộ hoặc bí mật từ kho tệp
  */
 export async function uploadEvidenceBytes(grant, file, onProgress) {
+  let ownBackend = false;
   try {
-    await axios.put(signedAddress(grant.uploadUrl), file, { headers: grant.requiredHeaders, timeout: 60000,
+    const address = signedAddress(grant.uploadUrl);
+    ownBackend = new URL(address).origin === new URL(backend).origin;
+    await axios.put(address, file, { headers: grant.requiredHeaders, timeout: 60000,
       onUploadProgress: (event) => onProgress(Math.min(99, Math.round(event.loaded * 100 / (event.total || file.size)))),
     });
   } catch (error) {
-    const payload = error.response?.data;
-    throw new Error(typeof payload?.code === "string" && /[À-ỹ]/u.test(payload.message ?? "") ? payload.message : "Không thể tải tệp vào kho, vui lòng thử lại");
+    throw new Error(ownBackend ? normalizeError(error).message : "Không thể tải tệp vào kho, vui lòng thử lại");
   }
 }
 

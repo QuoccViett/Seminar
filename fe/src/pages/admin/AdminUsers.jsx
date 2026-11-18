@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { Button, Form, Input, Modal, Select, Space, Table, Tag, Upload, message } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Form, Input, Modal, Select, Space, Table, Tag, Upload, message } from "antd";
 import { EditOutlined, LockOutlined, UnlockOutlined, KeyOutlined, UploadOutlined } from "@ant-design/icons";
 import { userService } from "../../services/userService";
 import { unitService } from "../../services/unitService";
 import PageHeader from "../../components/common/PageHeader";
 import styles from "./AdminUsers.module.css";
+import { applyFormError } from "../../services/formErrors";
 
 /** Hiển thị mật khẩu tạm đúng một lần và nêu rõ trạng thái chờ worker của VC06
  * Giá trị chỉ lấy từ phản hồi vừa tạo hoặc đặt lại, không được lưu vào state danh sách
@@ -21,20 +22,20 @@ function showTemporaryPassword(result) {
  * Trường không có lỗi riêng vẫn giữ dữ liệu để quản trị viên sửa mà không nhập lại
  */
 function showFormError(error, form) {
-  const fields = error.fieldErrors?.filter((item) => item.field && Array.isArray(item.messages)) ?? [];
-  if (fields.length) form.setFields(fields.map((item) => ({ name: item.field, errors: item.messages })));
-  message.error(error.message || "Không thể lưu tài khoản. Vui lòng thử lại.");
+  message.error(applyFormError(form, error, "Không thể lưu tài khoản. Vui lòng thử lại."));
 }
 
 /** Quản trị tài khoản bằng các API VC04 và hiển thị trạng thái cấp mật khẩu trung thực
- * Import Excel kéo thả được giữ chỗ cho VC07, không gọi endpoint chưa tồn tại
+ * Import Excel kéo thả gọi preview/confirm thật, lỗi từng dòng được giữ để sửa hoặc tải lại
  */
 export default function AdminUsers() {
   const [form] = Form.useForm();
   const role = Form.useWatch("role", form);
   const [users, setUsers] = useState([]);
   const [units, setUnits] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const loadVersion = useRef(0);
   const [saving, setSaving] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -51,18 +52,19 @@ export default function AdminUsers() {
   const [importConfirming, setImportConfirming] = useState(false);
 
   /** Tải tài khoản từ backend theo trang và từ khóa, không lọc cục bộ trên một trang
-   * Khi lỗi, giữ nguyên bảng cũ và báo người dùng để họ có thể thử lại
+   * Khi lỗi, giữ bảng cũ cùng cảnh báo cố định và nút thử lại để không nhầm lỗi mạng với danh sách rỗng
+   * Chỉ phản hồi của yêu cầu mới nhất được cập nhật bảng khi đổi trang hoặc tìm kiếm liên tiếp
    */
   async function load(nextPage = page, nextSize = pageSize, nextQ = q) {
-    setLoading(true);
+    const version = ++loadVersion.current;
+    setLoading(true); setLoadError("");
     try {
       const result = await userService.getUsers({ page: nextPage, pageSize: nextSize, q: nextQ });
-      setUsers(result.items ?? []);
-      setTotal(result.total ?? 0);
+      if (version === loadVersion.current) { setUsers(result.items ?? []); setTotal(result.total ?? 0); }
     } catch (error) {
-      message.error(error.message || "Không thể tải danh sách tài khoản.");
+      if (version === loadVersion.current) setLoadError(error.message || "Không thể tải danh sách tài khoản.");
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }
 
@@ -329,9 +331,10 @@ export default function AdminUsers() {
   ];
 
   return <div className={styles.pageContainer}>
-    {/* Thanh tìm kiếm dùng q trên backend và giữ chỗ Import kéo thả cho VC07 */}
+    {/* Tìm kiếm gọi q trên backend, Import kéo thả chỉ ghi sau bước xem trước và xác nhận */}
     <div className={styles.toolbar}><PageHeader title="Quản lý tài khoản" searchPlaceholder="Tìm tên đăng nhập, họ tên hoặc email" onSearch={search} onAdd={() => openForm()} addButtonText="Thêm tài khoản" /><Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>Import Excel</Button></div>
-    <div className={styles.tableContainer}><Table columns={columns} dataSource={users} rowKey="id" loading={loading} locale={{ emptyText: "Không có tài khoản phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} tài khoản` }} /></div>
+    {loadError && <Alert type="error" title={loadError} showIcon action={<Button onClick={() => load()}>Thử tải lại tài khoản</Button>} />}
+    <div className={styles.tableContainer}><Table columns={columns} dataSource={users} rowKey="id" loading={loading} locale={{ emptyText: loadError ? "Chưa tải được danh sách tài khoản" : "Không có tài khoản phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} tài khoản` }} /></div>
     {/* Form không gửi isActive hoặc mật khẩu cũ; backend quyết định allowlist cuối cùng */}
     <Modal title={editing ? "Sửa tài khoản" : "Thêm tài khoản"} open={open} confirmLoading={saving} okText="Lưu" cancelText="Hủy" onOk={() => form.submit()} onCancel={() => setOpen(false)}>
       <Form form={form} layout="vertical" onFinish={save}>

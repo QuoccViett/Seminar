@@ -1,10 +1,10 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { Spin } from "antd";
+import { Alert, Button, Spin } from "antd";
 
-// Trạm 1: Bắt buộc đăng nhập
+/** Xác nhận phiên với server trước khi mở trang, lỗi mạng có đường thử lại an toàn */
 export function RequireAuth() {
-  const { user, loading } = useAuth();
+  const { user, loading, restoreError, retryRestore } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -15,6 +15,7 @@ export function RequireAuth() {
     );
   }
 
+  if (restoreError) return <Alert type="error" title={restoreError} action={<Button onClick={retryRestore}>Thử kiểm tra lại phiên</Button>} />;
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }

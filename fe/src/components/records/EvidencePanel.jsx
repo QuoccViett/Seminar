@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Input, Modal, Popconfirm, Progress, Space, Tag, Typography, Upload } from "antd";
 import { cancelEvidenceUpload, confirmEvidences, deleteEvidence, readEvidenceBlob, requestEvidenceUploads, uploadEvidenceBytes } from "../../services/evidenceService";
 
+/** Chỉ cho mở link HTTP/HTTPS đã qua backend, dữ liệu cũ sai giao thức không trở thành link thực thi
+ * Không truy cập trang ngoài ở bước kiểm tra, URL lỗi chỉ hiển thị dưới dạng văn bản React
+ */
+function safeLink(value) {
+  try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? url.href : undefined; }
+  catch { return undefined; }
+}
+
 /** Giao diện minh chứng dùng chung UNIT và ADMIN, quyền thao tác lấy hoàn toàn từ server
  * Tệp xử lý tuần tự để tiến độ/lỗi độc lập và không tạo mười bản sao buffer cùng lúc
  * onBusyChange khóa nộp ở cha trong lúc upload/confirm, backend vẫn kiểm lại nếu deadline vừa qua
@@ -122,7 +130,7 @@ export default function EvidencePanel({ evaluationId, row, onReload = () => {}, 
   return <Space orientation="vertical" style={{ width: "100%" }}>
     {(row.evidences || []).map((item) => <Space key={item.id} wrap>
       <Tag>{item.round === "SUPPLEMENT" ? "Bổ sung" : "Tự chấm"}</Tag>
-      {item.kind === "LINK" ? <Typography.Link href={item.externalUrl} target="_blank" rel="noopener noreferrer">{item.description || item.externalUrl}</Typography.Link> : <>
+      {item.kind === "LINK" ? <Typography.Link href={safeLink(item.externalUrl)} target="_blank" rel="noopener noreferrer">{item.description || item.externalUrl}</Typography.Link> : <>
         <Typography.Text>{item.fileName}</Typography.Text>
         {["image/jpeg", "image/png", "application/pdf"].includes(item.mimeType) && <Button size="small" disabled={busy} onClick={() => open(item, true)}>Xem trước</Button>}
         <Button size="small" disabled={busy} onClick={() => open(item, false)}>Tải xuống</Button>

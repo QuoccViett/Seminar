@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { applyFormError } from "../../services/formErrors";
+import { allPages } from "../../services/pagination";
 import { 
   Card, Form, Input, InputNumber, DatePicker, Button, Tabs, message,
   Row, Col, Typography, Divider, Space, Table, Tag, Modal, Switch, Popconfirm, Select, Alert, ConfigProvider
@@ -56,6 +58,15 @@ function fromVietnamDatePicker(value) {
   return new Date(Date.UTC(value.year(), value.month(), value.date(), value.hour() - 7, value.minute(), value.second(), value.millisecond())).toISOString();
 }
 
+/** Giữ Enter trong bộ chọn lịch để xác nhận ngày giờ mà không gửi form đang chứa nó
+ * Sự kiện bàn phím đến từ RangePicker, chỉ chặn hành vi submit mặc định của trình duyệt
+ * Picker vẫn nhận phím để hoàn tất lựa chọn, Tab và nút lưu biểu mẫu tiếp tục hoạt động bình thường
+ * Tránh lưu kỳ với lịch null khi trạng thái khoảng ngày chưa kịp được picker xác nhận
+ */
+function keepPickerSelection(event) {
+  if (event.key === "Enter") event.preventDefault();
+}
+
 /** Quản lý kỳ, cây tiêu chí, ngưỡng và lệnh giai đoạn bằng API thật
  * Các cờ chỉnh sửa và đích chuyển giai đoạn lấy từ server, không dùng giờ máy cấp quyền
  * Lịch bổ sung ở đây chỉ xem trước phương án tạm, yêu cầu hồ sơ thuộc VC12
@@ -97,8 +108,8 @@ export default function AdminConfig() {
   const fetchPeriods = async () => {
     try {
       setLoadingPeriods(true);
-      const res = await evaluationPeriodService.getEvaluationPeriods();
-      setPeriodsList(res.items || []);
+      const items = await allPages((params) => evaluationPeriodService.getEvaluationPeriods(params));
+      setPeriodsList(items);
     } catch (error) {
       message.error(error.message || "Không thể tải danh sách kỳ đánh giá");
     } finally {
@@ -200,7 +211,7 @@ export default function AdminConfig() {
       await fetchCriteria(targetPeriodId);
 
     } catch (error) {
-      message.error(error.message || "Không thể lưu cấu hình kỳ đánh giá");
+      message.error(applyFormError(formPeriod, error, "Không thể lưu cấu hình kỳ đánh giá", { selfEvalStart: "selfEvalRange", selfEvalDeadline: "selfEvalRange" }));
     } finally {
       setLoadingPeriods(false);
     }
@@ -223,7 +234,7 @@ export default function AdminConfig() {
       formCriteria.resetFields();
       await fetchCriteria(currentPeriodId);
     } catch (error) {
-      message.error(error.message || "Không thể lưu tiêu chí");
+      message.error(applyFormError(formCriteria, error, "Không thể lưu tiêu chí"));
     }
   };
 
@@ -236,7 +247,7 @@ export default function AdminConfig() {
       await evaluationPeriodService.saveThresholds(currentPeriodId, thresholdPayload(values.thresholds));
       message.success("Đã lưu bốn ngưỡng xếp loại");
     } catch (error) {
-      message.error(error.message || "Không thể lưu ngưỡng xếp loại");
+      message.error(applyFormError(formThresholds, error, "Không thể lưu ngưỡng xếp loại"));
     }
   };
 
@@ -251,6 +262,7 @@ export default function AdminConfig() {
         Modal.info({
           title: "Chưa đủ điều kiện công bố",
           content: <ul>{check.checks.filter((item) => !item.passed).map((item) => <li key={item.code}>{item.message}</li>)}</ul>,
+          okText: "Đã hiểu",
         });
         return;
       }
@@ -420,7 +432,7 @@ export default function AdminConfig() {
         <Row gutter={32}>
           <Col span={10}>
             <Form.Item label="Thời gian mở/đóng tự chấm (giờ Việt Nam UTC+07:00)" name="selfEvalRange">
-              <DatePicker.RangePicker showTime={{ format: "HH:mm" }} format="DD/MM/YYYY HH:mm" size="large" placeholder={["Ngày giờ mở", "Ngày giờ kết thúc"]} style={{ width: "100%" }} />
+              <DatePicker.RangePicker showTime={{ format: "HH:mm" }} format="DD/MM/YYYY HH:mm" size="large" placeholder={["Ngày giờ mở", "Ngày giờ kết thúc"]} onKeyDown={keepPickerSelection} style={{ width: "100%" }} />
             </Form.Item>
           </Col>
           <Col span={14}>

@@ -7,6 +7,9 @@ import styles from "./ChangePasswordPage.module.css";
 
 const { Title } = Typography;
 
+/** Biểu mẫu đổi mật khẩu cho tài khoản hiện tại, hỗ trợ cả bắt buộc lần đầu và đổi chủ động
+ * Chính sách chi tiết do backend kiểm, FE chỉ kiểm sơ bộ độ dài và xác nhận để hỗ trợ nhập liệu
+ */
 export default function ChangePasswordPage() {
   const { changePassword, user } = useAuth();
   const navigate = useNavigate();
@@ -43,7 +46,8 @@ export default function ChangePasswordPage() {
       <Card className={styles.card}>
         <div className={styles.header}>
           <Title level={3}>Đổi Mật Khẩu</Title>
-          <p className={styles.subtitle}>Đây là lần đăng nhập đầu tiên, bạn cần đổi mật khẩu.</p>
+          <p className={styles.subtitle}>{user.mustChangePassword ? "Bạn cần đổi mật khẩu trước khi tiếp tục sử dụng hệ thống" : "Đổi mật khẩu cho tài khoản đang đăng nhập"}</p>
+          <p>Mật khẩu mới có ít nhất 8 ký tự, gồm chữ và số, khác tên đăng nhập và mật khẩu cũ, không dùng mật khẩu phổ biến hoặc 123456</p>
         </div>
 
         <Form form={form} name="change-password" onFinish={onFinish} size="large">

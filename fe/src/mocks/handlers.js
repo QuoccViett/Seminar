@@ -7,10 +7,9 @@ const evaluationPeriods = [
     id: "period-2026",
     name: "Thi đua công tác Đoàn năm 2026",
     year: 2026,
-    phase: "SELF_EVALUATION",
+    phase: "SELF_EVAL",
     selfEvalStart: "2026-10-01T00:00:00.000Z",
     selfEvalDeadline: "2026-11-01T23:59:59.000Z",
-    supplementHours: 48,
     maxTotalScore: 300,
   },
 ];
@@ -121,9 +120,11 @@ export const handlers = [
         { status: 400 }
       );
     }
-    if (!newPassword || [...newPassword].length < 8) {
+    // Mock phát triển chỉ kiểm cùng chính sách mật khẩu mới, không thay kiểm chứng bảo mật backend
+    // Mật khẩu demo được cấp lần đầu nhưng không hợp lệ cho lần đổi mật khẩu bắt buộc
+    if (!newPassword || [...newPassword].length < 8 || !/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword) || [record.password, username, "123456", "password123", "12345678", "admin123"].includes(newPassword)) {
       return HttpResponse.json(
-        { statusCode: 400, code: "VALIDATION_ERROR", message: "Dữ liệu không hợp lệ", details: [{ field: "newPassword", messages: ["Mật khẩu tối thiểu 8 ký tự"] }] },
+        { statusCode: 400, code: "VALIDATION_ERROR", message: "Dữ liệu không hợp lệ", details: [{ field: "newPassword", messages: ["Mật khẩu mới cần ít nhất 8 ký tự, có chữ và số, khác mật khẩu cũ, tên đăng nhập và mật khẩu phổ biến"] }] },
         { status: 400 }
       );
     }

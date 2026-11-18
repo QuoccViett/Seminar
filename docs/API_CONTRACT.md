@@ -29,6 +29,17 @@ type CurrentUser = {
 
 ### Phân trang danh sách
 
+VC16 giữ nguyên endpoint, schema và quyền backend hiện tại, không thêm quyền tải biên bản cho UNIT
+Frontend giữ nguyên object phân trang `{ items, page, pageSize, total }`; chỉ giải envelope `data` khi không có metadata phân trang ở cấp ngoài, trường hợp `{ data: [], meta: { page, pageSize, total } }` được chuyển thành object danh sách mà không mất metadata
+Request JSON thông thường và xoay vòng phiên chờ tối đa 30 giây để hỗ trợ kết nối chậm; lỗi quá hạn hiển thị tiếng Việt và giữ nháp, thời gian chờ không thay quyền hoặc deadline của backend
+HTTP Web Push dùng cùng adapter xác thực/lỗi của frontend; public key và lời mời onboarding dùng `authMode=public`, không gắn Bearer của phiên đang mở và lỗi lời mời không đăng xuất phiên đó; API browser service worker/PushManager và truyền bytes capability vẫn dùng cơ chế riêng phù hợp
+Upload capability không gắn JWT nghiệp vụ: lỗi từ origin backend được chuẩn hóa chung, lỗi từ origin provider ngoài chỉ dùng câu Việt cố định và không phản chiếu payload nhà cung cấp
+Lỗi frontend giữ `status`, `code`, `message`, `fieldErrors` tương ứng `details`; mọi câu không hợp lệ được thay bằng tiếng Việt an toàn, không hiển thị raw SQL/provider hoặc đối tượng Axios
+`403 PASSWORD_CHANGE_REQUIRED` chuyển về đổi mật khẩu, `401` chỉ thử xoay vòng một lần rồi yêu cầu đăng nhập lại, các `403` khác hiển thị đúng lỗi quyền tại thao tác
+Kỳ đang chọn dùng `periodId` trên URL và bộ nhớ phiên; URL được ưu tiên, lựa chọn không tồn tại được thay bằng kỳ API cho phép xem, backend luôn kiểm lại UUID và phạm vi
+Nháp điểm/diễn giải chỉ giữ trong bộ nhớ theo phiên người dùng và hồ sơ khi chuyển trang; không cache cây tiêu chí/quyền/điểm Admin, xóa nháp khi đăng xuất, đổi mật khẩu hoặc mất phiên và cảnh báo trước khi đóng trang có nháp
+Countdown dùng `serverTime` và thời gian trôi đơn điệu, tại mốc mở/hết hạn hoặc khi quay lại tab phải tải lại API; countdown không cấp quyền lưu/nộp
+
 Query params: `page` mặc định `1`; `pageSize` mặc định `20`, tối đa `100`.
 
 ```json

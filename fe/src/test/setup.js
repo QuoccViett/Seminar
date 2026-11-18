@@ -1,5 +1,19 @@
 import "@testing-library/jest-dom/vitest";
 import { afterAll, afterEach, beforeAll } from "vitest";
+import { configure } from "@testing-library/react";
+
+// Chờ trạng thái UI tối đa 15 giây khi máy demo chịu tải, timeout vận chuyển của ứng dụng được cấu hình riêng
+// Không thay assertion hoặc mock response thành công, trạng thái sai vẫn phải thất bại
+configure({ asyncUtilTimeout: 15000 });
+
+// Ngữ cảnh VM của JSDOM thiếu một số Web Streams mà MSW dùng khi khởi tạo module SSE
+// Dùng triển khai thật của Node để giữ đúng hợp đồng stream, không thay response hoặc nghiệp vụ API
+if (typeof globalThis.WritableStream === "undefined" || typeof globalThis.TransformStream === "undefined") {
+  const nodeStreams = await import("node:stream/web");
+  for (const name of ["ReadableStream", "WritableStream", "TransformStream"]) {
+    if (typeof globalThis[name] === "undefined") globalThis[name] = nodeStreams[name];
+  }
+}
 
 // JSDOM không đo bố cục, adapter chỉ lấp API observer cho thành phần Ant Design
 // Không giả dữ liệu hoặc quyền, mỗi môi trường test có đối tượng riêng và được runner giải phóng
