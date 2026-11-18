@@ -496,6 +496,8 @@ Mọi chuyển trạng thái phải cập nhật hồ sơ, `statusHistories` và
 
 ## 6. Phản hồi, lịch sử, thông báo và audit
 
+VC13: giao ước chi tiết tại [VC13_FEEDBACK_AUDIT_CONTRACT.md](./VC13_FEEDBACK_AUDIT_CONTRACT.md), có ưu tiên với các mô tả feedback/history/audit rút gọn bên dưới
+
 - `POST /evaluations/:evaluationId/feedback` request:
 
   ```json

@@ -6,6 +6,7 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { NOTIFICATION_PROVIDERS, type NotificationProvider, type NotificationSendResult } from "./notification-provider.js";
 import type { NotificationQueryDto } from "./dto/notification-query.dto.js";
 import type { NotificationPreferencesDto } from "./dto/notification-preferences.dto.js";
+import { AuditService } from "../../common/services/audit.service.js";
 
 type Channel = "WEB_PUSH" | "EMAIL" | "ZALO_ZNS";
 const CHANNELS: Channel[] = ["WEB_PUSH", "EMAIL", "ZALO_ZNS"];
@@ -40,10 +41,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private processing = false;
 
+  /** Tiêm audit để mọi thông báo xếp hàng và kết quả worker đều có dấu vết hệ thống
+   * Provider vẫn chỉ chạy ngoài giao dịch, không ghi nội dung hay địa chỉ người nhận vào audit
+   */
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ConfigService) private readonly config: ConfigService,
     @Optional() @Inject(NOTIFICATION_PROVIDERS) private readonly providers: NotificationProvider[] = [],
+    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   /** Khởi động quét outbox đã lưu để việc đang chờ vẫn được nhận sau khi tiến trình khởi động lại
@@ -79,7 +84,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       expiresAt: input.expiresAt ?? null,
       deliveries: { create: channels.map((channel) => ({ id: randomUUID(), channel, status: "PENDING", createdAt: now, updatedAt: now })) },
     };
-    if (!input.dedupeKey) return tx.notification.create({ data: create, include: { deliveries: true } });
+    if (!input.dedupeKey) {
+      const saved = await tx.notification.create({ data: create, include: { deliveries: true } });
+      await this.recordQueued(tx, saved);
+      return saved;
+    }
     // INSERT ON CONFLICT giải quyết đồng thời hai transaction cùng khóa mà không làm transaction thua cuộc bị lỗi unique
     // Chỉ transaction tạo bản ghi mới thêm delivery; lần gọi lại đọc bản cũ nên không đổi nội dung hoặc xếp hàng lần nữa
     const inserted = await tx.$queryRaw<{ id: string }[]>`
@@ -90,7 +99,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (inserted.length) {
       await tx.notificationDelivery.createMany({ data: channels.map((channel) => ({ id: randomUUID(), notificationId: create.id, channel, status: "PENDING", createdAt: now, updatedAt: now })) });
     }
-    return tx.notification.findUniqueOrThrow({ where: { userId_dedupeKey: { userId: input.userId, dedupeKey: input.dedupeKey } }, include: { deliveries: true } });
+    const saved = await tx.notification.findUniqueOrThrow({ where: { userId_dedupeKey: { userId: input.userId, dedupeKey: input.dedupeKey } }, include: { deliveries: true } });
+    if (inserted.length) await this.recordQueued(tx, saved);
+    return saved;
+  }
+
+  /** Ghi đúng một audit cho lần tạo hộp thư, dedupe retry không tạo dấu vết gửi giả
+   * Tác giả hệ thống là null, chỉ lưu ID tham chiếu và kênh để tránh lộ nội dung hồ sơ
+   */
+  private recordQueued(tx: Prisma.TransactionClient, saved: NotificationWithDeliveries) {
+    return this.audit.record({ actorId: null, action: "NOTIFICATION_QUEUED", entity: "Notification", entityId: saved.id, after: { userId: saved.userId, type: saved.type, refType: saved.refType, refId: saved.refId, channels: saved.deliveries.map((item) => item.channel) } }, tx);
   }
 
   /** Liệt kê đúng hộp thư của user hiện tại, chọn trường công khai và giữ thứ tự ổn định giữa các trang */
@@ -222,6 +240,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   /** Hoàn tất có điều kiện theo token để worker cũ không ghi đè kết quả sau khi lease bị nhận lại
    * Lỗi tạm thử tối đa năm lần với backoff lũy thừa; lỗi vĩnh viễn được đánh dấu SKIPPED
+   * Cập nhật delivery và audit cùng giao dịch, chỉ token thắng mới ghi dấu vết không có raw provider
    */
   async finishClaim(claim: Claimed, previousAttempts: number, result: NotificationSendResult): Promise<boolean> {
     const attempts = previousAttempts + 1;
@@ -240,8 +259,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const reasonCode = result.kind === "sent" ? null : result.reasonCode in safeMessages ? result.reasonCode : "PROVIDER_ERROR";
     const message = reasonCode ? safeMessages[reasonCode] : null;
     const nextAttemptAt = retry ? new Date(Date.now() + Math.min(60 * 60, 30 * 2 ** (attempts - 1)) * 1000) : null;
-    const updated = await this.prisma.notificationDelivery.updateMany({ where: { id: claim.id, claimToken: claim.claim_token, status: "PENDING" }, data: { status, attemptCount: attempts, nextAttemptAt, claimedAt: null, leaseUntil: null, claimToken: null, reasonCode, lastError: message, providerMessageId: result.kind === "sent" ? result.providerMessageId?.slice(0, 255) ?? null : null, sentAt: result.kind === "sent" ? new Date() : null, updatedAt: new Date() } });
-    return updated.count === 1;
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.notificationDelivery.updateMany({ where: { id: claim.id, claimToken: claim.claim_token, status: "PENDING" }, data: { status, attemptCount: attempts, nextAttemptAt, claimedAt: null, leaseUntil: null, claimToken: null, reasonCode, lastError: message, providerMessageId: result.kind === "sent" ? result.providerMessageId?.slice(0, 255) ?? null : null, sentAt: result.kind === "sent" ? new Date() : null, updatedAt: new Date() } });
+      if (updated.count === 1) await this.audit.record({ actorId: null, action: "NOTIFICATION_DELIVERY", entity: "NotificationDelivery", entityId: claim.id, after: { status, attemptCount: attempts, reasonCode } }, tx);
+      return updated.count === 1;
+    });
   }
 
   /** Rút tối đa một lô nhỏ mỗi nhịp để worker không giữ việc quá lâu trong RAM

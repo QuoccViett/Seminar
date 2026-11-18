@@ -6,6 +6,8 @@ import { getEvaluation, getScoreSummary, listEvaluations, saveSelfScores, submit
 
 vi.mock("../../services/evaluationPeriodService", () => ({ evaluationPeriodService: { getEvaluationPeriods: vi.fn() } }));
 vi.mock("../../services/evaluationService", () => ({ createEvaluation: vi.fn(), getEvaluation: vi.fn(), getScoreSummary: vi.fn(), listEvaluations: vi.fn(), saveSelfScores: vi.fn(), submitEvaluation: vi.fn() }));
+// Cô lập trao đổi để test trang chỉ kiểm quyền tự chấm, FeedbackPanel có bộ test và nghiệm thu HTTP riêng
+vi.mock("../../components/records/FeedbackPanel", () => ({ default: () => null }));
 
 /** JSDOM không có ResizeObserver, adapter rỗng chỉ thay API đo bố cục trình duyệt
  * Không giả nghiệp vụ hoặc quyền, ba phương thức nhận/bỏ theo dõi mà không phát sự kiện kích thước

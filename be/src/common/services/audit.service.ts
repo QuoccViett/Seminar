@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -18,18 +18,19 @@ export type AuditPayload = {
  * Giữ cấu trúc mảng và đối tượng để phục vụ truy vết, thay giá trị nhạy cảm bằng nhãn cố định
  * Giá trị null và nguyên thủy được giữ nguyên, không sửa đối tượng đầu vào của nghiệp vụ
  */
-function redactAudit(value: Prisma.InputJsonValue): Prisma.InputJsonValue {
+export function redactAudit(value: Prisma.InputJsonValue): Prisma.InputJsonValue {
   if (Array.isArray(value)) return value.map((item) => item === null ? null : redactAudit(item));
   if (typeof value !== "object" || value === null) return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
-    key, /password|token|secret|authorization|credential|key|ciphertext|cookie|p256dh|^auth$/i.test(key)
+    key, /password|hash|token|secret|authorization|credential|key|ciphertext|nonce|^tag$|cookie|p256dh|^auth$/i.test(key)
       ? "[ĐÃ CHE]" : item === null || item === undefined ? null : redactAudit(item),
   ]));
 }
 
 @Injectable()
 export class AuditService {
-  constructor(private readonly prisma: PrismaService, private readonly clock: ClockService) {}
+  /** Tiêm DB và đồng hồ tường minh để audit dùng được khi chạy runtime ESM bằng tsx */
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(ClockService) private readonly clock: ClockService) {}
 
   /** Ghi một bản audit bằng giao dịch được cung cấp hoặc kết nối mặc định
    * Snapshot được che thông tin xác thực ở mọi cấp trước khi lưu, kể cả trong mảng

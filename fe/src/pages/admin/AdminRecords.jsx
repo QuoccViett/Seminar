@@ -5,6 +5,7 @@ import { evaluationPeriodService } from "../../services/evaluationPeriodService"
 import { finalizeEvaluations, getReview, getScoreSummary, listEvaluations, previewFinalize } from "../../services/evaluationService";
 import { statusLabels } from "../../components/records/SelfEvaluationCard";
 import ReviewCard from "../../components/records/ReviewCard";
+import FeedbackPanel from "../../components/records/FeedbackPanel";
 
 const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_REVIEW: "Thẩm định lần đầu", SUPPLEMENT: "Bổ sung", FINAL_REVIEW: "Thẩm định cuối", CLOSED: "Đã đóng" };
 
@@ -126,6 +127,7 @@ export default function AdminRecords() {
       { title: "Chi tiết", render: (_, row) => <Button disabled={busy} onClick={() => inspect(row.id)}>Thẩm định {row.unit.code}</Button> },
     ]} />
     {detail && <ReviewCard key={detail.record.id} record={detail.record} summary={detail.summary} disconnected={detailError || actionBusy} onReload={afterWrite} onBusyChange={(value) => { sending.current = value; setRecordBusy(value); }} onFinalize={openFinalize} />}
+    {detail && <FeedbackPanel key={`feedback-${detail.record.id}`} evaluationId={detail.record.id} status={detail.record.status} />}
     <Modal title={finalize?.done ? "Kết quả chốt từng hồ sơ" : "Xem trước kết quả chốt"} open={Boolean(finalize)} width={900} onCancel={() => { if (!actionBusy) setFinalize(null); }} footer={<Space><Button disabled={actionBusy} onClick={() => setFinalize(null)}>{finalize?.done ? "Đóng" : "Quay lại"}</Button>{!finalize?.done && <Button danger type="primary" loading={actionBusy} disabled={!finalize?.results.some((item) => item.ok && item.data.canFinalize)} onClick={confirmFinalize}>Xác nhận chốt ({finalize?.ids.length})</Button>}</Space>}>
       <Typography.Paragraph>Mỗi hồ sơ có kết quả riêng; máy chủ kiểm lại điều kiện tại lúc chốt</Typography.Paragraph>
       <Table rowKey="evaluationId" pagination={false} dataSource={finalize?.results ?? []} columns={[

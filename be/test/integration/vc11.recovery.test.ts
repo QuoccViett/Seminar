@@ -1,3 +1,5 @@
+import { ClockService } from "../../src/common/services/clock.service.js";
+import { AuditService } from "../../src/common/services/audit.service.js";
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -21,7 +23,8 @@ test("VC11 nhận lại hai lease và khóa kỳ sau khi tiến trình dừng qu
   const config = new ConfigService({ DATABASE_URL: url, CREDENTIALS_ENCRYPTION_KEY: key, EMAIL_ENABLED: true, WEB_PUSH_ENABLED: false, ZALO_ZNS_ENABLED: false });
   const db = new PrismaService(config);
   const fake = { channel: "EMAIL" as const, resolveRecipient: async () => true, send: async () => ({ kind: "sent" as const }) };
-  const notifications = new NotificationsService(db, config, [fake]);
+  // Dùng audit thật cùng DB để worker độc lập cũng kiểm giao dịch dấu vết hệ thống
+  const notifications = new NotificationsService(db, config, [fake], new AuditService(db, new ClockService()));
   const credentials = new CredentialDispatchService(db, config, fake as never, fake as never, {} as never);
   const env = { ...process.env, VC11_TEST_DATABASE_URL: url, VC11_TEST_KEY: key };
 

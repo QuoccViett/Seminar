@@ -1,3 +1,4 @@
+import { ClockService } from "../../dist/common/services/clock.service.js";
 import "reflect-metadata";
 import process from "node:process";
 import { URL } from "node:url";
@@ -15,7 +16,8 @@ if (!/^\/vc11_recovery_test(?:_[a-z0-9]+)?$/.test(new URL(process.env.VC11_TEST_
 const config = new ConfigService({ DATABASE_URL: process.env.VC11_TEST_DATABASE_URL, CREDENTIALS_ENCRYPTION_KEY: process.env.VC11_TEST_KEY, EMAIL_ENABLED: true, WEB_PUSH_ENABLED: false, ZALO_ZNS_ENABLED: false });
 const prisma = new PrismaService(config);
 const fake = { channel: "EMAIL", resolveRecipient: async () => true, send: async () => ({ kind: "sent" }) };
-const notifications = new NotificationsService(prisma, config, [fake]);
+// Dùng audit thật để tiến trình khôi phục giữ dấu vết worker cùng transaction
+const notifications = new NotificationsService(prisma, config, [fake], new AuditService(prisma, new ClockService()));
 const credentials = new CredentialDispatchService(prisma, config, fake, fake, {});
 try {
   await prisma.$connect();
@@ -30,7 +32,7 @@ try {
     process.stdout.write("Đã xử lý delivery kiểm thử");
   } else if (process.env.VC11_ACTION === "period") {
     // Khi tiến trình khởi động sau deadline, chạy lại kỳ đã lưu bằng use-case và giờ database
-    const audit = new AuditService(prisma, { now: () => new Date() });
+    const audit = new AuditService(prisma, new ClockService());
     const state = new EvaluationStateService(audit, notifications);
     const scheduler = new SchedulerService(prisma, audit, state, notifications);
     await scheduler.processPeriod(process.env.VC11_PERIOD_ID);

@@ -7,9 +7,11 @@ import { EvaluationsController } from "./evaluations.controller.js";
 import { ReviewController } from "./review.controller.js";
 import { ReviewService } from "./review.service.js";
 import { EvaluationsService } from "./evaluations.service.js";
+import { FeedbackController } from "./feedback.controller.js";
+import { FeedbackService } from "./feedback.service.js";
 
-/** Đăng ký lát hồ sơ theo cấu trúc Auth, dùng use-case trạng thái chung cho consumer sau
- * Không tạo storage hoặc provider mới vì upload và lịch job thuộc VC10/VC11
+/** Đăng ký hồ sơ, thẩm định, trao đổi và lịch sử theo cấu trúc Auth
+ * Dùng chung trạng thái, audit và hộp thư để phản hồi không tự tạo cơ chế quyền hoặc provider riêng
  */
-@Module({ imports: [AuthModule, EvaluationStateModule, NotificationsModule, EvaluationPeriodsModule], controllers: [EvaluationsController, ReviewController], providers: [EvaluationsService, ReviewService], exports: [EvaluationsService] })
+@Module({ imports: [AuthModule, EvaluationStateModule, NotificationsModule, EvaluationPeriodsModule], controllers: [EvaluationsController, ReviewController, FeedbackController], providers: [EvaluationsService, ReviewService, FeedbackService], exports: [EvaluationsService] })
 export class EvaluationsModule {}

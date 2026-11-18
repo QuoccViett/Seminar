@@ -133,7 +133,7 @@ Batch trả kết quả từng tệp, metadata không chứa storagePath; chưa 
 ### Phản hồi (`/evaluations/:evaluationId/feedback`)
 
 - `GET /evaluations/:evaluationId/feedback` — ADMIN và UNIT sở hữu hồ sơ.
-- `POST /evaluations/:evaluationId/feedback` — ADMIN/UNIT theo quy trình. Nhận `type`, `content`; `author_id` lấy từ token. Các type trong SQL: `SUPPLEMENT_REQUEST`, `EXPLANATION_REQUEST`, `GENERAL`, `UNIT_REPLY`.
+- `POST /evaluations/:evaluationId/feedback` — ADMIN chỉ GENERAL/EXPLANATION_REQUEST; UNIT sở hữu chỉ UNIT_REPLY, `authorId` lấy từ phiên. SUPPLEMENT_REQUEST chỉ do use-case VC12 sinh. Xem giới hạn nội dung/chống spam/khóa sau chốt tại [contract VC13](./VC13_FEEDBACK_AUDIT_CONTRACT.md).
 - `DELETE /evaluation-feedbacks/:feedbackId` — Không có trong bản đầu; bảng chưa có soft-delete và phản hồi cần giữ lịch sử. Chỉ bổ sung khi có quy định chỉnh/xóa rõ ràng.
 
 ### Lịch sử (`/evaluations/:evaluationId/status-history`)
@@ -157,7 +157,8 @@ Batch trả kết quả từng tệp, metadata không chứa storagePath; chưa 
 
 ### Audit log (`/admin/audit-logs`)
 
-- `GET /admin/audit-logs` — ADMIN. Lọc theo `actor_id`, `entity`, `entity_id`, khoảng thời gian; phân trang.
+- `GET /admin/audit-logs` — ADMIN. Lọc `actorId`, `entity`, `entityId`, `action`, `from`, `to`; actorId=SYSTEM chọn job. Phân trang `items/page/pageSize/total`, sắp `createdAt DESC,id DESC`.
+- `GET /admin/audit-logs/:id` — ADMIN đọc chi tiết before/after đã che bí mật, không có API ghi/sửa/xóa audit.
 - Backend ghi `audit_logs` cho đăng nhập/quản trị, thay đổi cấu hình, chấm/sửa điểm, bổ sung và chốt điểm; ghi actor và before/after, không ghi mật khẩu/token/file nhạy cảm.
 - Không cung cấp API sửa/xóa audit log.
 

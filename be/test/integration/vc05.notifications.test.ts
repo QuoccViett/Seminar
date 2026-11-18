@@ -1,3 +1,5 @@
+import { ClockService } from "../../src/common/services/clock.service.js";
+import { AuditService } from "../../src/common/services/audit.service.js";
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -109,7 +111,8 @@ test("VC05 hộp thư và outbox trên PostgreSQL thật", async () => {
       { channel: "WEB_PUSH", resolveRecipient: async () => true, send: async () => ({ kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Chưa có thiết bị nhận thông báo." }) },
       { channel: "EMAIL", resolveRecipient: async () => true, send: async () => ({ kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Chưa có email nhận thông báo." }) },
     ];
-    const worker = new NotificationsService(prisma, app.get(ConfigService), fake);
+    // Dùng audit thật cùng DB để worker độc lập cũng kiểm giao dịch dấu vết hệ thống
+    const worker = new NotificationsService(prisma, app.get(ConfigService), fake, new AuditService(prisma, new ClockService()));
     await worker.processClaim(claimB);
     const statuses = await prisma.notificationDelivery.findMany({ where: { notificationId: first.id }, select: { channel: true, status: true, lastError: true } });
     assert.ok(statuses.some((item) => item.status === "SENT"));
@@ -119,7 +122,7 @@ test("VC05 hộp thư và outbox trên PostgreSQL thật", async () => {
     // Provider giả thành công đi qua resolveRecipient và send thật của worker, không chỉ cập nhật DB trực tiếp
     const sent = await prisma.$transaction((tx) => liveService.notifyUser(tx, { userId: secondId, type: "TEST", title: "Thử gửi", body: "Nội dung gửi", channels: ["WEB_PUSH"] }));
     let calls = 0;
-    const successful = new NotificationsService(prisma, app.get(ConfigService), [{ channel: "WEB_PUSH", resolveRecipient: async () => true, send: async () => { calls += 1; return { kind: "sent", providerMessageId: "push-test" }; } }]);
+    const successful = new NotificationsService(prisma, app.get(ConfigService), [{ channel: "WEB_PUSH", resolveRecipient: async () => true, send: async () => { calls += 1; return { kind: "sent", providerMessageId: "push-test" }; } }], new AuditService(prisma, new ClockService()));
     const sendClaim = await successful.claimOne();
     assert.equal(sendClaim?.id, sent.deliveries[0].id);
     await successful.processClaim(sendClaim!);

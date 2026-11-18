@@ -1,35 +1,43 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsOptional, IsString, IsUUID, Max, Min } from "class-validator";
-import { Type } from "class-transformer";
+import { IsDateString, IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { TimelineQueryDto } from "../../evaluations/dto/feedback.dto.js";
 
-export class QueryAuditLogDto {
-  @ApiPropertyOptional({ example: 1, minimum: 1, default: 1 })
+/** Kiểm bộ lọc audit trước DB, SYSTEM là định danh ổn định cho actor null
+ * Dùng cùng pagination với timeline, ngày có Z hoặc offset để tránh lệch múi giờ
+ */
+export class QueryAuditLogDto extends TimelineQueryDto {
+  @ApiPropertyOptional({ example: "SYSTEM" })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt({ message: "Trang phải là số nguyên" })
-  @Min(1, { message: "Trang phải lớn hơn 0" })
-  page?: number;
+  @Matches(/^(?:SYSTEM|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i, { message: "Người thực hiện phải là UUID hợp lệ hoặc SYSTEM" })
+  actorId?: string;
 
-  @ApiPropertyOptional({ example: 20, minimum: 1, maximum: 100, default: 20 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt({ message: "Số dòng phải là số nguyên" })
-  @Min(1, { message: "Số dòng tối thiểu là 1" })
-  @Max(100, { message: "Số dòng tối đa là 100" })
-  limit?: number;
-
-  @ApiPropertyOptional({ example: "EvaluationPeriod" })
+  @ApiPropertyOptional({ example: "CriterionScore" })
   @IsOptional()
   @IsString({ message: "Loại đối tượng phải là chuỗi" })
+  @MaxLength(100, { message: "Loại đối tượng tối đa 100 ký tự" })
   entity?: string;
 
-  @ApiPropertyOptional({ example: "UPDATE" })
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString({ message: "Mã đối tượng phải là chuỗi" })
+  @MaxLength(255, { message: "Mã đối tượng tối đa 255 ký tự" })
+  entityId?: string;
+
+  @ApiPropertyOptional({ example: "REVIEW_SCORE" })
   @IsOptional()
   @IsString({ message: "Hành động phải là chuỗi" })
+  @MaxLength(100, { message: "Hành động tối đa 100 ký tự" })
   action?: string;
 
-  @ApiPropertyOptional({ format: "uuid" })
+  @ApiPropertyOptional({ format: "date-time" })
   @IsOptional()
-  @IsUUID("4", { message: "Mã người thực hiện không hợp lệ" })
-  actorId?: string;
+  @IsDateString({ strict: true }, { message: "Thời gian bắt đầu không hợp lệ" })
+  @Matches(/(?:Z|[+-]\d{2}:\d{2})$/i, { message: "Thời gian bắt đầu phải có múi giờ" })
+  from?: string;
+
+  @ApiPropertyOptional({ format: "date-time" })
+  @IsOptional()
+  @IsDateString({ strict: true }, { message: "Thời gian kết thúc không hợp lệ" })
+  @Matches(/(?:Z|[+-]\d{2}:\d{2})$/i, { message: "Thời gian kết thúc phải có múi giờ" })
+  to?: string;
 }
