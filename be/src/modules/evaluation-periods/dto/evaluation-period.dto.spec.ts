@@ -11,7 +11,10 @@ import { UpdateEvaluationPeriodDto } from "./update-evaluation-period.dto.js";
  */
 async function validationErrors(type: typeof CreateEvaluationPeriodDto | typeof UpdateEvaluationPeriodDto, payload: Record<string, unknown>) {
   const baseline = type === CreateEvaluationPeriodDto ? { year: 2026, name: "Kỳ kiểm thử", ...payload } : payload;
-  return validate(plainToInstance(type, baseline), { whitelist: true, forbidNonWhitelisted: true });
+  const instance = type === CreateEvaluationPeriodDto
+    ? plainToInstance(CreateEvaluationPeriodDto, baseline)
+    : plainToInstance(UpdateEvaluationPeriodDto, baseline);
+  return validate(instance, { whitelist: true, forbidNonWhitelisted: true });
 }
 
 /** Bảo đảm API từ chối ngày giờ không có offset để không phụ thuộc múi giờ máy chạy BE

@@ -51,7 +51,7 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
    */
   async function request(method: string, path: string, token?: string, body?: unknown) {
     const result = await fetch(`${base}/api/v1/${path}`, { method, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    return { status: result.status, body: await result.json() as { accessToken: string; id: string; code: string; criteriaVisible: boolean; selfEvalState: string; [index: number]: { name: string } } };
+    return { status: result.status, body: await result.json() as { accessToken: string; id: string; code: string; year: number; criteriaVisible: boolean; selfEvalState: string; supplementDeadline: string; [index: number]: { name: string } } };
   }
 
   try {
@@ -60,7 +60,7 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
     const adminId = randomUUID();
     const unitUserId = randomUUID();
     const suffix = randomUUID().slice(0, 8);
-    const password = "MatkhauVC08Test9";
+    const password = randomUUID();
     const passwordHash = await bcrypt.hash(password, 10);
     await prisma.unit.create({ data: { id: unitId, code: `VC08-${suffix}`, name: "Đơn vị kiểm thử", isActive: true, createdAt: now, updatedAt: now } });
     await prisma.user.createMany({ data: [

@@ -71,23 +71,25 @@ test("UNIT chỉ thấy cấu hình khi kỳ đã công bố và giờ server đ
   const { service, period } = makeService();
   await assert.rejects(service.findOne(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" }), (error: unknown) => response(error).getStatus() === 404);
   await assert.rejects(service.getThresholds(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" }), (error: unknown) => response(error).getStatus() === 404);
-  period.publishedAt = new Date("2026-11-17T00:00:00.000Z");
-  period.selfEvalStart = new Date(now.getTime() + 1);
-  const result = await service.findOne(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" });
+  (period as { publishedAt: Date | null }).publishedAt = new Date("2026-11-17T00:00:00.000Z");
+  (period as { selfEvalStart: Date | null }).selfEvalStart = new Date(now.getTime() + 1);
+  const result = await service.findOne(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" }) as unknown as {
+    ratingThresholds: unknown[]; criteria: unknown[]; criteriaVisible: boolean; selfEvalState: string; serverTime: string; maxTotalScore?: number;
+  };
   assert.deepEqual(result.ratingThresholds, []);
   assert.deepEqual(result.criteria, []);
   assert.equal(result.criteriaVisible, false);
   assert.equal(result.selfEvalState, "NOT_OPEN_YET");
   assert.equal(result.serverTime, now.toISOString());
   assert.equal(result.maxTotalScore, undefined);
-  period.selfEvalStart = new Date(now);
-  const visible = await service.findOne(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" });
+  (period as { selfEvalStart: Date | null }).selfEvalStart = new Date(now);
+  const visible = await service.findOne(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" }) as unknown as typeof result;
   assert.equal(visible.criteria.length, 1);
   assert.equal(visible.ratingThresholds.length, 4);
   assert.equal(visible.criteriaVisible, true);
   assert.equal(visible.selfEvalState, "OPEN");
   period.selfEvalDeadline = now;
-  const afterDeadline = await service.findOne(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" });
+  const afterDeadline = await service.findOne(periodId, { id: "unit", role: "UNIT", unitId: "unit-1" }) as unknown as typeof result;
   assert.equal(afterDeadline.criteriaVisible, true);
   assert.equal(afterDeadline.selfEvalState, "CLOSED");
 });
@@ -146,7 +148,7 @@ test("công bố tự cấp dấu thời gian theo server sau khi đủ cấu h�
  */
 test("đổi lịch đã công bố cần lý do và tạo hộp thư nội bộ trong transaction", async () => {
   const { service, period, audits } = makeService();
-  period.publishedAt = new Date("2026-11-17T03:00:00.000Z");
+  (period as { publishedAt: Date | null }).publishedAt = new Date("2026-11-17T03:00:00.000Z");
   period.selfEvalStart = new Date("2026-11-19T03:00:00.000Z");
   period.selfEvalDeadline = new Date("2026-11-21T03:00:00.000Z");
   const result = await service.update(periodId, {
@@ -156,7 +158,7 @@ test("đổi lịch đã công bố cần lý do và tạo hộp thư nội bộ
   assert.equal(result.selfEvalDeadline?.toISOString(), "2026-11-22T03:00:00.000Z");
   assert.equal(audits.some((entry) => entry.action === "UPDATE"), true);
   const notification = audits.find((entry) => entry.action === "NOTIFY");
-  assert.equal(notification?.channels?.length, 0);
+  assert.equal((notification?.channels as unknown[] | undefined)?.length, 0);
   assert.match(String(notification?.body), /giờ Việt Nam/u);
 });
 

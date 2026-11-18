@@ -11,7 +11,7 @@ import type { PrismaService as PrismaServiceType } from "../../src/prisma/prisma
 type CriterionInput = { code: string; name: string; maxScore: number; sortOrder: number; parentCode: string | null };
 type CriterionNode = { id: string; code: string; name: string; maxScore: number | string; children: CriterionNode[] };
 type ApiResult = {
-  id: string; accessToken: string; code: string; criteriaVisible: boolean; maxTotalScore?: number;
+  id: string; accessToken: string; code: string; criteriaVisible: boolean; year: number; selfEvalState: string; maxTotalScore?: number;
   canPublish: boolean; checks: Array<{ code: string; passed: boolean }>;
 };
 
@@ -37,7 +37,7 @@ async function readCriteria(path: string) {
   try { bytes = await readFile(path); }
   catch { throw new Error("Không thể đọc file XLSX tiêu chí đã chỉ định"); }
   const workbook = new ExcelJS.Workbook();
-  try { await workbook.xlsx.load(bytes); }
+  try { await workbook.xlsx.load(bytes.buffer as unknown as import("exceljs").Buffer); }
   catch { throw new Error("File tiêu chí không phải workbook XLSX hợp lệ"); }
   assert.equal(workbook.worksheets.length, 3, "Mẫu kiểm thử phải có đúng ba sheet đã đối chiếu");
   const sheet = workbook.worksheets[0]!;
@@ -131,7 +131,7 @@ test("VC08 đối chiếu tiêu chí từ workbook thật và chặn công bố 
     const now = new Date();
     const unitId = randomUUID();
     const adminId = randomUUID();
-    const password = "MatkhauVC08Test9";
+    const password = randomUUID();
     const passwordHash = await bcrypt.hash(password, 10);
     await prisma.unit.create({ data: { id: unitId, code: `VC08-XLSX-${suffix}`, name: "Đơn vị kiểm thử workbook", isActive: true, createdAt: now, updatedAt: now } });
     await prisma.user.createMany({ data: [
