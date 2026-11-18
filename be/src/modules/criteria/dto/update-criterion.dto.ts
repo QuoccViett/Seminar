@@ -1,12 +1,11 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { IsBoolean, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from "class-validator";
 
+/** Chỉ nhận nội dung có thể sửa của một tiêu chí thuộc kỳ đang thiết lập
+ * Không nhận periodId để ngăn di chuyển tiêu chí qua kỳ và không nhận dấu quyền từ FE
+ * Service từ chối mọi chỉnh sửa sau công bố để giữ nguyên căn cứ chấm điểm
+ */
 export class UpdateCriterionDto {
-  @ApiPropertyOptional({ format: "uuid" })
-  @IsOptional()
-  @IsUUID("4", { message: "Mã đợt đánh giá không hợp lệ" })
-  periodId?: string;
-
   @ApiPropertyOptional({ format: "uuid", nullable: true })
   @IsOptional()
   @IsUUID("4", { message: "Mã tiêu chí cha không hợp lệ" })

@@ -11,10 +11,10 @@ import AdminConfig from "../pages/admin/AdminConfig";
 import AdminLayout from "../layouts/AdminLayout";
 import NotificationInbox from "../pages/NotificationInbox";
 import PushOnboardingPage from "../pages/auth/PushOnboardingPage";
+import UnitRecords from "../pages/unit/UnitRecords";
 
 // Tạm thời tạo các trang giả để test Layout
 const AdminRecords = () => <div style={{ fontSize: 24, fontWeight: "bold" }}>Xử lý Hồ sơ</div>;
-const UnitRecords = () => <div style={{ padding: 20 }}>Trang tự chấm của UNIT</div>;
 const Forbidden = () => <div style={{ padding: 20, color: "red" }}>403 - Bạn không có quyền truy cập!</div>;
 
 export default function AppRoutes() {

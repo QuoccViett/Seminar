@@ -11,6 +11,8 @@ export const ERROR_MESSAGES: Record<string, string> = {
   [ERROR_CODES.UNIT_CODE_TAKEN]: "Mã đơn vị đã tồn tại.",
   [ERROR_CODES.REFERENCE_IN_USE]: "Dữ liệu đang được sử dụng nên chưa thể xóa.",
   [ERROR_CODES.DB_RULE_VIOLATION]: "Quy tắc dữ liệu không cho phép thao tác này.",
+  [ERROR_CODES.PUBLISH_CHECK_FAILED]: "Cấu hình kỳ chưa đủ điều kiện công bố.",
+  [ERROR_CODES.NOT_OPEN_YET]: "Kỳ đánh giá chưa đến thời gian mở tiêu chí.",
   [ERROR_CODES.FILE_TOO_LARGE]: "Dữ liệu hoặc tệp vượt quá dung lượng cho phép.",
   [ERROR_CODES.UNSUPPORTED_MEDIA_TYPE]: "Định dạng dữ liệu không được hỗ trợ.",
   [ERROR_CODES.TOO_MANY_REQUESTS]: "Bạn thao tác quá nhanh. Vui lòng thử lại sau.",

@@ -255,12 +255,34 @@ Request:
   "name": "Thi đua Công tác Đoàn năm 2026",
   "maxTotalScore": 300,
   "selfEvalStart": "2026-10-01T00:00:00.000Z",
-  "selfEvalDeadline": "2026-10-31T16:59:00.000Z",
-  "supplementHours": 48
+  "selfEvalDeadline": "2026-10-31T16:59:00.000Z"
 }
 ```
 
-Backend lấy `createdById` từ CurrentUser, phase ban đầu là `SETUP`.
+Backend lấy `createdById` từ CurrentUser, phase ban đầu là `SETUP`; client không được gửi phase, `publishedAt` hoặc `finalizedAt`.
+Lịch tự chấm nhận mọi ngày/giờ và được backend so sánh theo UTC tại từng request. Giá trị ISO phải có `Z` hoặc độ lệch UTC tường minh; API không diễn giải chuỗi giờ địa phương không có múi giờ. Trường DB legacy `supplementHours` không được nhận hoặc dùng để tính hạn bổ sung; lịch bổ sung tạm mục 1.4/5.4 vẫn chờ xác nhận và thuộc luồng sau.
+
+`PATCH /evaluation-periods/:id` — ADMIN cập nhật kỳ khi kỳ chưa mở. Nếu kỳ đã công bố mà giờ mở chưa tới, thay đổi lịch phải kèm `changeReason` không rỗng; backend ghi audit trước/sau. Sau khi đã tới `selfEvalStart`, backend khóa thay đổi cấu hình. Thời gian bắt đầu phải nhỏ hơn thời hạn.
+
+`PUT /evaluation-periods/:id/thresholds` — ADMIN thay toàn bộ bốn ngưỡng trước công bố. Body là mảng có đúng một cấu hình cho mỗi mức `EXCELLENT` (85, loại trừ), `GOOD` (65), `PASS` (50), `FAIL` (0); bộ khác chuẩn hoặc kỳ đã công bố bị từ chối. Việc thay bộ ngưỡng là nguyên tử và được audit.
+
+`GET /evaluation-periods/:id/thresholds` — ADMIN đọc cấu hình nháp; UNIT chỉ nhận bộ ngưỡng khi kỳ đã công bố và đã tới giờ mở.
+
+`GET /evaluation-periods/:id/publish-check` — ADMIN nhận `{periodId,canPublish,checks:[{code,passed,message}]}`. Kiểm tra lịch, điểm tối đa tổng các tiêu chí lá, điểm tổng của từng nhóm, hình thức minh chứng từng tiêu chí lá, đủ bốn ngưỡng và có đơn vị hoạt động. Các điều kiện sai trả thông điệp tiếng Việt có mã trường ổn định.
+
+`POST /evaluation-periods/:id/publish` — ADMIN công bố kỳ đã vượt publish-check. Backend tự cấp `publishedAt`, phase và audit; trong cùng transaction tạo một hồ sơ DRAFT cho mỗi đơn vị hoạt động, điểm rỗng cho từng tiêu chí lá và hộp thư SYSTEM chống trùng, không xếp hàng gửi kênh ngoài. Không nhận dấu thời gian công bố từ client. Gọi lặp không tạo hồ sơ trùng. Có thể công bố trước ngày mở để UNIT được thấy cấu hình đúng tại `selfEvalStart`.
+
+`DELETE /evaluation-periods/:id` — ADMIN chỉ xóa kỳ nháp chưa có hồ sơ hoặc báo cáo; kỳ đã công bố bị từ chối. Kiểm tra và audit thao tác được thực hiện cùng transaction sau khi khóa kỳ.
+
+Các GET kỳ của ADMIN trả thêm `serverTime` và `canEditConfiguration`; cờ chỉnh sửa chỉ bật khi còn nháp hoặc kỳ đã công bố vẫn ở SETUP, chưa tới giờ mở. UNIT dùng `selfEvalState=CLOSED` ở mọi phase review/đóng dù lịch bị sửa ngoài API. Publish-check thêm `notExpired` để từ chối công bố khi đã đến deadline.
+
+`GET /evaluation-periods/:id/phase-options` — ADMIN nhận `{periodId,phase,serverTime,options:[{phase,allowed,message}]}` từ điều kiện hiện tại của backend, không lấy quyền từ giờ máy FE.
+
+`POST /evaluation-periods/:id/transition-phase` — ADMIN gửi `{phase}` với một trong `SELF_EVAL`, `FIRST_REVIEW`, `SUPPLEMENT`, `FINAL_REVIEW`, `CLOSED`. Chỉ chuyển theo đồ thị SETUP → SELF_EVAL → FIRST_REVIEW → SUPPLEMENT → FINAL_REVIEW → CLOSED, cho phép FIRST_REVIEW → FINAL_REVIEW khi không có vòng bổ sung đang mở và SETUP → FIRST_REVIEW khi bỏ lỡ toàn bộ cửa sổ tự chấm. Không chuyển lùi/mở lại/lặp hoặc chuyển kỳ chưa công bố. SELF_EVAL cần `start <= now < deadline`; FIRST_REVIEW cần đến deadline và tự khóa các hồ sơ DRAFT thành PENDING_REVIEW (không bắt đủ minh chứng). SUPPLEMENT cần có hồ sơ đã thẩm định lần đầu với snapshot bổ sung còn hiệu lực. FINAL_REVIEW cần mọi hồ sơ đã thẩm định lần đầu, không còn bổ sung đang mở; các yêu cầu đã hết hạn được reconcile thành SUPPLEMENT_EXPIRED trong cùng transaction. CLOSED cần mọi hồ sơ FINALIZED có đủ kết quả chốt, backend cấp finalizedAt. Khóa kỳ rồi khóa hồ sơ theo thứ tự ID, kiểm lại giờ sau khi lấy khóa, audit/history/hộp thư SYSTEM cùng transaction; không xếp delivery ngoài. Điều kiện không đạt trả `400 BUSINESS_RULE_VIOLATION`, payload sai `400 VALIDATION_ERROR`, không tồn tại `404 NOT_FOUND`. Service được export để các use-case VC09/VC11/VC12 dùng chung; endpoint này không thay thế nhập điểm/upload/thẩm định/chốt điểm từng hồ sơ.
+
+`POST /evaluation-periods/supplement-schedule/preview` — ADMIN gửi `{supplementStartAt}` ISO đầy đủ offset/Z, nhận `{supplementStartAt,supplementDeadline,serverTime,policy:"TEMPORARY_WEEKDAY",displayUntil,notice}`. Chỉ xem trước, không tạo yêu cầu hoặc lưu lịch vào hồ sơ. Theo phương án tạm mục 1.4/5.4 chờ giảng viên xác nhận, ngày mở Việt Nam chỉ từ thứ Hai đến thứ Sáu; thứ Hai–thứ Năm kết thúc hết ngày kế tiếp, thứ Sáu hết chính ngày; deadline loại trừ lúc 00:00 sau ngày kết thúc. `displayUntil` ghi “đến hết 23:59 ngày …”. Cuối tuần trả `400 BUSINESS_RULE_VIOLATION`, không tự dời ngày. FE chỉ cho chọn ngày thường và dùng kết quả preview backend; không tính từ supplementHours. Snapshot lịch thật được lưu khi VC12 tạo yêu cầu bổ sung.
+
+`GET /evaluation-periods` và `GET /evaluation-periods/:id` — ADMIN đọc cấu hình nháp. Danh sách UNIT chỉ gồm kỳ đã công bố; đọc chi tiết hoặc ngưỡng kỳ chưa công bố trả `404 NOT_FOUND`. UNIT nhận `serverTime`, `selfEvalState` (`NOT_OPEN_YET`, `OPEN`, `CLOSED`) và `criteriaVisible`; trước giờ mở, tiêu chí/ngưỡng rỗng và không trả `maxTotalScore`. Sau công bố và khi thời gian server thỏa `now >= selfEvalStart`, UNIT nhận tiêu chí/ngưỡng. `GET /evaluation-periods/:periodId/criteria` trả `404 NOT_FOUND` nếu kỳ chưa công bố, `400 NOT_OPEN_YET` trước giờ mở và cây tiêu chí từ đúng giờ mở trở đi. Nội dung được trả cả trong kỳ nghỉ/cuối tuần và ngoài giờ hành chính. Quyền này do backend tính lại theo từng request, không dựa vào phase, job hay đồng hồ trình duyệt.
 
 `201 Created`:
 
@@ -272,14 +294,13 @@ Backend lấy `createdById` từ CurrentUser, phase ban đầu là `SETUP`.
   "phase": "SETUP",
   "maxTotalScore": 300,
   "selfEvalStart": "2026-10-01T00:00:00.000Z",
-  "selfEvalDeadline": "2026-10-31T16:59:00.000Z",
-  "supplementHours": 48
+  "selfEvalDeadline": "2026-10-31T16:59:00.000Z"
 }
 ```
 
 ### Cấu hình tiêu chí
 
-`POST /evaluation-periods/:periodId/criteria` — ADMIN.
+`POST /evaluation-periods/:periodId/criteria` — ADMIN. Body không có `periodId` vì kỳ được xác định từ route.
 
 ```json
 {
@@ -297,7 +318,7 @@ Backend lấy `createdById` từ CurrentUser, phase ban đầu là `SETUP`.
 }
 ```
 
-Response `201 Created`: resource tiêu chí đã lưu, gồm `id`, `periodId` và các field cấu hình; `createdAt`/`updatedAt` do server cấp. Cập nhật/xóa dùng các route tiêu chí trong API catalog và cùng response shape.
+Response `201 Created`: resource tiêu chí đã lưu, gồm `id`, `periodId` và các field cấu hình; `createdAt`/`updatedAt` do server cấp. `PATCH /criteria/:id` và `DELETE /criteria/:id` là route ADMIN chuẩn; backend tự tìm kỳ rồi dùng cùng use-case khóa kỳ trước sửa/xóa. Giữ `PATCH /evaluation-periods/:periodId/criteria/:id` và `DELETE /evaluation-periods/:periodId/criteria/:id` để tương thích client hiện tại; `id` phải thuộc `periodId`, nếu không trả `404 NOT_FOUND`. Cả hai dạng chỉ hoạt động trước công bố; tiêu chí cha phải cùng kỳ, điểm tối đa phải dương. Các thao tác sửa cấu hình và công bố tuần tự theo khóa kỳ; thay đổi cùng audit được lưu trong một transaction, không trả lỗi SQL/Prisma thô. Không có GET /criteria/:id để tránh thêm đường đọc chưa áp dụng projection.
 
 ## 4. Hồ sơ, điểm và minh chứng
 
