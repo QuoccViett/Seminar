@@ -1,154 +1,113 @@
 import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Spin, message, Progress, Table, Tag, Typography } from "antd";
-import { 
-  BankOutlined, CheckCircleOutlined, ClockCircleOutlined, SyncOutlined,
-  TrophyOutlined, WarningOutlined
-} from "@ant-design/icons";
+import { Alert, Button, Card, Col, ConfigProvider, Empty, Progress, Row, Select, Space, Statistic, Table, Tag, Typography } from "antd";
+import viVN from "antd/locale/vi_VN";
+import { useNavigate } from "react-router-dom";
 import { dashboardService } from "../../services/dashboardService";
+import { evaluationPeriodService } from "../../services/evaluationPeriodService";
+import { statusLabels } from "../../components/records/SelfEvaluationCard";
 import styles from "./AdminDashboard.module.css";
 
-const { Title } = Typography;
+const formatNumber = (value) => new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value ?? 0);
 
-// Dữ liệu giả cho Bảng xếp hạng
-const leaderboardData = [
-  { key: "1", rank: 1, unitName: "Đoàn trường ĐH Sài Gòn", selfScore: 285, adminScore: 280, status: "Đã chốt" },
-  { key: "2", rank: 2, unitName: "Quận đoàn 1", selfScore: 270, adminScore: 270, status: "Đã chốt" },
-  { key: "3", rank: 3, unitName: "Đoàn trường ĐH Bách Khoa", selfScore: 260, adminScore: null, status: "Chờ duyệt" },
-  { key: "4", rank: 4, unitName: "Huyện đoàn Củ Chi", selfScore: 250, adminScore: 245, status: "Đã chốt" },
-  { key: "5", rank: 5, unitName: "Đoàn trường ĐH Kinh tế", selfScore: 240, adminScore: null, status: "Chờ duyệt" },
-];
-
+/** Đọc dashboard theo kỳ thật và bỏ phản hồi cũ khi người dùng đổi kỳ
+ * Dữ liệu đầu vào từ bốn API có cùng periodId, đầu ra là tiến độ, xếp hạng và phổ điểm
+ * Backend quyết định trạng thái và điểm; polling chỉ yêu cầu snapshot mới, không suy quyền theo giờ máy
+ */
 export default function AdminDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
-  const [deductions, setDeductions] = useState([]);
-  const currentPeriodId = "period-2026"; 
+  const navigate = useNavigate();
+  const [periods, setPeriods] = useState([]);
+  const [periodId, setPeriodId] = useState();
+  const [periodError, setPeriodError] = useState("");
+  const [periodLoading, setPeriodLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [snapshot, setSnapshot] = useState(null);
+  const [detailByCriterion, setDetailByCriterion] = useState({});
+  const [refresh, setRefresh] = useState(0);
 
+  /** Chọn kỳ mới nhất đã công bố nếu có, kỳ rỗng có trạng thái hiển thị riêng */
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // Gọi song song 2 API để tối ưu tốc độ
-        const [statsRes, deductionsRes] = await Promise.all([
-          dashboardService.getDashboardStats(currentPeriodId),
-          dashboardService.getCriteriaDeductions(currentPeriodId)
-        ]);
-        
-        setData(statsRes);
-        setDeductions(deductionsRes.items || []);
-      } catch (error) {
-        message.error("Lỗi khi tải dữ liệu Dashboard");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    let active = true;
+    evaluationPeriodService.getEvaluationPeriods({ pageSize: 100 }).then((result) => {
+      if (!active) return;
+      const items = result.items ?? [];
+      setPeriods(items);
+      setPeriodId(items.find((item) => item.publishedAt)?.id ?? items[0]?.id);
+    }).catch((failure) => { if (active) setPeriodError(failure.message || "Không thể tải danh sách kỳ đánh giá"); })
+      .finally(() => { if (active) setPeriodLoading(false); });
+    return () => { active = false; };
   }, []);
 
-  if (loading) {
-    return <div style={{ textAlign: "center", marginTop: 100 }}><Spin size="large" /></div>;
+  /** Tải cùng lúc bốn lát dữ liệu và chỉ công bố snapshot khi mọi API đều thành công */
+  useEffect(() => {
+    if (!periodId) return undefined;
+    let active = true;
+    setLoading(true); setError(""); setSnapshot(null);
+    Promise.all([
+      dashboardService.getDashboardStats(periodId),
+      dashboardService.getLeaderboard(periodId, 20),
+      dashboardService.getScoreDistribution(periodId),
+      dashboardService.getCriteriaDeductions(periodId),
+    ]).then(([overview, leaderboard, distribution, deductions]) => {
+      if (active) setSnapshot({ overview, leaderboard, distribution, deductions });
+    }).catch((failure) => { if (active) setError(failure.message || "Không thể tải dữ liệu tổng quan"); })
+      .finally(() => { if (active) setLoading(false); });
+    const timer = setInterval(() => setRefresh((value) => value + 1), 30000);
+    return () => { active = false; clearInterval(timer); };
+  }, [periodId, refresh]);
+
+  const overview = snapshot?.overview;
+  const rankingColumns = [
+    { title: "Hạng", dataIndex: "rank", width: 80 },
+    { title: "Hạng điểm", dataIndex: "scoreRank", width: 100 },
+    { title: "Đơn vị", dataIndex: "unitName" },
+    { title: "Tự chấm", dataIndex: "selfTotal", render: formatNumber },
+    { title: "Điểm hiệu lực", dataIndex: "currentTotal", render: formatNumber },
+    { title: "Xếp loại", render: (_, row) => <Space><Tag color={row.ratingColor ?? "default"}>{row.ratingLabel ?? "Chưa xếp loại"}</Tag>{!row.isFinal && <Tag>Tạm tính</Tag>}</Space> },
+    { title: "Trạng thái", dataIndex: "status", render: (value) => statusLabels[value] ?? "Chưa xác định" },
+    { title: "Hồ sơ", render: (_, row) => <Button type="link" onClick={() => navigate(`/admin/records?periodId=${periodId}&evaluationId=${row.evaluationId}`)}>Xem chi tiết</Button> },
+  ];
+
+  /** Tải drill-down khi Admin mở tiêu chí, cache theo cả kỳ để không hiển thị hồ sơ kỳ trước */
+  async function openDeduction(open, row) {
+    if (!open) return;
+    const key = `${periodId}:${row.criterionId}`;
+    if (detailByCriterion[key]) return;
+    setDetailByCriterion((current) => ({ ...current, [key]: { loading: true, items: [] } }));
+    try {
+      const result = await dashboardService.getDeductionDetail(periodId, row.criterionId);
+      setDetailByCriterion((current) => ({ ...current, [key]: { loading: false, items: result.items } }));
+    } catch (failure) {
+      setDetailByCriterion((current) => ({ ...current, [key]: { loading: false, error: failure.message || "Không thể tải chi tiết điểm trừ", items: [] } }));
+    }
   }
 
-  // Cột cho Bảng xếp hạng
-  const leaderboardColumns = [
-    { 
-      title: "Hạng", dataIndex: "rank", key: "rank", width: 80,
-      render: (rank) => {
-        if (rank === 1) return <TrophyOutlined style={{ color: "#fadb14", fontSize: 18 }} />;
-        if (rank === 2) return <TrophyOutlined style={{ color: "#bfbfbf", fontSize: 18 }} />;
-        if (rank === 3) return <TrophyOutlined style={{ color: "#d48806", fontSize: 18 }} />;
-        return <strong>{rank}</strong>;
-      }
-    },
-    { title: "Tên Đơn vị", dataIndex: "unitName", key: "unitName" },
-    { title: "Điểm tự chấm", dataIndex: "selfScore", key: "selfScore", align: "center" },
-    { title: "Điểm thẩm định", dataIndex: "adminScore", key: "adminScore", align: "center", render: (val) => val || "-" },
-    { 
-      title: "Trạng thái", dataIndex: "status", key: "status",
-      render: (status) => <Tag color={status === "Đã chốt" ? "green" : "gold"}>{status.toUpperCase()}</Tag>
-    },
-  ];
-
-  // Cột cho Bảng Tiêu chí bị trừ điểm
-  const deductionColumns = [
-    { title: "Mã", dataIndex: "code", key: "code", width: 80 },
-    { title: "Tên Tiêu chí", dataIndex: "name", key: "name" },
-    { 
-      title: "Số đơn vị bị trừ", dataIndex: "unitsDeducted", key: "unitsDeducted", align: "center",
-      render: (val) => <Tag color="volcano">{val} đơn vị</Tag>
-    },
-    { 
-      title: "Tổng điểm bị trừ", dataIndex: "totalPointsDeducted", key: "totalPointsDeducted", align: "center",
-      render: (val) => <strong style={{ color: "#cf1322" }}>-{val} đ</strong>
-    },
-  ];
-
-  return (
-    <div className={styles.dashboardContainer}>
-      <h2 className={styles.pageTitle}>Tổng quan tiến độ thi đua</h2>
-      
-      {/* 1. CÁC THẺ THỐNG KÊ */}
-      <Row gutter={[24, 24]}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} className={styles.statCard}>
-            <Statistic title="Tổng số Đơn vị" value={data?.totalUnits || 0} prefix={<BankOutlined style={{ color: "#1677ff" }} />} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} className={styles.statCard}>
-            <Statistic title="Đã nộp hồ sơ" value={data?.submittedCount || 0} valueStyle={{ color: "#52c41a" }} prefix={<CheckCircleOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} className={styles.statCard}>
-            <Statistic title="Chưa nộp" value={data?.notSubmittedCount || 0} valueStyle={{ color: "#faad14" }} prefix={<ClockCircleOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card bordered={false} className={styles.statCard}>
-            <Statistic title="Yêu cầu bổ sung" value={data?.supplementPendingCount || 0} valueStyle={{ color: "#ff4d4f" }} prefix={<SyncOutlined spin />} />
-          </Card>
-        </Col>
+  return <ConfigProvider locale={viVN}><div className={styles.dashboardContainer}>
+    <Typography.Title level={2}>Tổng quan tiến độ thi đua</Typography.Title>
+    <Space wrap style={{ marginBottom: 20 }}><Select aria-label="Chọn kỳ đánh giá" placeholder="Chọn kỳ" style={{ width: 320 }} value={periodId} options={periods.map((period) => ({ value: period.id, label: `${period.name} (${period.year})` }))} onChange={setPeriodId} /><Button disabled={!periodId} onClick={() => setRefresh((value) => value + 1)}>Làm mới</Button></Space>
+    {periodError && <Alert type="error" showIcon title={periodError} />}
+    {periodLoading && <Card loading title="Đang tải kỳ đánh giá" />}
+    {!periodLoading && !periodError && !periods.length && <Empty description="Chưa có kỳ đánh giá" />}
+    {error && <Alert type="error" showIcon title={error} action={<Button onClick={() => setRefresh((value) => value + 1)}>Thử lại</Button>} />}
+    {loading && <Card loading title="Đang tải dashboard" />}
+    {overview && <>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} lg={6}><Card><Statistic title="Tổng hồ sơ kỳ" value={overview.totalUnits} /></Card></Col>
+        <Col xs={24} sm={12} lg={6}><Card><Statistic title="Đã nộp hoặc đã chốt" value={overview.submittedCount} /></Card></Col>
+        <Col xs={24} sm={12} lg={6}><Card><Statistic title="Chưa nộp" value={overview.notSubmittedCount} /></Card></Col>
+        <Col xs={24} sm={12} lg={6}><Card><Statistic title="Đang chờ bổ sung" value={overview.supplementPendingCount} /></Card></Col>
       </Row>
-
-      {/* 2. TIẾN TRÌNH & XẾP HẠNG */}
-      <Row gutter={[24, 24]} style={{ marginTop: 24 }}>
-        <Col xs={24} lg={8}>
-          <Card bordered={false} className={styles.progressCard} title="Tiến độ nộp bài">
-            <div className={styles.progressWrapper}>
-              <Progress type="dashboard" percent={data?.progressPercent || 0} strokeColor={{ '0%': '#108ee9', '100%': '#87d068' }} format={(percent) => `${percent}%`} />
-              <div className={styles.progressText}>
-                <p>Đã nộp: <strong>{data?.submittedCount || 0}</strong> / {data?.totalUnits || 0} đơn vị</p>
-              </div>
-            </div>
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={16}>
-          <Card bordered={false} title="Bảng xếp hạng Top 5 Đơn vị" className={styles.tableCard}>
-            <Table columns={leaderboardColumns} dataSource={leaderboardData} pagination={false} size="middle" />
-          </Card>
-        </Col>
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={8}><Card title="Tiến độ"><Progress type="dashboard" percent={overview.progressPercent} /><p>Đã chốt: {overview.finalizedCount} / {overview.totalUnits}</p></Card></Col>
+        <Col xs={24} lg={16}><Card title="Nhóm trạng thái"><Space wrap>{Object.entries(overview.statusCounts).map(([status, count]) => <Tag key={status}>{statusLabels[status] ?? status}: {count}</Tag>)}</Space></Card></Col>
       </Row>
-
-      {/* 3. TIÊU CHÍ BỊ TRỪ ĐIỂM NHIỀU NHẤT (MỚI THÊM) */}
-      <Row style={{ marginTop: 24 }}>
-        <Col span={24}>
-          <Card 
-            bordered={false} 
-            title={<><WarningOutlined style={{ color: '#faad14', marginRight: 8 }} /> Top Tiêu chí bị trừ điểm nhiều nhất</>}
-            className={styles.tableCard}
-          >
-            <Table 
-              columns={deductionColumns} 
-              dataSource={deductions} 
-              pagination={false} 
-              size="middle"
-              rowKey="criterionId"
-            />
-          </Card>
-        </Col>
+      <Card title="Kết quả chính thức từ hồ sơ đã chốt" style={{ marginTop: 16 }}><Space wrap size="large"><Statistic title="Tổng điểm đã chốt" value={overview.officialResults.totalFinalScore} formatter={formatNumber} /><Statistic title="Điểm trung bình" value={overview.officialResults.averageFinalScore} formatter={formatNumber} /><Statistic title="Tỷ lệ trung bình" value={overview.officialResults.averageFinalPercent} suffix="%" formatter={formatNumber} /></Space></Card>
+      <Card title="Bảng xếp hạng theo điểm hiệu lực" style={{ marginTop: 16 }}><Typography.Paragraph type="secondary">Kết quả chưa chốt chỉ là tạm tính; đồng hạng điểm có cùng hạng điểm</Typography.Paragraph><Table rowKey="evaluationId" dataSource={snapshot.leaderboard.items} columns={rankingColumns} pagination={false} scroll={{ x: 900 }} locale={{ emptyText: "Chưa có hồ sơ để xếp hạng" }} /></Card>
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={12}><Card title="Phổ điểm hồ sơ đã chốt"><p>Số hồ sơ đã chốt: {snapshot.distribution.finalizedCount}</p>{snapshot.distribution.buckets.map((bucket) => <div key={bucket.key}>{bucket.label}: {bucket.count} <Progress percent={bucket.percent} /></div>)}</Card></Col>
+        <Col xs={24} lg={12}><Card title="Xếp loại chính thức">{snapshot.distribution.items.map((item) => <p key={item.rating}><Tag color={item.color ?? "default"}>{item.label}</Tag> {item.count} hồ sơ ({formatNumber(item.percent)}%)</p>)}</Card></Col>
       </Row>
-    </div>
-  );
+      <Card title="Tiêu chí bị trừ điểm ở hồ sơ đã chốt" style={{ marginTop: 16 }}><Table rowKey="criterionId" dataSource={snapshot.deductions.items} pagination={{ pageSize: 10 }} columns={[{ title: "Mã", dataIndex: "code" }, { title: "Tiêu chí", dataIndex: "name" }, { title: "Số đơn vị", dataIndex: "unitsDeducted" }, { title: "Tổng điểm trừ", dataIndex: "totalPointsDeducted", render: formatNumber }]} expandable={{ onExpand: openDeduction, expandedRowRender: (row) => { const detail = detailByCriterion[`${periodId}:${row.criterionId}`]; return detail?.error ? <Alert type="error" title={detail.error} /> : <Table rowKey="evaluationId" loading={detail?.loading} dataSource={detail?.items ?? []} pagination={false} columns={[{ title: "Đơn vị", dataIndex: "unitName" }, { title: "Tự chấm", dataIndex: "selfScore", render: formatNumber }, { title: "Thẩm định", dataIndex: "adminScore", render: formatNumber }, { title: "Điểm trừ", dataIndex: "pointsDeducted", render: formatNumber }, { title: "Hồ sơ", render: (_, item) => <Button type="link" onClick={() => navigate(`/admin/records?periodId=${periodId}&evaluationId=${item.evaluationId}`)}>Xem hồ sơ</Button> }]} locale={{ emptyText: "Chưa có hồ sơ bị trừ điểm" }} />; } }} locale={{ emptyText: "Chưa có điểm trừ ở hồ sơ đã chốt" }} /></Card>
+    </>}
+  </div></ConfigProvider>;
 }

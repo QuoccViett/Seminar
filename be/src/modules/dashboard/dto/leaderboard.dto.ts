@@ -1,11 +1,13 @@
 import { ApiProperty } from "@nestjs/swagger";
 
 export class LeaderboardItemDto {
-  @ApiProperty({ example: 1, type: Number })
-  rank!: number;
+  /** Thứ tự toàn kỳ từ view; giữ chuỗi nếu vượt miền số nguyên an toàn của JSON */
+  @ApiProperty({ oneOf: [{ type: "number" }, { type: "string" }], example: 1 })
+  rank!: number | string;
 
-  @ApiProperty({ example: 1, type: Number })
-  scoreRank!: number;
+  /** Các hồ sơ bằng điểm có cùng scoreRank dù thứ tự rank khác nhau */
+  @ApiProperty({ oneOf: [{ type: "number" }, { type: "string" }], example: 1 })
+  scoreRank!: number | string;
 
   @ApiProperty({ format: "uuid", type: String })
   evaluationId!: string;
@@ -44,6 +46,17 @@ export class LeaderboardItemDto {
 
   @ApiProperty({ example: "EXCELLENT", nullable: true, type: String })
   suggestedRating!: string | null;
+
+  /** Nhãn và màu lấy từ ngưỡng của kỳ, không tự gán từ enum trên giao diện */
+  @ApiProperty({ nullable: true, type: String })
+  ratingLabel!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  ratingColor!: string | null;
+
+  /** Chỉ hồ sơ FINALIZED được coi là kết quả chính thức */
+  @ApiProperty({ type: Boolean })
+  isFinal!: boolean;
 }
 
 export class DashboardLeaderboardDto {

@@ -71,6 +71,10 @@ export class ScoreDistributionDto {
 
   @ApiProperty({ type: () => ScoreDistributionItemDto, isArray: true })
   items!: ScoreDistributionItemDto[];
+
+  /** Mỗi bucket mô tả một khoảng phần trăm không giao nhau của hồ sơ đã chốt */
+  @ApiProperty({ type: "array", items: { type: "object", properties: { key: { type: "string" }, label: { type: "string" }, count: { type: "number" }, percent: { type: "number" } } } })
+  buckets!: { key: string; label: string; count: number; percent: number }[];
 }
 
 export class DashboardOverviewDto {

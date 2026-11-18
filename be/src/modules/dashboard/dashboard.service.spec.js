@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Prisma } from "../../generated/prisma/client.js";
+import { Prisma } from "../../generated/prisma/client.ts";
 import { DashboardService } from "./dashboard.service.ts";
 
 const period = {
@@ -11,6 +11,7 @@ const period = {
   maxTotalScore: new Prisma.Decimal(300),
 };
 
+/** Tạo Prisma stub tối thiểu để kiểm công thức và shape; HTTP/PostgreSQL được kiểm ở bộ VC14 riêng */
 function makeService(overrides = {}) {
   const calls = { criterionScoreFindMany: [] };
   const prisma = {
@@ -18,6 +19,8 @@ function makeService(overrides = {}) {
       findUnique: async () => period,
     },
     evaluation: {
+      count: async () => 2,
+      findMany: async () => [{ finalPercent: new Prisma.Decimal(90) }, { finalPercent: new Prisma.Decimal(80) }],
       groupBy: async ({ by }) => {
         if (by[0] === "status") {
           return [
@@ -72,10 +75,10 @@ test("overview only uses finalized records for official results and rating distr
   const result = await service.getOverview(period.id);
 
   assert.equal(result.totalUnits, 10);
-  assert.equal(result.submittedCount, 8);
+  assert.equal(result.submittedCount, 7);
   assert.equal(result.notSubmittedCount, 2);
-  assert.equal(result.supplementPendingCount, 2);
-  assert.equal(result.progressPercent, 80);
+  assert.equal(result.supplementPendingCount, 1);
+  assert.equal(result.progressPercent, 70);
   assert.equal(result.finalizedCount, 2);
   assert.equal(result.notFinalizedCount, 8);
   assert.deepEqual(result.officialResults, {
@@ -89,6 +92,8 @@ test("overview only uses finalized records for official results and rating distr
     { rating: "PASS", label: "Đạt", color: "#f97316", count: 0, percent: 0 },
     { rating: "FAIL", label: "Không đạt", color: "#dc2626", count: 0, percent: 0 },
   ]);
+  // Hai điểm 80 và 90 thuộc hai bucket khác nhau, mọi bucket cộng lại bằng số đã chốt
+  assert.deepEqual(result.scoreDistribution.buckets.map((bucket) => bucket.count), [0, 0, 1, 1]);
 });
 
 test("deductions only include positive deductions from finalized evaluations", async () => {
@@ -211,6 +216,9 @@ test("leaderboard returns current scores from the view ordered by rank", async (
         currentTotal: 285.25,
         currentPercent: 95.08,
         suggestedRating: "EXCELLENT",
+        ratingLabel: "Xuất sắc",
+        ratingColor: "#16a34a",
+        isFinal: false,
       },
       {
         rank: 2,
@@ -226,17 +234,37 @@ test("leaderboard returns current scores from the view ordered by rank", async (
         currentTotal: 285.25,
         currentPercent: 95.08,
         suggestedRating: null,
+        ratingLabel: null,
+        ratingColor: null,
+        isFinal: false,
       },
     ],
   });
   assert.deepEqual(calls[0].where, { periodId: period.id });
   assert.deepEqual(calls[0].orderBy, { rank: "asc" });
+  assert.equal(calls[0].take, 20);
 });
 
+/** Kỳ rỗng không tạo phép chia 0 và không buộc view trả dòng giả */
 test("leaderboard returns an empty list when its period has no evaluations", async () => {
-  const { service } = makeService();
+  const { service } = makeService({ prisma: { evaluation: { count: async () => 0, findMany: async () => [], groupBy: async () => [], aggregate: async () => ({ _count: { _all: 0 }, _sum: { finalScore: null }, _avg: { finalScore: null, finalPercent: null } }) } } });
 
   const result = await service.getLeaderboard(period.id);
 
   assert.deepEqual(result, { periodId: period.id, totalUnits: 0, items: [] });
+  const overview = await service.getOverview(period.id);
+  assert.equal(overview.progressPercent, 0);
+  assert.equal(overview.totalUnits, 0);
+  assert.deepEqual(overview.scoreDistribution.buckets.map((bucket) => bucket.count), [0, 0, 0, 0]);
+});
+
+/** Rank vượt giới hạn JSON an toàn phải là chuỗi, limit sai bị chặn trước khi truy vấn */
+test("leaderboard serializes large ranks safely and rejects invalid limits", async () => {
+  const { service } = makeService({ prisma: { leaderboard: { findMany: async () => [{ rank: 9007199254740992n, scoreRank: 9007199254740992n, status: "FINALIZED", suggestedRating: "PASS", maxTotalScore: new Prisma.Decimal(100), selfTotal: new Prisma.Decimal(50), currentTotal: new Prisma.Decimal(50), currentPercent: new Prisma.Decimal(50) }] } } });
+  const result = await service.getLeaderboard(period.id, 1);
+  assert.equal(result.items[0].rank, "9007199254740992");
+  assert.equal(result.items[0].scoreRank, "9007199254740992");
+  assert.equal(result.items[0].ratingLabel, "Đạt");
+  assert.equal(result.items[0].isFinal, true);
+  await assert.rejects(() => service.getLeaderboard(period.id, 101));
 });
