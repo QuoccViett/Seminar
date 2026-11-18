@@ -6,6 +6,8 @@ import { dashboardService } from "../../services/dashboardService";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
 import { statusLabels } from "../../components/records/SelfEvaluationCard";
 import styles from "./AdminDashboard.module.css";
+import { usePeriodSelection } from "../../services/periodSelection";
+import { allPages } from "../../services/pagination";
 
 const formatNumber = (value) => new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value ?? 0);
 
@@ -16,7 +18,7 @@ const formatNumber = (value) => new Intl.NumberFormat("vi-VN", { maximumFraction
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [periods, setPeriods] = useState([]);
-  const [periodId, setPeriodId] = useState();
+  const [periodId, setPeriodId] = usePeriodSelection();
   const [periodError, setPeriodError] = useState("");
   const [periodLoading, setPeriodLoading] = useState(true);
   const [error, setError] = useState("");
@@ -28,11 +30,10 @@ export default function AdminDashboard() {
   /** Chọn kỳ mới nhất đã công bố nếu có, kỳ rỗng có trạng thái hiển thị riêng */
   useEffect(() => {
     let active = true;
-    evaluationPeriodService.getEvaluationPeriods({ pageSize: 100 }).then((result) => {
+    allPages((params) => evaluationPeriodService.getEvaluationPeriods(params)).then((items) => {
       if (!active) return;
-      const items = result.items ?? [];
       setPeriods(items);
-      setPeriodId(items.find((item) => item.publishedAt)?.id ?? items[0]?.id);
+      setPeriodId(items.some((item) => item.id === periodId) ? periodId : items.find((item) => item.publishedAt)?.id ?? items[0]?.id);
     }).catch((failure) => { if (active) setPeriodError(failure.message || "Không thể tải danh sách kỳ đánh giá"); })
       .finally(() => { if (active) setPeriodLoading(false); });
     return () => { active = false; };
@@ -40,7 +41,7 @@ export default function AdminDashboard() {
 
   /** Tải cùng lúc bốn lát dữ liệu và chỉ công bố snapshot khi mọi API đều thành công */
   useEffect(() => {
-    if (!periodId) return undefined;
+    if (!periodId || periodLoading || !periods.some((item) => item.id === periodId)) return undefined;
     let active = true;
     setLoading(true); setError(""); setSnapshot(null);
     Promise.all([
@@ -54,7 +55,7 @@ export default function AdminDashboard() {
       .finally(() => { if (active) setLoading(false); });
     const timer = setInterval(() => setRefresh((value) => value + 1), 30000);
     return () => { active = false; clearInterval(timer); };
-  }, [periodId, refresh]);
+  }, [periodId, refresh, periodLoading, periods]);
 
   const overview = snapshot?.overview;
   const rankingColumns = [

@@ -6,6 +6,8 @@ import { evaluationPeriodService } from "../../services/evaluationPeriodService"
 import { listEvaluations } from "../../services/evaluationService";
 import { createReport, downloadReport, listReports } from "../../services/reportService";
 import { statusLabels } from "../../components/records/SelfEvaluationCard";
+import { usePeriodSelection } from "../../services/periodSelection";
+import { allPages as choices } from "../../services/pagination";
 
 const typeOptions = [{ value: "SUMMARY_ALL_UNITS", label: "Tổng hợp đơn vị (Excel)" }, { value: "UNIT_APPRAISAL_MINUTES", label: "Biên bản thẩm định (PDF/Word)" }];
 const typeLabels = Object.fromEntries(typeOptions.map((item) => [item.value, item.label]));
@@ -15,18 +17,6 @@ const typeLabels = Object.fromEntries(typeOptions.map((item) => [item.value, ite
  */
 function reportError(failure, fallback) { return typeof failure?.message === "string" && /[À-ỹ]/u.test(failure.message) ? failure.message : fallback; }
 
-/** Tải đủ các trang lựa chọn từ API, không cắt mất kỳ hoặc hồ sơ ngoài 100 mục đầu tiên
- * Mỗi trang vẫn theo giới hạn backend, caller bỏ kết quả khi đã đổi kỳ hoặc rời trang
- */
-async function choices(loader, params = {}) {
-  const items = [];
-  for (let page = 1; ; page++) {
-    const result = await loader({ ...params, page, pageSize: 100 });
-    items.push(...result.items);
-    if (items.length >= result.total || !result.items.length) return items;
-  }
-}
-
 /** Màn hình báo cáo ADMIN dùng backend thật, tạo đồng bộ và tải tệp private có chữ ký
  * Kỳ/hồ sơ từ URL chỉ là lựa chọn giao diện, server luôn kiểm lại quyền và scope
  * Phân biệt tải dữ liệu, rỗng, đang tạo và lỗi để không báo thành công từ dữ liệu cũ
@@ -34,7 +24,7 @@ async function choices(loader, params = {}) {
 export default function AdminReports() {
   const [search] = useSearchParams();
   const initial = useRef({ periodId: search.get("periodId"), evaluationId: search.get("evaluationId") });
-  const [periods, setPeriods] = useState([]); const [periodId, setPeriodId] = useState();
+  const [periods, setPeriods] = useState([]); const [periodId, setPeriodId] = usePeriodSelection();
   const [periodLoading, setPeriodLoading] = useState(true); const [periodError, setPeriodError] = useState(""); const [periodRetry, setPeriodRetry] = useState(0);
   const [reportType, setReportType] = useState(initial.current.evaluationId ? "UNIT_APPRAISAL_MINUTES" : "SUMMARY_ALL_UNITS"); const [format, setFormat] = useState("PDF");
   const [evaluations, setEvaluations] = useState([]); const [evaluationId, setEvaluationId] = useState(); const [evaluationLoading, setEvaluationLoading] = useState(false); const [evaluationError, setEvaluationError] = useState(""); const [evaluationRetry, setEvaluationRetry] = useState(0);
@@ -49,7 +39,7 @@ export default function AdminReports() {
     let active = true; setPeriodLoading(true); setPeriodError("");
     choices((params) => evaluationPeriodService.getEvaluationPeriods(params)).then((items) => {
       if (!active) return; setPeriods(items);
-      setPeriodId(items.some((item) => item.id === initial.current.periodId) ? initial.current.periodId : items[0]?.id);
+      setPeriodId(items.some((item) => item.id === periodId) ? periodId : items[0]?.id);
     }).catch((failure) => { if (active) setPeriodError(reportError(failure, "Không thể tải danh sách kỳ")); })
       .finally(() => { if (active) setPeriodLoading(false); });
     return () => { active = false; };

@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+/** Dữ liệu mock phát triển phải giữ phase kỹ thuật giống backend, không thay chứng cứ API thật */
 describe("evaluation-period API mock", () => {
   it("returns paginated camelCase evaluation periods and applies filters", async () => {
     const response = await fetch(
@@ -18,7 +19,7 @@ describe("evaluation-period API mock", () => {
         {
           id: "period-2026",
           year: 2026,
-          phase: "SELF_EVALUATION",
+          phase: "SELF_EVAL",
           maxTotalScore: 300,
         },
       ],

@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import { Alert, Button, Card, Checkbox, DatePicker, Input, InputNumber, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Checkbox, DatePicker, Input, InputNumber, Modal, Space, Table, Tag, Typography } from "antd";
 import { acceptAllScores, completeFirstReview, requestSupplement, reviewScores } from "../../services/evaluationService";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
 import { statusLabels, tableRows, vietnamTime } from "./SelfEvaluationCard";
 import EvidencePanel from "./EvidencePanel";
+import { useRecordDrafts } from "../../contexts/WorkspaceContext";
 
 const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_REVIEW: "Thẩm định lần đầu", SUPPLEMENT: "Bổ sung", FINAL_REVIEW: "Thẩm định cuối", CLOSED: "Đã đóng" };
 
@@ -12,7 +13,7 @@ const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_RE
  * Parent tải lại sau ghi nhưng không remount cùng hồ sơ nên nháp ô lỗi hoặc chưa lưu vẫn được giữ
  */
 export default function ReviewCard({ record, summary, disconnected, onReload, onBusyChange, onFinalize }) {
-  const [drafts, setDrafts] = useState({}); const [states, setStates] = useState({});
+  const [drafts, setDrafts] = useRecordDrafts(`review:${record.id}`); const [states, setStates] = useState({});
   const [selected, setSelected] = useState([]); const [notes, setNotes] = useState({});
   const [start, setStart] = useState(null); const [schedule, setSchedule] = useState(null);
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(null);
@@ -28,6 +29,13 @@ export default function ReviewCard({ record, summary, disconnected, onReload, on
 
   /** Mở khóa sau cả thành công và lỗi, không xóa nháp chưa được backend xác nhận */
   function finish() { busyRef.current = false; setBusy(false); onBusyChange(false); }
+
+  /** Xác nhận trước lệnh thay nhiều điểm hoặc chuyển trạng thái, Ant Modal quản lý focus bàn phím
+   * Chỉ gọi action sau xác nhận, backend vẫn kiểm lại quyền và dữ liệu đã đổi trong lúc hộp thoại mở
+   */
+  function confirm(action, title) {
+    Modal.confirm({ title, content: "Máy chủ sẽ kiểm tra lại điều kiện trước khi thực hiện", okText: "Xác nhận", cancelText: "Quay lại", onOk: action });
+  }
 
   /** Khởi tạo nháp đầy đủ từ dữ liệu server, phân biệt null chủ động với giá trị mặc định
    * Điểm chưa duyệt mặc định bằng self, lý do được giữ khi người dùng chỉ đổi điểm
@@ -107,9 +115,9 @@ export default function ReviewCard({ record, summary, disconnected, onReload, on
       {record.finalResult && <Alert type="success" title={`Đã chốt: ${record.finalResult.score} điểm · ${record.finalResult.percent}% · ${record.finalResult.rating}`} />}
       {disconnected && <Alert type="warning" title="Chưa tải lại được quyền từ máy chủ, vui lòng làm mới" />}
       <Table rowKey="criterionId" dataSource={tableRows(record.criteria)} columns={columns} pagination={false} defaultExpandAllRows scroll={{ x: 1500 }} />
-      <Space wrap><Button type="primary" loading={busy} disabled={disabled || !dirty || !permissions.canReview} onClick={() => save()}>Lưu tất cả thẩm định</Button><Button disabled={disabled || dirty || !permissions.canReview} onClick={() => execute(() => acceptAllScores(record.id), "Đã chấp nhận các ô chưa duyệt")}>Chấp nhận các ô chưa duyệt</Button><Button disabled={disabled || dirty || !permissions.canCompleteFirstReview} onClick={() => execute(() => completeFirstReview(record.id), "Đã hoàn tất thẩm định lần đầu")}>Hoàn tất thẩm định lần đầu</Button><Button disabled={disabled || dirty} onClick={() => onFinalize([record.id])}>Xem trước và chốt hồ sơ</Button></Space>
+      <Space wrap><Button type="primary" loading={busy} disabled={disabled || !dirty || !permissions.canReview} onClick={() => save()}>Lưu tất cả thẩm định</Button><Button disabled={disabled || dirty || !permissions.canReview} onClick={() => confirm(() => execute(() => acceptAllScores(record.id), "Đã chấp nhận các ô chưa duyệt"), "Chấp nhận toàn bộ ô chưa duyệt?")}>Chấp nhận các ô chưa duyệt</Button><Button disabled={disabled || dirty || !permissions.canCompleteFirstReview} onClick={() => confirm(() => execute(() => completeFirstReview(record.id), "Đã hoàn tất thẩm định lần đầu"), "Hoàn tất thẩm định lần đầu?")}>Hoàn tất thẩm định lần đầu</Button><Button disabled={disabled || dirty} onClick={() => onFinalize([record.id])}>Xem trước và chốt hồ sơ</Button></Space>
       {dirty && <Typography.Text type="warning">Có nháp chưa lưu, cần xử lý trước khi hoàn tất lượt đầu, yêu cầu bổ sung hoặc chốt</Typography.Text>}
-      <Space wrap><DatePicker aria-label="Ngày giờ mở bổ sung theo giờ Việt Nam" showTime format="DD/MM/YYYY HH:mm" placeholder="Giờ mở theo giờ Việt Nam" value={start} disabled={disabled || !permissions.canRequestSupplement || dirty} disabledDate={(date) => [0, 6].includes(date.day())} onChange={(value) => { setStart(value); setSchedule(null); }} /><Button disabled={disabled || !start || !permissions.canRequestSupplement || dirty} onClick={previewSchedule}>Xem trước lịch bổ sung</Button><Button disabled={disabled || !schedule || !permissions.canRequestSupplement || dirty || !selected.length || selected.some((id) => !notes[id]?.trim())} onClick={supplement}>Gửi yêu cầu bổ sung</Button></Space>
+      <Space wrap><DatePicker aria-label="Ngày giờ mở bổ sung theo giờ Việt Nam" showTime format="DD/MM/YYYY HH:mm" placeholder="Giờ mở theo giờ Việt Nam" value={start} disabled={disabled || !permissions.canRequestSupplement || dirty} disabledDate={(date) => [0, 6].includes(date.day())} onChange={(value) => { setStart(value); setSchedule(null); }} /><Button disabled={disabled || !start || !permissions.canRequestSupplement || dirty} onClick={previewSchedule}>Xem trước lịch bổ sung</Button><Button disabled={disabled || !schedule || !permissions.canRequestSupplement || dirty || !selected.length || selected.some((id) => !notes[id]?.trim())} onClick={() => confirm(supplement, "Gửi yêu cầu bổ sung theo lịch đã xem?")}>Gửi yêu cầu bổ sung</Button></Space>
       {schedule && <Alert type="info" title={`Mở ${vietnamTime(schedule.supplementStartAt)}, ${schedule.displayUntil}`} description={schedule.notice} />}
       {notice && <Alert type={notice.type} showIcon title={notice.text} />}
     </Space>

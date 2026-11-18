@@ -1,26 +1,32 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { Spin } from "antd";
 import { RequireAuth, RequirePasswordChanged, RequireRole } from "./guards";
-import LoginPage from "../pages/auth/LoginPage";
-import ChangePasswordPage from "../pages/auth/ChangePasswordPage";
-import AdminDashboard from "../pages/admin/AdminDashboard";
-import AdminUsers from "../pages/admin/AdminUsers";
-import AdminUnits from "../pages/admin/AdminUnits";
-import AdminAuditLog from "../pages/admin/AdminAuditLog";
-import AdminConfig from "../pages/admin/AdminConfig";
-// 1. Import AdminLayout vào
 import AdminLayout from "../layouts/AdminLayout";
-import NotificationInbox from "../pages/NotificationInbox";
-import PushOnboardingPage from "../pages/auth/PushOnboardingPage";
-import UnitRecords from "../pages/unit/UnitRecords";
-import AdminRecords from "../pages/admin/AdminRecords";
-import AdminReports from "../pages/admin/AdminReports";
+import UnitLayout from "../layouts/UnitLayout";
+import StatusPage from "../pages/StatusPage";
 
-// Trang hồ sơ Admin dùng danh sách/chi tiết backend thật, thao tác thẩm định thuộc VC12
-const Forbidden = () => <div style={{ padding: 20, color: "red" }}>403 - Bạn không có quyền truy cập!</div>;
+// Tải mã của từng trang khi đi tới tuyến đó để màn đăng nhập không chờ toàn bộ giao diện quản trị
+// Guard được dựng trước trang nghiệp vụ, tải module không đồng nghĩa có quyền truy vấn dữ liệu
+const LoginPage = lazy(() => import("../pages/auth/LoginPage"));
+const ChangePasswordPage = lazy(() => import("../pages/auth/ChangePasswordPage"));
+const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
+const AdminUsers = lazy(() => import("../pages/admin/AdminUsers"));
+const AdminUnits = lazy(() => import("../pages/admin/AdminUnits"));
+const AdminAuditLog = lazy(() => import("../pages/admin/AdminAuditLog"));
+const AdminConfig = lazy(() => import("../pages/admin/AdminConfig"));
+const NotificationInbox = lazy(() => import("../pages/NotificationInbox"));
+const PushOnboardingPage = lazy(() => import("../pages/auth/PushOnboardingPage"));
+const UnitRecords = lazy(() => import("../pages/unit/UnitRecords"));
+const AdminRecords = lazy(() => import("../pages/admin/AdminRecords"));
+const AdminReports = lazy(() => import("../pages/admin/AdminReports"));
 
+/** Ghép đầy đủ trang thật và guard theo thứ tự xác thực, đổi mật khẩu rồi vai trò
+ * Reload/direct URL vẫn đi qua cùng guard, tuyến lạ hiện 404 có đường quay lại
+ */
 export default function AppRoutes() {
   return (
-    <Routes>
+    <Suspense fallback={<div role="status" style={{ padding: 24 }}><Spin /> Đang tải giao diện, vui lòng chờ</div>}><Routes>
       {/* Trang public */}
       <Route path="/login" element={<LoginPage />} />
       {/* Link mời có quyền hẹp được mở trước khi tài khoản có phiên đăng nhập */}
@@ -54,8 +60,8 @@ export default function AppRoutes() {
 
           {/* ================= KHU VỰC UNIT ================= */}
           <Route element={<RequireRole roles={["UNIT"]} />}>
-            {/* UNIT dùng cùng layout và hộp thư, menu được giới hạn theo role đã xác thực */}
-            <Route element={<AdminLayout />}>
+            {/* UNIT có khung điều hướng riêng và không nhận menu ADMIN */}
+            <Route element={<UnitLayout />}>
               <Route path="/unit/records" element={<UnitRecords />} />
               <Route path="/unit/notifications" element={<NotificationInbox />} />
             </Route>
@@ -65,10 +71,11 @@ export default function AppRoutes() {
       </Route>
 
       {/* Lỗi 403 */}
-      <Route path="/403" element={<Forbidden />} />
+      <Route path="/403" element={<StatusPage forbidden />} />
 
-      {/* Mặc định vào trang login nếu gõ sai đường dẫn */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+      {/* Tuyến không tồn tại có trạng thái 404 tiếng Việt thay vì mất ngữ cảnh về login */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<StatusPage />} />
+    </Routes></Suspense>
   );
 }

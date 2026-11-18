@@ -4,6 +4,7 @@ import viVN from "antd/locale/vi_VN";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
 import { createEvaluation, getEvaluation, getScoreSummary, listEvaluations } from "../../services/evaluationService";
 import SelfEvaluationCard from "../../components/records/SelfEvaluationCard";
+import { allPages } from "../../services/pagination";
 
 /** Tải kỳ và hồ sơ thật theo phiên UNIT, giữ thẻ ổn định để không mất nháp khi polling
  * Làm mới mỗi 15 giây và tại mốc mở do server trả, timer chỉ hỏi API xác nhận lại quyền
@@ -27,8 +28,8 @@ export default function UnitRecords() {
       if (busy) return;
       busy = true;
       try {
-        const result = await evaluationPeriodService.getEvaluationPeriods({ pageSize: 100 });
-        const rows = await Promise.all((result.items || []).map(async (period) => {
+        const items = await allPages((params) => evaluationPeriodService.getEvaluationPeriods(params));
+        const rows = await Promise.all(items.map(async (period) => {
           const records = await listEvaluations({ periodId: period.id, pageSize: 1 });
           if (!records.items.length) return { ...period, record: null, summary: null };
           const record = await getEvaluation(records.items[0].id);
@@ -45,7 +46,10 @@ export default function UnitRecords() {
     }
     void load();
     const timer = setInterval(load, 15000);
-    return () => { active = false; clearInterval(timer); clearTimeout(openingTimer); };
+    /** Khi trở lại tab hỏi lại quyền server, không mở ô nhập từ thời gian của thiết bị */
+    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", onVisible); window.addEventListener("focus", onVisible);
+    return () => { active = false; clearInterval(timer); clearTimeout(openingTimer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
   }, [refresh]);
 
   /** Tạo bù idempotent bằng identity phiên, không gửi unitId hoặc trạng thái từ UNIT

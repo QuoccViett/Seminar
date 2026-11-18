@@ -30,3 +30,17 @@ test("sau chốt chỉ đọc, nội dung được render văn bản", async () 
   await screen.findByText("<b>Chỉ là văn bản</b>"); expect(screen.queryByLabelText("Nội dung phản hồi")).toBeNull(); expect(view.container.querySelector("b")).toBeNull();
   expect(await screen.findByText(/Hệ thống/)).toBeInTheDocument();
 });
+
+/** Validation trả lỗi content phải hiện đủ lý do cạnh ô nhập và giữ nguyên bản nháp để sửa
+ * Chỉ giả biên API của component, bộ browser kiểm riêng quy tắc từ chối HTML trên backend thật
+ */
+test("lỗi trường phản hồi không bị thông báo tổng quát che mất", async () => {
+  setup();
+  apiClient.post.mockRejectedValue({ message: "Dữ liệu gửi lên không hợp lệ", fieldErrors: [{ field: "content", messages: ["Nội dung phải là văn bản thuần"] }] });
+  render(<FeedbackPanel evaluationId="record" status="DRAFT" />);
+  fireEvent.change(await screen.findByLabelText("Nội dung phản hồi"), { target: { value: "<b>Nội dung cần sửa</b>" } });
+  fireEvent.click(screen.getByText("Gửi phản hồi"));
+  await screen.findByText("Dữ liệu gửi lên không hợp lệ; Nội dung phải là văn bản thuần");
+  expect(screen.getByLabelText("Nội dung phản hồi")).toHaveValue("<b>Nội dung cần sửa</b>");
+  expect(screen.getByLabelText("Nội dung phản hồi")).toHaveAttribute("aria-invalid", "true");
+});

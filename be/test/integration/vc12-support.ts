@@ -29,12 +29,15 @@ export interface Vc12Payload {
 /** Khởi động Nest/PostgreSQL thật chỉ trên database local mang tên dành riêng VC12
  * Provider ngoài tắt, timer được dừng để test chủ động tạo cạnh tranh và chứng minh job trễ
  * Fixture thêm UUID mới, không reset hoặc xóa dữ liệu cũ và không thay đồng hồ hệ thống
- * VC13–VC15 tái sử dụng điều kiện trước VC12 qua cấu hình tên DB allowlist, không ghi vào DB dùng chung
+ * VC13–VC16 tái sử dụng điều kiện trước VC12 qua cấu hình tên DB allowlist, không ghi vào DB dùng chung
  */
 export async function createVc12Harness(database = { url: process.env.VC12_TEST_DATABASE_URL, name: "vc12_test" }) {
   const url = database.url;
-  assert.ok(["vc12_test", "vc13_test", "vc14_test", "vc15_test"].includes(database.name) && url && new URL(url).pathname === `/${database.name}` && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local kiểm thử VC12–VC15 riêng");
+  assert.ok(["vc12_test", "vc13_test", "vc14_test", "vc15_test", "vc16_test"].includes(database.name) && url && new URL(url).pathname === `/${database.name}` && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local kiểm thử VC12–VC16 riêng");
   Object.assign(process.env, { DATABASE_URL: url, JWT_SECRET: "vc12-test-secret-only-at-least-32-characters", NODE_ENV: "test", WEB_ORIGINS: "http://127.0.0.1:5182", PUBLIC_APP_URL: "http://127.0.0.1:5182", INITIAL_ACCOUNT_PASSWORD: "123456", EMAIL_ENABLED: "false", WEB_PUSH_ENABLED: "false", ZALO_ZNS_ENABLED: "false", STORAGE_ENABLED: "true", STORAGE_PROVIDER: "local", STORAGE_LOCAL_DIR: ".tmp/vc12-private-storage" });
+  // VC16 có kho minh chứng riêng để browser tạo bytes mới mà không dùng thư mục của fixture chặng cũ
+  // Các tên DB trước giữ đường dẫn đã được assertion hồi quy sử dụng, không di chuyển hoặc xóa tệp đã có
+  if (database.name === "vc16_test") process.env.STORAGE_LOCAL_DIR = ".tmp/vc16-private-storage";
   // Mỗi harness có kho báo cáo riêng, không đọc hay dọn kho local của ứng dụng đang dùng
   // Giữ đường dẫn fixture VC13 đã dùng trong assertion hồi quy, các chặng khác theo tên DB riêng
   process.env.REPORT_EXPORT_DIR = database.name === "vc13_test" ? ".tmp/vc13-report-exports" : `.tmp/${database.name}-reports`;
@@ -51,8 +54,8 @@ export async function createVc12Harness(database = { url: process.env.VC12_TEST_
   const { createApiValidationPipe } = await import(new URL("common/pipes/api-validation.pipe.js", dist).href);
   const app = await NestFactory.create(AppModule, { logger: false });
   app.useGlobalFilters(new AllExceptionsFilter()); app.useGlobalPipes(createApiValidationPipe());
-  // Browser VC14/VC15 dùng cổng riêng nếu fixture cũ đang bận, chỉ cho phép origin local đã chỉ định
-  const extraOrigin = database.name === "vc14_test" ? process.env.VC14_FE_ORIGIN : database.name === "vc15_test" ? process.env.VC15_FE_ORIGIN : undefined;
+  // Browser các chặng dùng cổng riêng nếu fixture cũ đang bận, chỉ cho phép origin local đã chỉ định
+  const extraOrigin = database.name === "vc14_test" ? process.env.VC14_FE_ORIGIN : database.name === "vc15_test" ? process.env.VC15_FE_ORIGIN : database.name === "vc16_test" ? process.env.VC16_FE_ORIGIN : undefined;
   app.enableCors({ origin: extraOrigin ? ["http://127.0.0.1:5182", extraOrigin] : "http://127.0.0.1:5182" });
   await app.listen(Number(process.env.VC12_HTTP_PORT ?? 0), "127.0.0.1");
   const prisma = app.get<PrismaService>(PrismaToken); const audit = app.get<AuditService>(AuditToken);
