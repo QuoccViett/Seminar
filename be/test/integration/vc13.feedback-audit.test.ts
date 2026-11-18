@@ -107,7 +107,7 @@ test("VC13 phản hồi, lịch sử và audit trên HTTP/PostgreSQL thật", as
     });
 
     await suite.test("che bí mật lồng nhau lúc ghi và đọc audit cũ, giữ thứ tự timestamp trùng", async () => {
-      const entityId = randomUUID(); const timestamp = new Date(); const secret = "vc13-bi-mat-khong-duoc-lo";
+      const entityId = randomUUID(); const timestamp = new Date(); const secret = "redaction-fixture";
       const snapshot = { password: secret, hash: secret, token: secret, secret, credentialCiphertext: secret, items: [{ privateKey: secret, nonce: secret, tag: secret, name: "Tên được giữ" }] };
       await h.audit.record({ actorId: null, action: "VC13_REDACT", entity: "Test", entityId, after: snapshot });
       const written = await h.prisma.auditLog.findFirstOrThrow({ where: { entityId } }); assert.doesNotMatch(JSON.stringify(written), new RegExp(secret));
