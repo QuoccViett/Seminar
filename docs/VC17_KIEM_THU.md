@@ -1,6 +1,6 @@
 # VC17 — Kiểm thử toàn hệ thống và dữ liệu cạnh tranh
 
-Ngày 19/11/2026, baseline `main` tại `cccf167`, Git sạch trước lượt làm việc ban đầu. Các kiểm thử kỹ thuật local VC17 theo lịch bổ sung tạm đã đạt như bảng bên dưới. **Đang chờ xác nhận CI remote sau bản sửa hai lỗi tại PR #31**, chưa kết luận hoàn tất DoD của VC17. Chỉ triển khai VC17 trong [kế hoạch](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md); chưa thay thế xác nhận chính sách của thầy hoặc kết quả Actions remote.
+Ngày 19/11/2026, baseline `main` tại `cccf167`, Git sạch trước lượt làm việc ban đầu. Các kiểm thử kỹ thuật local VC17 theo lịch bổ sung tạm đã đạt như bảng bên dưới. **Đang chờ xác nhận CI remote sau bản sửa fixture VC11 tại PR #31**, chưa kết luận hoàn tất DoD của VC17. Chỉ triển khai VC17 trong [kế hoạch](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md); chưa thay thế xác nhận chính sách của thầy hoặc kết quả Actions remote.
 
 ## Môi trường và cách chạy
 
@@ -105,8 +105,26 @@ Kiểm thực tế của bản sửa: tái hiện generate thiếu URL thất b�
 
 Chạy lại toàn bộ [system](../be/test/integration/vc17.system.test.ts) sau sửa trên PostgreSQL 16 riêng cổng 55448, DB mới áp đủ 11 migration: **9/9 đạt, 0 fail/skip**, khoảng 69,85 giây. Bao gồm golden path dùng mật khẩu ngẫu nhiên và tải 34 người/204 HTTP, p95 5.149 ms/cặp lưu + dashboard dưới ngưỡng cấu hình trước 15.000 ms, 0 lỗi. [TAP](../be/.tmp/vc17-ci-fix/system.tap) và [hậu điều kiện](../be/.tmp/vc17-ci-fix/system-results-after.json) lưu riêng khỏi bằng chứng lượt trước; container thử được dừng sau kiểm. `git diff --check` đạt; rà tám dòng comment mới đều có tiếng Việt có dấu và không kết thúc bằng dấu chấm.
 
-Chưa có kết quả Actions remote sau bản sửa; cần push thay đổi và kiểm lượt mới trước khi đánh dấu điều kiện CI hoàn tất. Không thay đổi schema, migration đã áp dụng, API contract hoặc FE trong bản sửa này.
+Kết quả remote sau bản sửa hai lỗi đầu tiên được ghi ở mục tiếp theo. Không thay đổi schema, migration đã áp dụng, API contract hoặc FE trong bản sửa này.
+
+## Sửa fixture scheduler VC11 thiếu cấu hình trên CI
+
+Baseline `0a1252a`, Git sạch trước lượt sửa. [Run thực tế 44459025787](https://github.com/giahan358/Seminar/actions/runs/44459025787) đã qua Gitleaks, Backend CI, Frontend CI và 41/42 bước nội bộ VC17; riêng `vc11` thất bại, manifest `complete=false`. Coverage remote 96,14% dòng đạt ngưỡng nhưng không thay thế kết quả test thất bại. URL của run `44456568911` trong log được gửi lại là lượt cũ; dùng run mới tương ứng commit để đối chiếu.
+
+Đã đọc artifact `vc17-evidence` ID `14499611327`, đối chiếu SHA-256 của ZIP tải về khớp digest từ [metadata artifact GitHub](https://api.github.com/repos/giahan358/Seminar/actions/artifacts/14499611327). [Log VC11 remote](../be/.tmp/vc17-scheduler-ci/remote/vc17-artifacts/vc11.log) chỉ ghi tiến trình thoát mã 1 sau khoảng 3,14 giây vì Nest mặc định tự thoát khi khởi tạo lỗi và test đã tắt logger.
+
+Nguyên nhân: [fixture scheduler](../be/test/integration/vc11.scheduler.test.ts) khai báo DB/JWT nhưng thiếu cả `WEB_ORIGINS` và `CORS_ORIGINS`, trong khi [validation cấu hình](../be/src/config/env.validation.ts) yêu cầu ít nhất một origin. Máy local có tệp môi trường nên che mất thiếu sót; checkout CI không có tệp này. [Log tái hiện](../be/.tmp/vc17-scheduler-ci/baseline-no-env.tap) thoát giống remote; [log chẩn đoán](../be/.tmp/vc17-scheduler-ci/diagnostic-no-env.tap) sau khi cho Nest trả rejection xác nhận đúng lỗi tiếng Việt `Cấu hình không hợp lệ hoặc còn thiếu: CORS_ORIGINS, WEB_ORIGINS`.
+
+Bản sửa chỉ áp fixture: khai báo hai alias origin cùng loopback trước import AppModule để cả tiến trình chính và tiến trình restart có cấu hình đầy đủ; đặt `abortOnError=false` cho hai lần dựng Nest trong test để node:test/execFile ghi nguyên nhân khi khởi tạo thất bại. Giữ logger tắt, không nới validation cấu hình sản phẩm, không tắt assertion hoặc bỏ thu coverage VC11. Comment bổ sung giải thích cấu hình, đầu vào/đầu ra và nhánh lỗi, không có dấu chấm cuối dòng.
+
+Kiểm thực tế sau sửa, từ thư mục làm việc thử không có tệp môi trường và đã gỡ cả hai biến CORS khỏi môi trường tiến trình cha:
+
+- PostgreSQL 16 riêng cổng 55449, DB `vc11_test` mới, đủ 11 migration: [VC11 thường](../be/.tmp/vc17-scheduler-ci/fixed-no-env.tap) **1/1 đạt, 0 fail/skip**, khoảng 15,49 giây
+- PostgreSQL 16 riêng cổng 55450, DB mới cùng tên, đủ 11 migration: [VC11 bật NODE_V8_COVERAGE](../be/.tmp/vc17-scheduler-ci/fixed-with-coverage.tap) **1/1 đạt, 0 fail/skip**, khoảng 17,27 giây, gồm tiến trình Nest restart kế thừa coverage như CI
+- TypeScript `--noEmit`, ESLint tệp sửa, Gitleaks các dòng mới, `git diff --check` và rà comment đạt
+
+Giữ riêng artifact remote, log tái hiện và hai lượt sau sửa; không ghi đè bằng chứng trước, không reset DB dùng chung hoặc sửa migration. Hai container mới được dừng sau kiểm. Chưa chạy lại toàn bộ VC17 hoặc Actions remote sau bản sửa fixture này; các bộ remote đã đạt được ghi nhận theo run của chúng, không ghép thành một lượt CI hoàn tất. Checklist điều kiện CI tiếp tục chờ lượt remote mới.
 
 ## Giới hạn xác nhận
 
-Chưa có quyết định chính sách của thầy; không biến lịch tạm thành chính sách đã nghiệm thu. Actions remote run `44456568911` đã thất bại như phần sửa CI; chưa xác nhận lượt remote mới sau bản sửa local. SMTP thật tại Mailpit không phải bằng chứng gửi Web Push đến thiết bị thật hoặc email tới người thật. ZNS mặc định tắt, không yêu cầu secret/template hay demo gửi thật có phí trong VC17.
+Chưa có quyết định chính sách của thầy; không biến lịch tạm thành chính sách đã nghiệm thu. Actions remote gần nhất `44459025787` còn lỗi fixture VC11; bản sửa đã kiểm hai lượt local nhưng chưa xác nhận lượt remote mới. SMTP thật tại Mailpit không phải bằng chứng gửi Web Push đến thiết bị thật hoặc email tới người thật. ZNS mặc định tắt, không yêu cầu secret/template hay demo gửi thật có phí trong VC17.
