@@ -15,7 +15,7 @@ let stage = "khởi tạo";
 
 /** Kiểm trải nghiệm hai vai trò qua Chrome, Nest và PostgreSQL thật trên loopback
  * Chỉ dữ liệu fixture VC16 được sửa qua DB, mọi thao tác nghiệp vụ thực hiện qua UI/API thật
- * Mạng chậm chỉ trì hoãn request rồi chuyển tiếp, không fulfill hoặc mock response backend
+ * Mạng lỗi chỉ ngắt request ghi cần kiểm, mạng chậm trì hoãn rồi chuyển tiếp, không fulfill response backend
  * Không gửi tin ngoài, không in token/password/URL ký; kết quả chỉ chứa các nhãn assertion cố định
  */
 async function verify() {
@@ -23,8 +23,12 @@ async function verify() {
   const origin = process.env.VC16_FE_ORIGIN ?? "http://127.0.0.1:5186";
   const databaseUrl = process.env.VC16_TEST_DATABASE_URL;
   if (!databaseUrl || new URL(databaseUrl).pathname !== "/vc16_test" || ![origin, fixture.base, databaseUrl].every((url) => new URL(url).hostname === "127.0.0.1") || !/^vc12-admin-[a-f0-9]{8}$/.test(fixture.username)) throw new Error("Chỉ được kiểm bằng fixture VC16 local riêng");
-  const { chromium } = await import(pathToFileURL(process.env.VC16_PLAYWRIGHT_MODULE).href);
-  const browser = await chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
+  // Local có thể dùng Playwright và Chrome được chỉ định, CI dùng Chromium từ dependency đã khóa
+  // Không bắt buộc đường dẫn Windows để cùng bài kiểm backend thật chạy được trên runner Linux
+  const { chromium } = await import(process.env.VC16_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.VC16_PLAYWRIGHT_MODULE).href : "playwright");
+  // Dùng Chromium đầy đủ ở chế độ headless mới để iframe PDF có cùng bộ xem tệp như Chrome thực tế
+  // Đường dẫn Chrome được chỉ định vẫn được ưu tiên khi kiểm local, CI dùng binary đã tải từ lockfile Playwright
+  const browser = await chromium.launch({ ...(process.env.VC16_CHROME_PATH ? { executablePath: process.env.VC16_CHROME_PATH } : { channel: "chromium" }), headless: true });
   const adminContext = await browser.newContext({ acceptDownloads: true, viewport: { width: 1500, height: 1000 } });
   const unitContext = await browser.newContext({ acceptDownloads: true, viewport: { width: 1300, height: 1000 } });
   const admin = await adminContext.newPage(); const unit = await unitContext.newPage();
@@ -263,10 +267,24 @@ async function verify() {
     }, fixture.base);
     assert.equal(blocked.status, 403); assert.equal(blocked.body.code, "PASSWORD_CHANGE_REQUIRED");
     await unit.getByPlaceholder("Mật khẩu hiện tại", { exact: true }).fill("123456");
-    await unit.getByPlaceholder("Mật khẩu mới", { exact: true }).fill("Vc16-MatKhauMoi9");
-    await unit.getByPlaceholder("Xác nhận mật khẩu mới", { exact: true }).fill("Vc16-MatKhauMoi9");
+    // Bảy ký tự phải bị form chặn trước HTTP, đúng tám ký tự đủ chữ và số phải được backend nhận
+    // Đếm request thật và kiểm cờ DB để không suy ra đổi mật khẩu thành công chỉ từ thông báo giao diện
+    let passwordRequests = 0;
+    const observePassword = (request) => { if (new URL(request.url()).pathname === "/api/v1/auth/change-password" && request.method() === "POST") passwordRequests++; };
+    unit.on("request", observePassword);
+    await unit.getByPlaceholder("Mật khẩu mới", { exact: true }).fill("Chu1234");
+    await unit.getByPlaceholder("Xác nhận mật khẩu mới", { exact: true }).fill("Chu1234");
     await unit.getByRole("button", { name: "Xác nhận đổi", exact: true }).click();
-    await unit.waitForURL("**/unit/records"); checks.push("forcedPasswordBackendAndFrontend");
+    await unit.getByText("Mật khẩu mới phải có ít nhất 8 ký tự.", { exact: true }).waitFor();
+    assert.equal(passwordRequests, 0);
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: fixture.unit.userId } })).mustChangePassword, true);
+    await unit.getByPlaceholder("Mật khẩu mới", { exact: true }).fill("Chu12345");
+    await unit.getByPlaceholder("Xác nhận mật khẩu mới", { exact: true }).fill("Chu12345");
+    await unit.getByRole("button", { name: "Xác nhận đổi", exact: true }).click();
+    await unit.waitForURL("**/unit/records");
+    unit.off("request", observePassword); assert.equal(passwordRequests, 1);
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: fixture.unit.userId } })).mustChangePassword, false);
+    checks.push("realPasswordSevenRejectedEightAccepted"); checks.push("forcedPasswordBackendAndFrontend");
 
     // Đổi Date.now của browser không được lộ tiêu chí, chỉ điều kiện mở ở DB thử mới thay quyền khi refetch
     // Không sửa đồng hồ hệ thống hoặc dùng đồng hồ client làm nguồn cấp quyền
@@ -274,10 +292,17 @@ async function verify() {
     await unit.getByText("Kỳ đánh giá chưa đến giờ mở tiêu chí", { exact: true }).waitFor();
     const hiddenText = "Kỳ chờ mở VC16 — Nội dung tiêu chí";
     assert.equal(await unit.getByText(hiddenText, { exact: true }).count(), 0);
-    await unit.evaluate(() => { Date.now = () => 2100000000000; });
-    await unit.getByRole("button", { name: "Làm mới", exact: true }).click();
+    // Lưu hàm gốc để phép thử lệch giờ không vô tình biến các bước mạng phía sau thành thử JWT hết hạn
+    // Khôi phục ngay sau khi backend đã chứng minh vẫn giấu tiêu chí dù đồng hồ client vượt xa thời điểm mở
+    await unit.evaluate(() => { Date.vc17OriginalNow = Date.now; Date.now = () => 2100000000000; });
+    const [hiddenResponse] = await Promise.all([
+      unit.waitForResponse((response) => new URL(response.url()).pathname === `/api/v1/evaluations/${fixture.waiting.evaluationId}` && response.status() === 200),
+      unit.getByRole("button", { name: "Làm mới", exact: true }).click(),
+    ]);
+    assert.equal((await hiddenResponse.json()).criteriaVisible, false);
     await unit.getByText("Kỳ đánh giá chưa đến giờ mở tiêu chí", { exact: true }).waitFor();
     assert.equal(await unit.getByText(hiddenText, { exact: true }).count(), 0);
+    await unit.evaluate(() => { Date.now = Date.vc17OriginalNow; delete Date.vc17OriginalNow; });
     await prisma.evaluationPeriod.update({ where: { id: fixture.waiting.periodId }, data: { selfEvalStart: new Date(Date.now() - 1000) } });
     await unit.evaluate(() => window.dispatchEvent(new Event("focus")));
     await unit.getByText(hiddenText, { exact: true }).waitFor();
@@ -290,13 +315,20 @@ async function verify() {
     await card.getByRole("spinbutton", { name: "Điểm VC16", exact: true }).fill("80");
     await card.getByRole("textbox", { name: "Diễn giải VC16", exact: true }).fill("Nội dung <script>không chạy</script> VC16");
     await unit.getByRole("link", { name: "Hộp thư thông báo", exact: true }).click();
-    await unit.getByRole("link", { name: "Hồ sơ tự chấm", exact: true }).click();
+    // Đợi lần tải thật sau khi điều hướng, tránh đọc thẻ cũ còn trên DOM rồi ngắt mạng khi trang mới chưa có dữ liệu
+    await Promise.all([
+      unit.waitForResponse((response) => new URL(response.url()).pathname === `/api/v1/evaluations/${fixture.open.evaluationId}/score-summary` && response.status() === 200),
+      unit.getByRole("link", { name: "Hồ sơ tự chấm", exact: true }).click(),
+    ]);
+    await unit.getByRole("button", { name: "Làm mới", exact: true }).locator(".anticon-loading").waitFor({ state: "hidden" });
     assert.equal(await card.getByRole("spinbutton", { name: "Điểm VC16", exact: true }).inputValue(), "80.00");
-    await unitContext.setOffline(true);
+    // Chỉ gây đứt mạng cho request lưu để polling đọc quyền vẫn hoạt động độc lập
+    // Không tạo response giả và không gửi request tới BE, nháp phải còn nguyên còn DB chưa được ghi thành công
+    await unitContext.route("**/api/v1/evaluations/*/scores/self-batch", (route) => route.abort("internetdisconnected"));
     await card.getByRole("button", { name: "Lưu tiêu chí VC16", exact: true }).click();
     await card.getByText("Không thể kết nối máy chủ. Vui lòng thử lại.", { exact: true }).waitFor();
     assert.equal(await card.getByRole("spinbutton", { name: "Điểm VC16", exact: true }).inputValue(), "80.00");
-    await unitContext.setOffline(false);
+    await unitContext.unrouteAll({ behavior: "wait" });
     await unit.getByRole("button", { name: "Làm mới", exact: true }).click();
     await card.getByRole("button", { name: "Lưu tiêu chí VC16", exact: true }).waitFor();
     await unitContext.route("**/api/v1/evaluations/*/scores/self-batch", async (route) => { await new Promise((resolve) => setTimeout(resolve, 1000)); await route.continue(); });

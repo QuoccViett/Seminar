@@ -203,6 +203,8 @@ VC04 dùng các route sau, đều cần access token và tài khoản đã đổ
 | `PATCH /users/:id/status` | ADMIN | Body `{ "isActive": false }` hoặc `true`; khóa tài khoản thu hồi refresh và tăng `credentialVersion` để access token cũ hết hiệu lực |
 | `POST /users/:id/reset-password` | ADMIN | Trả `{userId,temporaryPassword,mustChangePassword:true,credentialsSentAt:null}`; tăng phiên bản và thu hồi các phiên cũ; chưa có gửi thông tin đăng nhập ở VC04 |
 
+VC17 kiểm cạnh tranh reset và worker credential: cả hai giữ cùng khóa dòng người dùng. Nếu reset commit trước, claim cũ không được gọi provider; nếu provider đã bắt đầu gửi khi đang giữ khóa, reset chờ lượt gửi đó kết thúc rồi tăng phiên bản và hủy payload cũ. Thư đã được provider nhận trước reset không được coi là có thể thu hồi. Giao dịch reset và công bố kỳ có ngân sách tối đa 30 giây, chờ lấy kết nối tối đa 10 giây; mọi điều kiện quyền và thời gian vẫn kiểm trên server sau khóa.
+
 `q` được trim, tối đa 100 ký tự, chuỗi rỗng tương đương không lọc. Email được trim và chuyển chữ thường, username được trim và chuyển chữ thường lúc tạo; phone được trim, chỉ nhận 9–15 chữ số với dấu `+` đầu chuỗi tùy chọn. Username không được sửa. Mọi phản hồi hồ sơ chọn trường công khai rõ ràng, không có `passwordHash`, `credentialVersion` hoặc mật khẩu cũ. Đổi vai trò/hạ trạng thái ADMIN cuối cùng trả `422 LAST_ADMIN`; tự khóa/hạ quyền trả `422 BUSINESS_RULE_VIOLATION`; trùng mã/tên đăng nhập/email/unit trả `409`, ID không thuộc quyền xem trả `404`. Audit thay đổi cùng giao dịch và chỉ lưu các trường công khai. `temporaryPassword` chỉ phục vụ cấp tay trong VC04; trạng thái chưa gửi phải hiển thị rõ. Gửi credential qua các kênh thuộc VC06/VC07.
 
 ### Hộp thư và hàng đợi thông báo VC05

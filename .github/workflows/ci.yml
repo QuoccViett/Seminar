@@ -212,6 +212,55 @@ jobs:
       - name: Run backend E2E tests
         run: npm run test:e2e
 
+  # Chạy toàn bộ VC17 bằng cùng entrypoint local, database mới và provider ngoài chỉ là Mailpit hoặc giả trong test
+  # Thống kê truy vấn bật riêng trong container dùng một lần, không cần quyền hoặc secret của môi trường demo
+  system-vc17:
+    name: VC17 toàn hệ thống và cạnh tranh
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ./be
+    env:
+      VC17_ADMIN_DATABASE_URL: postgresql://vc17:vc17_test@127.0.0.1:55433/vc17_control_test
+      VC17_LOAD_P95_MS: 15000
+      VC17_FE_ORIGIN: http://127.0.0.1:5187
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            be/package-lock.json
+            fe/package-lock.json
+      - name: Cài dependency từ lockfile
+        run: |
+          npm ci
+          npm ci --prefix ../fe
+          npx prisma generate
+          npx playwright install --with-deps chromium
+      - name: Khởi tạo PostgreSQL và SMTP chỉ dành kiểm thử
+        run: |
+          docker run -d --name vc17-postgres -e POSTGRES_USER=vc17 -e POSTGRES_PASSWORD=vc17_test -e POSTGRES_DB=vc17_control_test -p 127.0.0.1:55433:5432 postgres:16-alpine -c shared_preload_libraries=pg_stat_statements -c log_min_duration_statement=250 -c track_io_timing=on
+          docker run -d --name vc17-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+          for attempt in {1..30}; do
+            if docker exec vc17-postgres pg_isready -h 127.0.0.1 -U vc17 -d vc17_control_test; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Kiểm hệ thống, browser thật, nâng cấp, race, tải và coverage
+        run: npm run test:vc17
+      - name: Lưu bằng chứng kể cả khi kiểm thử thất bại
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vc17-evidence
+          path: |
+            be/.tmp/vc17-artifacts
+            be/.tmp/vc17-coverage
+            be/.tmp/vc16-artifacts
+
   frontend-ci:
     name: Frontend CI
     runs-on: ubuntu-latest

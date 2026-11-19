@@ -1,0 +1,98 @@
+# VC17 — Kiểm thử toàn hệ thống và dữ liệu cạnh tranh
+
+Ngày 19/11/2026, baseline `main` tại `cccf167`, Git sạch trước lượt làm việc. **Hoàn thành 100% phạm vi triển khai và kiểm thử kỹ thuật VC17 theo lịch bổ sung tạm**. Chỉ triển khai VC17 trong [kế hoạch](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md); chưa thay thế xác nhận chính sách của thầy hoặc kết quả Actions remote.
+
+## Môi trường và cách chạy
+
+Đã kiểm Git, source/Auth, schema Prisma, 11 migration, API contract và FE trước khi sửa. Giữ NestJS + Prisma + PostgreSQL 16 và ESM. Các bộ dùng DB mới trên PostgreSQL loopback riêng; runner kiểm tất cả tên đích chưa tồn tại trước khi tạo, không DROP/reset DB hoặc sửa migration đã áp dụng. Mailpit 1025/8025 chỉ nhận địa chỉ thử `example.invalid`; ZNS tắt. Không gửi tới người thật hoặc deploy.
+
+Sau `npm ci`, `npm ci --prefix ../fe`, `npm run db:generate`, `npx playwright install chromium` (Linux thêm `--with-deps`), chạy từ backend:
+
+```powershell
+docker run -d --name seminar-vc17-local -e POSTGRES_USER=vc17 -e POSTGRES_PASSWORD=vc17_test -e POSTGRES_DB=vc17_control_test -p 127.0.0.1:55438:5432 postgres:16-alpine -c shared_preload_libraries=pg_stat_statements -c log_min_duration_statement=250 -c track_io_timing=on
+docker run -d --name seminar-vc17-local-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+docker exec seminar-vc17-local pg_isready -h 127.0.0.1 -U vc17 -d vc17_control_test
+$env:VC17_ADMIN_DATABASE_URL='postgresql://vc17:vc17_test@127.0.0.1:55438/vc17_control_test'
+npm run test:vc17
+```
+
+Tên container/cổng trong ví dụ phải còn trống; có thể dùng Mailpit thử đã chạy trên loopback thay vì tạo trùng. URL chỉ nhận localhost/127.0.0.1, DB quản lý `vc17_control_test`. Chạy lại `pg_isready` tới khi thành công rồi mới chạy test. Nếu các DB đích đã tồn tại, tạo PostgreSQL thử mới, không reset. Job `system-vc17` trong [workflow](../.github/workflows/ci.yml) tự dựng các điều kiện này và chạy cùng entrypoint. Khi chẩn đoán bộ riêng, đặt `VC17_SUITES` và gọi `node scripts/run-vc17.mjs`; lượt chọn bộ không thay thế kiểm coverage của toàn bộ unit/HTTP lõi.
+
+Log/manifest ở `be/.tmp/vc17-artifacts`, coverage ở `be/.tmp/vc17-coverage`, ảnh/kết quả browser ở `be/.tmp/vc16-artifacts`. State browser có credential fixture không nằm trong danh sách upload artifact. Lượt tổng hợp đầu giữ riêng tại `be/.tmp/vc17-first-run-artifacts`; kết quả kiểm lại phải đọc cùng log lỗi ban đầu, không coi lỗi là đạt.
+
+## Kết quả thực tế cuối lượt
+
+| Phép kiểm | Kết quả |
+|---|---|
+| `npm run test:unit` BE, gồm cả `.spec.ts` và `.spec.js` | 217/217, không bỏ qua |
+| 19 bộ DB/HTTP/seed/upgrade VC03–VC15 và VC17 | Tổng hợp 54/54, không bỏ qua; VC12 11/11, VC13 9/9, VC15 9/9, VC17 system 9/9 |
+| Timezone | 7/7 ở từng TZ UTC, Asia/Ho_Chi_Minh, America/New_York |
+| Policy và route ID | 864 tổ hợp; đủ 56 route ID từ metadata Nest |
+| Browser trên Nest/PostgreSQL/storage thật | Hai lượt liên tiếp 19/19 trên DB mới ở cổng PostgreSQL 55436 và 55437, `mockBackend=false` |
+| Coverage unit/HTTP lõi | 5.849/6.173 dòng = **94,75%**, nhánh **88,45%**, hàm **96,02%**; `report --check-coverage` đạt ngưỡng 85% |
+| Tải không profiler | 34 UNIT × 3 cặp lưu + dashboard = 204 HTTP, 0 lỗi; p95 cặp **7.830 ms**, tối đa **8.186 ms**, ngưỡng local xác định trước tải **18.714 ms**; CI đặt 15.000 ms |
+| Thống kê DB trong cửa sổ tải | 2.857 lượt truy vấn; một nhóm query ID có max ít nhất 250 ms; lưu ID/calls/tổng/max, không xuất SQL/tham số |
+| BE lint/build/TypeScript, Prisma validate | Đạt |
+| FE lint/build và `npm test` | Đạt, 43/43 trên 16 tệp |
+| Comment, workflow, whitespace | 82 khối comment thêm/sửa không có lỗi tiếng Việt hoặc dấu chấm cuối dòng; YAML và `git diff --check` đạt |
+
+Bằng chứng máy đọc được tại [verification-summary.json](../be/.tmp/vc17-artifacts/verification-summary.json), coverage tại [báo cáo c8](../be/.tmp/vc17-coverage/index.html), hai lượt UI tại [lượt một](../be/.tmp/vc17-artifacts/browser-first-pass.json) và [lượt hai](../be/.tmp/vc17-artifacts/browser-second-pass.json). Đây là **kết quả tổng hợp các lần chạy**, không khẳng định lượt toàn bộ đầu tiên đã xanh: log lỗi ban đầu được giữ, từng bộ lỗi được kiểm lại sau xử lý, các bộ đã đạt không bị thay bằng kết quả giả. Lượt cuối VC15/system/browser cùng đạt; browser sau đó được lặp lại trên DB mới.
+
+Unit/HTTP lõi cung cấp bộ đếm V8; các tiến trình PDF/tải/browser không gắn profiler nhưng mọi source nghiệp vụ vẫn nằm trong mẫu số. Báo cáo local bỏ dữ liệu bộ đếm của sáu tiến trình nặng đã thử trước khi tách profiler, đồng thời bỏ dependency/test/generated theo cấu hình; giữ raw ban đầu để đối chiếu, không sửa bộ đếm mã sản phẩm. Không dùng báo cáo cũ tính cả tệp test 83,36% để kết luận đạt.
+
+Cảnh báo không làm thất bại kiểm: JSDOM chưa hỗ trợ pseudo-element của `getComputedStyle`, Vite cảnh báo chunk lớn hơn 500 kB và pg cảnh báo API query đồng thời sẽ thay đổi ở bản lớn tương lai. Không còn lỗi kỹ thuật mở trong phạm vi VC17 đã kiểm; các xác nhận bên ngoài ở cuối biên bản vẫn được ghi riêng.
+
+## Ma trận bằng chứng
+
+| Điều kiện VC17 | Phép kiểm và hậu điều kiện |
+|---|---|
+| Quyền/giờ/trạng thái | [Policy](../be/src/modules/evaluations/vc17-policy.spec.ts) kiểm 864 tổ hợp phase/status/time/published/requested và lịch thiếu; [system](../be/test/integration/vc17.system.test.ts) lấy mọi route ID từ metadata Nest để thử không phiên/sai vai trò/UNIT khác; VC08–VC13 kiểm chưa công bố/chưa mở/đúng biên/sau chốt |
+| Golden path | Workbook thật → preview/confirm → login `123456`, BE bắt đổi → publish/chưa mở/không lộ tiêu chí → mở → self/PDF thật → submit/review → hai nhánh supplement submitted/expired → finalize/dashboard/history/audit → tải XLSX/PDF/DOCX |
+| Refresh/import/publish | Refresh cùng token chỉ một thành công, reuse thu hồi mọi token còn hiệu lực; VC07 confirm cùng phiên và hai phiên trùng không tạo user/unit/dispatch lặp; VC08 publish cạnh tranh kiểm hồ sơ/tiêu chí/outbox |
+| Save/submit/expiry/finalize | VC09 save-vs-submit; VC12 save-vs-supplement-submit, chờ khóa qua deadline cùng scheduler, hai finalize; kiểm điểm/trạng thái/số history/outbox sau race |
+| Worker/reset | VC05 SKIP LOCKED/backoff/token cũ; VC11 tiến trình khởi động lại sau lease/cửa sổ; VC17 hai worker tranh cùng retry chỉ gọi provider một lần, hai audit cho hai attempt; reset-vs-credential kiểm cả hai thứ tự và xác nhận reset thực sự chờ khóa user |
+| Contract/dữ liệu | Lỗi đúng statusCode/code/message/details và tiếng Việt; không raw Prisma/SQL/provider/secret; UNIT chưa chốt không nhận điểm Admin/baseline; nested validation có chỉ số, không phản chiếu input; mass assignment không đổi DB |
+| Migration/seed/kiểu | Migrate deploy DB trống đủ 11 migration; upgrade VC12/13 và nền 9 → 11 tại VC17 giữ snapshot hạn cũ/Auth/score/evidence/audit/history; append-only/baseline/view còn hiệu lực; seed hai lần idempotent; UTC mili giây/Decimal 85,01/BigInt 9007199254740993 round-trip |
+| Tải | 34 UNIT, mỗi người ba lượt lưu + đọc dashboard ADMIN, 204 HTTP; kiểm điểm/note cuối của từng người, số lỗi/p95 và query ID/calls/thời gian, không xuất SQL/tham số |
+| Coverage | c8 gộp unit/HTTP lõi, remap source map; mọi service nghiệp vụ, generator báo cáo, policy, guard/filter/validation/serializer/helper quan trọng vẫn thuộc mẫu số kể cả chưa chạy; loại test/generated, thất bại nếu dưới 85% dòng; PDF/tải/browser chạy chức năng không profiler |
+| Browser | Vite + Nest + PostgreSQL/storage thật; kiểm kéo thả Excel, mật khẩu 7/8, chưa mở tiêu chí, nháp/mạng chậm/lỗi mạng, upload, bổ sung/thẩm định/chốt, tải tệp, giao diện nhỏ và hết phiên |
+
+### Regression mục 10.4 và lịch tạm mục 5.4
+
+| Nhóm | Bằng chứng mới |
+|---|---|
+| Password | VC17 HTTP: 7/8/9/10+, Unicode, 72/73 byte, username/hash cũ/phổ biến, thu hồi access; browser 7 bị chặn trước HTTP, 8 được BE/DB chấp nhận |
+| Tự chấm | VC08/09/policy kiểm start−1/start/deadline, cuối tuần/ngoài giờ, PATCH ghép lịch và scheduler trễ |
+| Lịch bổ sung | Calculator/review-policy và VC08/12/16 kiểm năm ví dụ, thứ Sáu 23:30/23:59, cuối tuần, start và trọn phút 23:59 tới deadline 00:00 |
+| Tháng/năm/TZ | Cùng bảy test lịch chạy ở UTC, Asia/Ho_Chi_Minh, America/New_York; 31/12 → 01/01, instant UTC khác ngày Việt Nam |
+| Helper/lịch sai | Unit calculator và DTO HTTP kiểm Date/ISO/offset/lịch sai, lặp không mutate và từ chối trường số giờ cũ |
+| Request/retry | VC12 kiểm requestedAt khác startAt, hai request, rollback, retry, snapshot/outbox không dời |
+| Quyền/API/DB | VC09/10/12/policy/route ID kiểm owner/mục/file/confirm muộn/biên giờ, trigger nguyên vẹn |
+| Expiry/Admin | VC11/12 kiểm job trễ/restart/hai worker/nộp sớm/hồ sơ khác còn mở; không tự finalize hoặc đổi SUBMITTED thành EXPIRED |
+| Reminder | VC05/06/11 kiểm trước mở/sau đóng/retry, giờ VN, không quảng bá đủ 48 giờ cho lịch mới |
+| Migration | Fresh DB, upgrade VC12/13/17, seed idempotent và giữ dữ liệu/hạn cũ |
+| Golden path | VC17 API và browser VC16 chạy lại, phân biệt fake provider với SMTP Mailpit thật |
+
+Lịch bổ sung vẫn là **phương án tạm ngày 17/11/2026, chờ hỏi thầy**. Không tính bằng `supplementHours`; không áp holiday chưa xác nhận; tự chấm mọi ngày/giờ; FE lấy quyền từ BE. Upgrade giữ hạn đã gửi theo lịch cũ, không âm thầm đổi snapshot của yêu cầu đang mở. Không dùng kết quả VC01–VC03 cũ thay cho các regression trên.
+
+## Các vấn đề phát hiện và xử lý
+
+1. Publish nhiều đơn vị và reset chờ credential worker có thể vượt timeout mặc định 5 giây trên máy chậm. Cập nhật [contract](API_CONTRACT.md) trước, đặt transaction publish/reset timeout 30 giây/maxWait 10 giây; giữ khóa user/credentialVersion và các chặn bảo mật.
+2. DB thử mới dùng lại kho báo cáo cũ làm phép kiểm mồ côi VC15 đếm 22 thay vì 1. [Harness](../be/test/integration/vc12-support.ts) tạo kho theo UUID mỗi lượt, giữ assertion nghiêm ngặt, không xóa kho của DB cũ.
+3. Metadata route có suffix `/` làm bộ kiểm chọn sai body và nhận 400 trước khi tới scope. Chuẩn hóa mọi dấu kết thúc, vẫn yêu cầu 403/404 thay vì nới assertion để che lỗi.
+4. Browser ngắt mạng khi vừa điều hướng, trước khi tải xong dữ liệu; Date.now thử lệch giờ còn tác động tới kiểm JWT phía sau. Khôi phục đồng hồ sau assertion quyền, đợi response thật/tải xong và chỉ ngắt request lưu cần kiểm. Không fulfill response backend giả.
+5. Lượt đầu VC11 tiến trình con không hoàn tất và migration recovery P1001 khi máy thiếu RAM. Giữ log, kiểm lại trên DB mới sau khi ngừng các phép phân tích nặng chạy song song; không coi lỗi môi trường là kết quả đạt.
+6. Vite kế thừa nhầm `NODE_ENV=test` của backend làm thư viện rc-component gán mọi ID ARIA thành `test-id`: modal hiện nhưng không có tên truy cập đúng. Tách `NODE_ENV=development` cho Vite; phép kiểm tập trung xác nhận tên modal có đúng một ID và được tìm thấy theo role/name. Giữ assertion bàn phím, dùng Chromium đầy đủ ở headless mới để có bộ xem PDF.
+7. Lệnh unit cũ chỉ tìm `.spec.ts`, bỏ qua năm test dashboard `.spec.js` đã có trong Git. Bổ sung danh sách hậu tố cho runner/npm/VC17, giữ tương thích lệnh E2E cũ; cả năm test dashboard và hai test policy mới đều đã chạy đạt.
+8. Một lượt feedback trong VC15 trả 500 khi gắn profiler; chạy độc lập không profiler đạt 9/9 trong 29 giây. Runner tách thu bộ đếm V8 khỏi PDF, tải và browser; mọi assertion chức năng và toàn bộ source trong mẫu số coverage được giữ nguyên. Báo cáo coverage dùng `report --check-coverage` với remap; lệnh con `check-coverage` riêng của c8 12 không truyền `excludeAfterRemap`, nên không dùng lệnh con đó để kiểm source TypeScript đã build.
+
+## Tệp thêm/sửa
+
+- CI/điều phối: [workflow](../.github/workflows/ci.yml), [runner VC17](../be/scripts/run-vc17.mjs), [runner unit/E2E](../be/scripts/run-tests.mjs), [c8](../be/.c8rc.vc17.json), [package](../be/package.json), [lockfile](../be/package-lock.json), [ESLint](../be/eslint.config.js)
+- Nghiệp vụ/contract: [publish service](../be/src/modules/evaluation-periods/evaluation-periods.service.ts), [users service](../be/src/modules/users/users.service.ts), [contract](API_CONTRACT.md)
+- Kiểm thử: [policy](../be/src/modules/evaluations/vc17-policy.spec.ts), [dashboard](../be/src/modules/dashboard/dashboard.service.spec.js), [system](../be/test/integration/vc17.system.test.ts), [upgrade](../be/test/integration/vc17.migration.test.ts), [import](../be/test/integration/vc07.import.test.ts), [harness](../be/test/integration/vc12-support.ts), [browser](../be/test/browser/vc16.frontend.mjs)
+- Tài liệu: [hướng dẫn browser](VC16_FRONTEND.md), biên bản này và [checklist/tiến độ](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md)
+
+## Giới hạn xác nhận
+
+Chưa có quyết định chính sách của thầy; không biến lịch tạm thành chính sách đã nghiệm thu. Chưa kích hoạt Actions remote trong phiên này; kết quả local và cấu hình workflow được ghi riêng. SMTP thật tại Mailpit không phải bằng chứng gửi Web Push đến thiết bị thật hoặc email tới người thật. ZNS mặc định tắt, không yêu cầu secret/template hay demo gửi thật có phí trong VC17.

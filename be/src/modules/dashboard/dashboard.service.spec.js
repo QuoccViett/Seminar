@@ -69,7 +69,10 @@ function makeService(overrides = {}) {
   return { service: new DashboardService(prisma), calls };
 }
 
-test("overview only uses finalized records for official results and rating distribution", async () => {
+/** Đối chiếu tiến độ mười hồ sơ với kết quả chính thức của riêng hai hồ sơ đã chốt
+ * Điểm và phân bố xếp loại phải loại hồ sơ chưa chốt, các nhóm tiến độ không đếm trùng
+ */
+test("tổng quan chỉ lấy hồ sơ đã chốt cho điểm chính thức và phân bố xếp loại", async () => {
   const { service } = makeService();
 
   const result = await service.getOverview(period.id);
@@ -96,7 +99,10 @@ test("overview only uses finalized records for official results and rating distr
   assert.deepEqual(result.scoreDistribution.buckets.map((bucket) => bucket.count), [0, 0, 1, 1]);
 });
 
-test("deductions only include positive deductions from finalized evaluations", async () => {
+/** Dựng các cặp điểm có phần lẻ, bằng nhau và tăng điểm để kiểm tổng hợp khoản bị trừ
+ * Chỉ chênh lệch dương được cộng, truy vấn phải lọc FINALIZED và giữ độ chính xác Decimal
+ */
+test("thống kê trừ điểm chỉ cộng chênh lệch dương của hồ sơ đã chốt", async () => {
   const { service, calls } = makeService({
     prisma: {
       criterionScore: {
@@ -152,7 +158,10 @@ test("deductions only include positive deductions from finalized evaluations", a
   );
 });
 
-test("leaderboard returns current scores from the view ordered by rank", async () => {
+/** Dữ liệu view chứa điểm hiện tại và cả hồ sơ chưa chốt để kiểm nhãn hiển thị
+ * Kết quả giữ thứ tự rank, lọc đúng kỳ và giới hạn mặc định, không tự tính thứ hạng bằng điểm đã làm tròn
+ */
+test("bảng xếp hạng đọc điểm hiện tại từ view và sắp theo thứ hạng", async () => {
   const calls = [];
   const { service } = makeService({
     prisma: {
@@ -245,8 +254,10 @@ test("leaderboard returns current scores from the view ordered by rank", async (
   assert.equal(calls[0].take, 20);
 });
 
-/** Kỳ rỗng không tạo phép chia 0 và không buộc view trả dòng giả */
-test("leaderboard returns an empty list when its period has no evaluations", async () => {
+/** Kỳ không có hồ sơ phải trả danh sách rỗng, tiến độ và số lượng mọi bucket bằng không
+ * Fixture giữ các aggregate null như PostgreSQL để kiểm nhánh tránh chia cho không, không dựng dòng view giả
+ */
+test("bảng xếp hạng và tổng quan trả kết quả rỗng khi kỳ chưa có hồ sơ", async () => {
   const { service } = makeService({ prisma: { evaluation: { count: async () => 0, findMany: async () => [], groupBy: async () => [], aggregate: async () => ({ _count: { _all: 0 }, _sum: { finalScore: null }, _avg: { finalScore: null, finalPercent: null } }) } } });
 
   const result = await service.getLeaderboard(period.id);
@@ -258,8 +269,10 @@ test("leaderboard returns an empty list when its period has no evaluations", asy
   assert.deepEqual(overview.scoreDistribution.buckets.map((bucket) => bucket.count), [0, 0, 0, 0]);
 });
 
-/** Rank vượt giới hạn JSON an toàn phải là chuỗi, limit sai bị chặn trước khi truy vấn */
-test("leaderboard serializes large ranks safely and rejects invalid limits", async () => {
+/** Rank BigInt vượt ngưỡng Number an toàn phải được trả dưới dạng chuỗi chính xác
+ * Đồng thời kiểm nhãn chính thức và giới hạn 101 bị từ chối để không bỏ qua validation phân trang
+ */
+test("bảng xếp hạng giữ chính xác thứ hạng lớn và chặn giới hạn không hợp lệ", async () => {
   const { service } = makeService({ prisma: { leaderboard: { findMany: async () => [{ rank: 9007199254740992n, scoreRank: 9007199254740992n, status: "FINALIZED", suggestedRating: "PASS", maxTotalScore: new Prisma.Decimal(100), selfTotal: new Prisma.Decimal(50), currentTotal: new Prisma.Decimal(50), currentPercent: new Prisma.Decimal(50) }] } } });
   const result = await service.getLeaderboard(period.id, 1);
   assert.equal(result.items[0].rank, "9007199254740992");

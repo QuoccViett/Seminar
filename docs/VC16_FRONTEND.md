@@ -122,6 +122,7 @@ node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 5186 --strict
 ```powershell
 # Dùng module Playwright và Chrome đã cài sẵn trên máy
 $env:VC16_PLAYWRIGHT_MODULE='E:/Seminar/Backups/vc10-browser-tools/node_modules/playwright-core/index.mjs'
+$env:VC16_CHROME_PATH='C:/Program Files/Google/Chrome/Application/chrome.exe'
 node --import tsx test/browser/vc16.frontend.mjs
 ```
 

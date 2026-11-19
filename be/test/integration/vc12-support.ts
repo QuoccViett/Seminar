@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { NestFactory } from "@nestjs/core";
+import type { ArgumentsHost } from "@nestjs/common";
 import type { PrismaService } from "../../src/prisma/prisma.service.js";
 import type { AuditService } from "../../src/common/services/audit.service.js";
 import type { EvaluationStateService } from "../../src/modules/evaluations/evaluation-state.service.js";
@@ -29,31 +30,41 @@ export interface Vc12Payload {
 /** Khởi động Nest/PostgreSQL thật chỉ trên database local mang tên dành riêng VC12
  * Provider ngoài tắt, timer được dừng để test chủ động tạo cạnh tranh và chứng minh job trễ
  * Fixture thêm UUID mới, không reset hoặc xóa dữ liệu cũ và không thay đồng hồ hệ thống
- * VC13–VC16 tái sử dụng điều kiện trước VC12 qua cấu hình tên DB allowlist, không ghi vào DB dùng chung
+ * VC13–VC17 tái sử dụng điều kiện trước VC12 qua cấu hình tên DB allowlist, không ghi vào DB dùng chung
  */
 export async function createVc12Harness(database = { url: process.env.VC12_TEST_DATABASE_URL, name: "vc12_test" }) {
   const url = database.url;
-  assert.ok(["vc12_test", "vc13_test", "vc14_test", "vc15_test", "vc16_test"].includes(database.name) && url && new URL(url).pathname === `/${database.name}` && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local kiểm thử VC12–VC16 riêng");
+  assert.ok(["vc12_test", "vc13_test", "vc14_test", "vc15_test", "vc16_test", "vc17_test"].includes(database.name) && url && new URL(url).pathname === `/${database.name}` && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local kiểm thử VC12–VC17 riêng");
   Object.assign(process.env, { DATABASE_URL: url, JWT_SECRET: "vc12-test-secret-only-at-least-32-characters", NODE_ENV: "test", WEB_ORIGINS: "http://127.0.0.1:5182", PUBLIC_APP_URL: "http://127.0.0.1:5182", INITIAL_ACCOUNT_PASSWORD: "123456", EMAIL_ENABLED: "false", WEB_PUSH_ENABLED: "false", ZALO_ZNS_ENABLED: "false", STORAGE_ENABLED: "true", STORAGE_PROVIDER: "local", STORAGE_LOCAL_DIR: ".tmp/vc12-private-storage" });
-  // VC16 có kho minh chứng riêng để browser tạo bytes mới mà không dùng thư mục của fixture chặng cũ
+  // VC16 và VC17 có kho minh chứng riêng để tạo bytes mới mà không dùng thư mục của fixture chặng cũ
   // Các tên DB trước giữ đường dẫn đã được assertion hồi quy sử dụng, không di chuyển hoặc xóa tệp đã có
-  if (database.name === "vc16_test") process.env.STORAGE_LOCAL_DIR = ".tmp/vc16-private-storage";
-  // Mỗi harness có kho báo cáo riêng, không đọc hay dọn kho local của ứng dụng đang dùng
-  // Giữ đường dẫn fixture VC13 đã dùng trong assertion hồi quy, các chặng khác theo tên DB riêng
-  process.env.REPORT_EXPORT_DIR = database.name === "vc13_test" ? ".tmp/vc13-report-exports" : `.tmp/${database.name}-reports`;
+  if (["vc16_test", "vc17_test"].includes(database.name)) process.env.STORAGE_LOCAL_DIR = `.tmp/${database.name.replace("_test", "")}-private-storage`;
+  // Mỗi lần dựng harness có kho báo cáo UUID riêng vì DB mới không có metadata của tệp từ lượt kiểm trước
+  // Nhờ vậy phép dọn mồ côi không đếm hoặc xóa nhầm tệp của một DB thử khác có cùng tên
+  // Giữ đường dẫn fixture VC13 đang được kiểm trực tiếp, các chặng khác không tái sử dụng kho cũ
+  process.env.REPORT_EXPORT_DIR = database.name === "vc13_test" ? ".tmp/vc13-report-exports" : `.tmp/${database.name}-reports-${randomUUID()}`;
   const dist = new URL("../../dist/", import.meta.url);
   const { AppModule } = await import(new URL("app.module.js", dist).href);
   const { PrismaService: PrismaToken } = await import(new URL("prisma/prisma.service.js", dist).href);
   const { AuditService: AuditToken } = await import(new URL("common/services/audit.service.js", dist).href);
   const { EvaluationStateService: StateToken } = await import(new URL("modules/evaluations/evaluation-state.service.js", dist).href);
   const { NotificationsService: NoticeToken } = await import(new URL("modules/notifications/notifications.service.js", dist).href);
+  const { CredentialDispatchService: CredentialToken } = await import(new URL("modules/notifications/credential-dispatch.service.js", dist).href);
   const { SchedulerService: SchedulerToken } = await import(new URL("modules/scheduler/scheduler.service.js", dist).href);
   const { EvidencesService: EvidenceToken } = await import(new URL("modules/evidences/evidences.service.js", dist).href);
   const { StorageProvider: StorageToken } = await import(new URL("modules/evidences/storage.provider.js", dist).href);
   const { AllExceptionsFilter } = await import(new URL("common/filters/all-exceptions.filter.js", dist).href);
   const { createApiValidationPipe } = await import(new URL("common/pipes/api-validation.pipe.js", dist).href);
   const app = await NestFactory.create(AppModule, { logger: false });
-  app.useGlobalFilters(new AllExceptionsFilter()); app.useGlobalPipes(createApiValidationPipe());
+  const filter = new AllExceptionsFilter();
+  // Chỉ thu mã lỗi Prisma ổn định của harness thử riêng để phân biệt timeout hạ tầng với lỗi nghiệp vụ
+  // Không ghi message, stack, SQL, URL kết nối hoặc giá trị từ request trong nhánh chẩn đoán này
+  const handle = filter.catch.bind(filter);
+  filter.catch = (error: unknown, host: ArgumentsHost) => {
+    if (error && typeof error === "object" && "code" in error && typeof error.code === "string" && /^P\d{4}$/u.test(error.code)) process.stdout.write(`Mã lỗi DB trong kiểm thử ${database.name}: ${error.code}\n`);
+    handle(error, host);
+  };
+  app.useGlobalFilters(filter); app.useGlobalPipes(createApiValidationPipe());
   // Browser các chặng dùng cổng riêng nếu fixture cũ đang bận, chỉ cho phép origin local đã chỉ định
   const extraOrigin = database.name === "vc14_test" ? process.env.VC14_FE_ORIGIN : database.name === "vc15_test" ? process.env.VC15_FE_ORIGIN : database.name === "vc16_test" ? process.env.VC16_FE_ORIGIN : undefined;
   app.enableCors({ origin: extraOrigin ? ["http://127.0.0.1:5182", extraOrigin] : "http://127.0.0.1:5182" });
@@ -61,8 +72,11 @@ export async function createVc12Harness(database = { url: process.env.VC12_TEST_
   const prisma = app.get<PrismaService>(PrismaToken); const audit = app.get<AuditService>(AuditToken);
   const state = app.get<EvaluationStateService>(StateToken); const notifications = app.get<NotificationsService>(NoticeToken);
   const scheduler = app.get<SchedulerService>(SchedulerToken);
+  const credentials = app.get(CredentialToken);
   const storage = app.get<StorageProvider>(StorageToken);
-  scheduler.onModuleDestroy(); notifications.onModuleDestroy(); app.get(EvidenceToken).onModuleDestroy();
+  // Mọi worker nền phải dừng để phép thử chủ động điều phối claim và race theo đúng điều kiện trước
+  // Riêng worker credential có thể gửi bí mật nên tuyệt đối không để timer tự chạy trong harness
+  scheduler.onModuleDestroy(); notifications.onModuleDestroy(); credentials.onModuleDestroy(); app.get(EvidenceToken).onModuleDestroy();
   const base = await app.getUrl();
   const password = "Vc12-Local-Test-Only-2026";
   const passwordHash = await bcrypt.hash(password, 4);
@@ -82,8 +96,10 @@ export async function createVc12Harness(database = { url: process.env.VC12_TEST_
   /** Tạo một kỳ với các hồ sơ đã nộp để kiểm VC12, các điều kiện trước đó dùng fixture DB thật
    * Từng score được tạo khi DRAFT đang trong cửa sổ rồi mới đổi sang chờ duyệt, giữ trigger hoạt động
    * Mỗi scenario có năm riêng và các tài khoản không có email/phone để không gửi ra người thật
+   * count chọn số hồ sơ, maximum chọn thang điểm, selfScores cho điểm hai lá, đầu ra chứa ID và phiên fixture để gọi HTTP
+   * submitted=false giữ DRAFT hợp lệ để VC17 đo tải ghi, không hoàn tác hồ sơ đã nộp hoặc tắt trigger
    */
-  async function scenario(count = 1, maximum = 100, selfScores = [50, 35]) {
+  async function scenario(count = 1, maximum = 100, selfScores = [50, 35], submitted = true) {
     const timestamp = new Date(); const key = randomUUID().slice(0, 8);
     const periodId = randomUUID(); const parentId = randomUUID(); const leaf1 = randomUUID(); const leaf2 = randomUUID();
     const year = await prisma.evaluationPeriod.aggregate({ _max: { year: true } });
@@ -100,11 +116,11 @@ export async function createVc12Harness(database = { url: process.env.VC12_TEST_
       await prisma.criterionScore.createMany({ data: [leaf1, leaf2].map((criterionId, position) => ({ id: randomUUID(), evaluationId, criterionId, selfScore: selfScores[position], selfNote: "Nội dung ban đầu", createdAt: timestamp, updatedAt: timestamp })) });
       const initialScore = await prisma.criterionScore.findUniqueOrThrow({ where: { evaluationId_criterionId: { evaluationId, criterionId: leaf1 } } });
       await prisma.evidence.create({ data: { id: randomUUID(), criterionScoreId: initialScore.id, uploaderId: userId, kind: "LINK", round: "INITIAL", externalUrl: "https://example.com/bao-cao-ban-dau", createdAt: timestamp } });
-      await prisma.evaluation.update({ where: { id: evaluationId }, data: { status: "PENDING_REVIEW", submittedAt: timestamp } });
+      if (submitted) await prisma.evaluation.update({ where: { id: evaluationId }, data: { status: "PENDING_REVIEW", submittedAt: timestamp } });
       const token = (await request("POST", "auth/login", undefined, { username: unitUsername, password })).body.accessToken;
       records.push({ evaluationId, unitId, userId, token, username: unitUsername });
     }
-    await prisma.evaluationPeriod.update({ where: { id: periodId }, data: { phase: "FIRST_REVIEW", selfEvalDeadline: new Date(+timestamp - 1000) } });
+    if (submitted) await prisma.evaluationPeriod.update({ where: { id: periodId }, data: { phase: "FIRST_REVIEW", selfEvalDeadline: new Date(+timestamp - 1000) } });
     return { periodId, parentId, leaf1, leaf2, records };
   }
 
@@ -131,7 +147,7 @@ export async function createVc12Harness(database = { url: process.env.VC12_TEST_
     return body;
   }
 
-  return { app, prisma, audit, state, notifications, scheduler, storage, base, adminId, adminToken, username, password, request, scenario, firstReview, futureWeekday, supplement };
+  return { app, prisma, audit, state, notifications, scheduler, credentials, storage, base, adminId, adminToken, username, password, request, scenario, firstReview, futureWeekday, supplement };
 }
 
 export type Vc12Harness = Awaited<ReturnType<typeof createVc12Harness>>;
