@@ -20,14 +20,14 @@ export class PushSubscriptionsController {
   @Post("subscriptions")
   @ApiBearerAuth("access-token")
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: "Đăng ký thiết bị nhận Web Push" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Đăng ký thiết bị hiện tại để nhận thông báo Web Push" })
   register(@GetCurrentUser() user: CurrentUser, @Body() body: PushSubscriptionDto) { return this.subscriptions.register(user.id, body); }
 
   /** Thu hồi thiết bị của chính tài khoản, gọi lặp vẫn thành công để FE dọn subscription */
   @Delete("subscriptions/current")
   @ApiBearerAuth("access-token")
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: "Hủy đăng ký thiết bị Web Push" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Hủy đăng ký thiết bị Web Push của tài khoản hiện tại" })
   revoke(@GetCurrentUser() user: CurrentUser, @Body() body: RevokePushSubscriptionDto) { return this.subscriptions.revoke(user.id, body.endpoint); }
 }
 

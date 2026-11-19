@@ -33,7 +33,7 @@ import { ReportDownloadQueryDto } from "./dto/report-download-query.dto.js";
 import { ReportExportMetadataDto, ReportExportPageDto } from "./dto/report-export-metadata.dto.js";
 
 /** Biên HTTP của báo cáo chỉ dành ADMIN, validation và guard áp trước mọi thao tác đọc hoặc tải */
-@ApiTags("Báo cáo")
+@ApiTags("Reports")
 @ApiBearerAuth("access-token")
 @ApiResponse({ status: 400, description: "Dữ liệu hoặc phạm vi báo cáo không hợp lệ" })
 @ApiResponse({ status: 401, description: "Cần đăng nhập bằng phiên hợp lệ" })
@@ -52,7 +52,7 @@ export class ExportsController {
 
   @Post()
   @Header("Cache-Control", "private, no-store")
-  @ApiOperation({ summary: "Tạo báo cáo Excel, PDF hoặc Word" })
+  @ApiOperation({ summary: "[ADMIN] Tạo báo cáo tổng hợp Excel hoặc biên bản thẩm định PDF/Word" })
   @ApiBody({ type: CreateReportExportDto })
   @ApiResponse({ status: 201, description: "Thông tin báo cáo vừa tạo", type: ReportExportMetadataDto })
   /** Chuyển người đã xác thực cùng DTO vào service, chỉ trả thành công khi lưu tệp và audit đã hoàn tất */
@@ -65,9 +65,17 @@ export class ExportsController {
 
   @Get()
   @Header("Cache-Control", "private, no-store")
-  @ApiOperation({ summary: "Danh sách lịch sử xuất báo cáo" })
+  @ApiOperation({ summary: "[ADMIN] Xem và lọc lịch sử các báo cáo đã xuất" })
   @ApiOkResponse({ type: ReportExportPageDto })
-  @ApiQuery({ name: "periodId", required: false, format: "uuid" })
+  // Khai báo tường minh kiểu scalar để Swagger UI không coi query phân trang là object
+  @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
+  @ApiQuery({ name: "pageSize", required: false, type: Number, example: 20 })
+  @ApiQuery({ name: "sortBy", required: false, type: String, enum: ["createdAt"] })
+  @ApiQuery({ name: "sortOrder", required: false, type: String, enum: ["asc", "desc"], example: "desc" })
+  @ApiQuery({ name: "periodId", required: false, type: String, format: "uuid" })
+  @ApiQuery({ name: "evaluationId", required: false, type: String, format: "uuid" })
+  @ApiQuery({ name: "reportType", required: false, type: String, enum: ["SUMMARY_ALL_UNITS", "UNIT_APPRAISAL_MINUTES"] })
+  @ApiQuery({ name: "format", required: false, type: String, enum: ["XLSX", "PDF", "DOCX"] })
   /** Đọc trang metadata và cấp URL ngắn hạn riêng cho quản trị viên hiện tại */
   findAll(@Query() query: ReportExportQueryDto, @GetCurrentUser() currentUser: CurrentUser) {
     return this.exportsService.findAll(query, currentUser.id);
@@ -75,7 +83,7 @@ export class ExportsController {
 
   @Get(":id/download")
   @ApiProduces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-  @ApiOperation({ summary: "Tải tệp báo cáo" })
+  @ApiOperation({ summary: "[ADMIN] Tải tệp báo cáo bằng liên kết ký ngắn hạn còn hiệu lực" })
   @ApiOkResponse({ description: "Tệp riêng tư XLSX, PDF hoặc DOCX", schema: { type: "string", format: "binary" } })
   /** Trả tệp riêng cho quản trị viên đã qua guard và ngăn bộ đệm lưu nội dung nhạy cảm
    * Mã hồ sơ được kiểm tra trước khi service đọc tệp, lỗi không tiết lộ đường dẫn lưu trữ
@@ -99,7 +107,7 @@ export class ExportsController {
 
   @Get(":id")
   @Header("Cache-Control", "private, no-store")
-  @ApiOperation({ summary: "Xem metadata của một lần xuất báo cáo" })
+  @ApiOperation({ summary: "[ADMIN] Xem thông tin và cấp lại liên kết tải cho một báo cáo" })
   @ApiOkResponse({ type: ReportExportMetadataDto })
   /** Đọc metadata mới để làm mới chữ ký khi URL của danh sách đã hết hạn */
   findOne(@Param("id", ParseUUIDPipe) id: string, @GetCurrentUser() currentUser: CurrentUser) {
