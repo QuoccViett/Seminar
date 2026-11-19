@@ -235,6 +235,10 @@ jobs:
             be/package-lock.json
             fe/package-lock.json
       - name: Cài dependency từ lockfile
+        # Prisma đọc DATABASE_URL khi nạp cấu hình dù generate chưa kết nối PostgreSQL
+        # Chỉ truyền URL điều khiển kiểm thử vào bước này, trước khi container được tạo, không cần secret demo
+        env:
+          DATABASE_URL: ${{ env.VC17_ADMIN_DATABASE_URL }}
         run: |
           npm ci
           npm ci --prefix ../fe

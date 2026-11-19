@@ -12,3 +12,7 @@ b86cebf4b3aa591a1abbcf45ade33c69707225ce:be/test/integration/vc07.import.test.ts
 a430fab9ee420939df629dc03f42513ecf730d6f:be/test/integration/vc08.workbook.test.ts:generic-api-key:134
 a430fab9ee420939df629dc03f42513ecf730d6f:be/test/integration/vc08.periods.test.ts:generic-api-key:63
 c8178d24e0fff50e2876e8d506c0757b31fe2afb:be/test/integration/vc13.feedback-audit.test.ts:generic-api-key:110
+# Mật khẩu giả của bài kiểm VC17 trong commit cũ, chỉ dùng tài khoản trên database thử riêng và không phải credential triển khai
+# Quét lịch sử vẫn thấy literal sau khi mã mới đã sinh ngẫu nhiên, nên chỉ miễn trừ đúng commit/tệp/quy tắc/dòng này
+# Giữ nguyên mọi quy tắc và các vị trí khác để secret thật hoặc fixture mới vẫn được phát hiện
+47c572aae3a995c15c8debb620848dfe71fbd783:be/test/integration/vc17.system.test.ts:generic-api-key:95

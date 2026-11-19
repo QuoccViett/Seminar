@@ -88,14 +88,18 @@ test("VC17 golden path Import → đổi mật khẩu → công bố → minh ch
   const imported = await request("POST", `users/import/${importId}/confirm`, h.adminToken, {});
   assert.equal(imported.status, 200); assert.equal(imported.body.createdCount, 2);
   const units: Array<{ id: string; token: string; userId: string }> = [];
+  // Sinh mật khẩu riêng mỗi lượt từ 18 byte ngẫu nhiên, không dùng credential cố định có thể bị hiểu nhầm là secret
+  // Tiền tố bảo đảm có chữ hoa, chữ thường và số; chuỗi ASCII dài 42 byte đáp ứng mức tối thiểu 8 và giới hạn bcrypt 72 byte
+  // Chỉ giữ trong bộ nhớ để gửi yêu cầu đổi mật khẩu và đối chiếu hash sau đó, không ghi vào báo cáo hoặc log
+  const fixturePassword = `Vc17-${randomBytes(18).toString("hex")}9`;
   for (const account of imported.body.accounts) {
     const login = await request("POST", "auth/login", "", { username: account.username, password: "123456" });
     assert.equal(login.status, 200);
     assert.equal((await request("GET", "evaluations", login.body.accessToken)).status, 403);
-    const changed = await request("POST", "auth/change-password", login.body.accessToken, { currentPassword: "123456", newPassword: "MatkhauVC17Moi9" });
+    const changed = await request("POST", "auth/change-password", login.body.accessToken, { currentPassword: "123456", newPassword: fixturePassword });
     assert.equal(changed.status, 200); assertProjection(changed.body, false, true);
     const user = await h.prisma.user.findUniqueOrThrow({ where: { id: account.userId } });
-    assert.equal(await bcrypt.compare("MatkhauVC17Moi9", user.passwordHash), true);
+    assert.equal(await bcrypt.compare(fixturePassword, user.passwordHash), true);
     assert.equal(user.mustChangePassword, false);
     assert.equal((await h.prisma.credentialDispatch.findFirstOrThrow({ where: { userId: user.id } })).ciphertext, null);
     units.push({ id: user.unitId!, token: changed.body.accessToken, userId: user.id });

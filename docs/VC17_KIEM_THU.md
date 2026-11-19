@@ -1,6 +1,6 @@
 # VC17 — Kiểm thử toàn hệ thống và dữ liệu cạnh tranh
 
-Ngày 19/11/2026, baseline `main` tại `cccf167`, Git sạch trước lượt làm việc. **Hoàn thành 100% phạm vi triển khai và kiểm thử kỹ thuật VC17 theo lịch bổ sung tạm**. Chỉ triển khai VC17 trong [kế hoạch](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md); chưa thay thế xác nhận chính sách của thầy hoặc kết quả Actions remote.
+Ngày 19/11/2026, baseline `main` tại `cccf167`, Git sạch trước lượt làm việc ban đầu. Các kiểm thử kỹ thuật local VC17 theo lịch bổ sung tạm đã đạt như bảng bên dưới. **Đang chờ xác nhận CI remote sau bản sửa hai lỗi tại PR #31**, chưa kết luận hoàn tất DoD của VC17. Chỉ triển khai VC17 trong [kế hoạch](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md); chưa thay thế xác nhận chính sách của thầy hoặc kết quả Actions remote.
 
 ## Môi trường và cách chạy
 
@@ -40,7 +40,7 @@ Bằng chứng máy đọc được tại [verification-summary.json](../be/.tmp
 
 Unit/HTTP lõi cung cấp bộ đếm V8; các tiến trình PDF/tải/browser không gắn profiler nhưng mọi source nghiệp vụ vẫn nằm trong mẫu số. Báo cáo local bỏ dữ liệu bộ đếm của sáu tiến trình nặng đã thử trước khi tách profiler, đồng thời bỏ dependency/test/generated theo cấu hình; giữ raw ban đầu để đối chiếu, không sửa bộ đếm mã sản phẩm. Không dùng báo cáo cũ tính cả tệp test 83,36% để kết luận đạt.
 
-Cảnh báo không làm thất bại kiểm: JSDOM chưa hỗ trợ pseudo-element của `getComputedStyle`, Vite cảnh báo chunk lớn hơn 500 kB và pg cảnh báo API query đồng thời sẽ thay đổi ở bản lớn tương lai. Không còn lỗi kỹ thuật mở trong phạm vi VC17 đã kiểm; các xác nhận bên ngoài ở cuối biên bản vẫn được ghi riêng.
+Cảnh báo không làm thất bại kiểm: JSDOM chưa hỗ trợ pseudo-element của `getComputedStyle`, Vite cảnh báo chunk lớn hơn 500 kB và pg cảnh báo API query đồng thời sẽ thay đổi ở bản lớn tương lai. Lượt kiểm local trước đó đã đạt; lỗi thiết lập CI phát hiện sau khi mở PR #31 được ghi riêng dưới đây, không dùng bằng chứng local để khẳng định remote đã xanh.
 
 ## Ma trận bằng chứng
 
@@ -93,6 +93,20 @@ Lịch bổ sung vẫn là **phương án tạm ngày 17/11/2026, chờ hỏi th
 - Kiểm thử: [policy](../be/src/modules/evaluations/vc17-policy.spec.ts), [dashboard](../be/src/modules/dashboard/dashboard.service.spec.js), [system](../be/test/integration/vc17.system.test.ts), [upgrade](../be/test/integration/vc17.migration.test.ts), [import](../be/test/integration/vc07.import.test.ts), [harness](../be/test/integration/vc12-support.ts), [browser](../be/test/browser/vc16.frontend.mjs)
 - Tài liệu: [hướng dẫn browser](VC16_FRONTEND.md), biên bản này và [checklist/tiến độ](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md)
 
+## Sửa hai lỗi CI của PR #31 ngày 19/11/2026
+
+[Run 44456568911](https://github.com/giahan358/Seminar/actions/runs/44456568911) thất bại ở bước generate của `system-vc17` và job Gitleaks trên commit `47c572a`. Các cảnh báo npm deprecated/audit trong log không phải nguyên nhân hai lỗi này; không chạy `npm audit fix --force` hoặc nâng dependency ngoài phạm vi.
+
+- [Workflow](../.github/workflows/ci.yml) truyền `DATABASE_URL` từ `VC17_ADMIN_DATABASE_URL` chỉ vào bước cài dependency/generate. Prisma cần URL khi nạp cấu hình, dù PostgreSQL chưa khởi tạo và generate không kết nối DB. Giữ nguyên cấu hình Prisma bắt buộc biến môi trường; URL chỉ dành container thử loopback, không lấy secret hay DB demo.
+- [Golden path](../be/test/integration/vc17.system.test.ts) sinh mật khẩu mới từ 18 byte ngẫu nhiên mỗi lượt, giữ kiểm đổi từ `123456`, đối chiếu bcrypt, bắt đổi mật khẩu và purge credential. Mật khẩu 42 byte đáp ứng chính sách nhưng không được ghi log/báo cáo.
+- [Gitleaks ignore](../.gitleaksignore) chỉ thêm fingerprint chính xác của literal fixture trong commit cũ, vì scanner vẫn đọc dòng đã tồn tại trong lịch sử. Không bỏ qua cả tệp test hoặc tắt `generic-api-key`.
+
+Kiểm thực tế của bản sửa: tái hiện generate thiếu URL thất bại mã 1; cấp URL thử khi chưa có PostgreSQL thì generate thành công mã 0; actionlint 1.7.7 kiểm workflow đạt; TypeScript `--noEmit` và lint BE đạt. Gitleaks 8.24.3 quét đúng dải `47c572a^..47c572a`, tệp system hiện tại và các dòng thêm mới đều không phát hiện leak. Quét thư mục tùy ý có cả tệp local bị Git bỏ qua nên không tương đương job quét lịch sử Git; không dùng kết quả đó để khẳng định toàn thư mục sạch.
+
+Chạy lại toàn bộ [system](../be/test/integration/vc17.system.test.ts) sau sửa trên PostgreSQL 16 riêng cổng 55448, DB mới áp đủ 11 migration: **9/9 đạt, 0 fail/skip**, khoảng 69,85 giây. Bao gồm golden path dùng mật khẩu ngẫu nhiên và tải 34 người/204 HTTP, p95 5.149 ms/cặp lưu + dashboard dưới ngưỡng cấu hình trước 15.000 ms, 0 lỗi. [TAP](../be/.tmp/vc17-ci-fix/system.tap) và [hậu điều kiện](../be/.tmp/vc17-ci-fix/system-results-after.json) lưu riêng khỏi bằng chứng lượt trước; container thử được dừng sau kiểm. `git diff --check` đạt; rà tám dòng comment mới đều có tiếng Việt có dấu và không kết thúc bằng dấu chấm.
+
+Chưa có kết quả Actions remote sau bản sửa; cần push thay đổi và kiểm lượt mới trước khi đánh dấu điều kiện CI hoàn tất. Không thay đổi schema, migration đã áp dụng, API contract hoặc FE trong bản sửa này.
+
 ## Giới hạn xác nhận
 
-Chưa có quyết định chính sách của thầy; không biến lịch tạm thành chính sách đã nghiệm thu. Chưa kích hoạt Actions remote trong phiên này; kết quả local và cấu hình workflow được ghi riêng. SMTP thật tại Mailpit không phải bằng chứng gửi Web Push đến thiết bị thật hoặc email tới người thật. ZNS mặc định tắt, không yêu cầu secret/template hay demo gửi thật có phí trong VC17.
+Chưa có quyết định chính sách của thầy; không biến lịch tạm thành chính sách đã nghiệm thu. Actions remote run `44456568911` đã thất bại như phần sửa CI; chưa xác nhận lượt remote mới sau bản sửa local. SMTP thật tại Mailpit không phải bằng chứng gửi Web Push đến thiết bị thật hoặc email tới người thật. ZNS mặc định tắt, không yêu cầu secret/template hay demo gửi thật có phí trong VC17.
