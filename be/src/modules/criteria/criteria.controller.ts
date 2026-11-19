@@ -8,8 +8,8 @@ import { CreateCriterionDto } from "./dto/create-criterion.dto.js";
 import { UpdateCriterionDto } from "./dto/update-criterion.dto.js";
 import { CriteriaService } from "./criteria.service.js";
 
-@ApiTags("Tiêu chí")
-@ApiBearerAuth()
+@ApiTags("Criteria")
+@ApiBearerAuth("access-token")
 @Controller("api/v1/evaluation-periods/:periodId/criteria")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CriteriaController {
@@ -17,7 +17,7 @@ export class CriteriaController {
 
   @Get()
   @Roles("ADMIN", "UNIT")
-  @ApiOperation({ summary: "Xem cây tiêu chí của kỳ đánh giá" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem cây tiêu chí của kỳ đánh giá theo quyền và thời điểm mở" })
   @ApiResponse({ status: 200, description: "Cây tiêu chí theo quyền và thời điểm mở của kỳ" })
   /** Trả cây tiêu chí của kỳ sau khi service áp dụng chính sách công bố theo server
    * periodId là UUID từ route còn user đến từ access token đã xác thực
@@ -29,7 +29,7 @@ export class CriteriaController {
 
   @Post()
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Thêm tiêu chí vào kỳ đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Thêm tiêu chí vào cấu hình kỳ đánh giá còn được phép chỉnh sửa" })
   @ApiResponse({ status: 201, description: "Tiêu chí đã được tạo" })
   /** Tạo tiêu chí trong kỳ lấy từ route và dùng Admin hiện tại làm actor audit
    * periodId được UUID kiểm tra trước, dto chứa riêng các field tiêu chí
@@ -45,7 +45,7 @@ export class CriteriaController {
 
   @Patch(":id")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Cập nhật tiêu chí trong kỳ đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Cập nhật tiêu chí trong cấu hình kỳ đánh giá còn được phép chỉnh sửa" })
   @ApiResponse({ status: 200, description: "Tiêu chí đã được cập nhật" })
   /** Cập nhật tiêu chí nháp và chuyển danh tính Admin để lưu audit
    * id là UUID của tiêu chí, dto chỉ chứa nội dung được phép sửa
@@ -57,7 +57,7 @@ export class CriteriaController {
 
   @Delete(":id")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Xóa tiêu chí nháp" })
+  @ApiOperation({ summary: "[ADMIN] Xóa tiêu chí nháp khi không có tiêu chí con hoặc dữ liệu điểm" })
   @ApiResponse({ status: 200, description: "Tiêu chí đã được xóa" })
   /** Xóa tiêu chí khi không còn dữ liệu phụ thuộc và ghi nhận actor
    * id là UUID của tiêu chí, user là Admin đã được xác thực

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, Inject, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { GetCurrentUser, type CurrentUser } from "../../common/decorators/current-user.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js";
@@ -8,7 +8,7 @@ import { FeedbackService } from "./feedback.service.js";
 import { feedbackPageSchema, feedbackSchema, historyPageSchema } from "./feedback-openapi.js";
 
 /** Nhận DTO và identity đã xác thực theo mẫu Auth, không chứa nghiệp vụ hoặc transaction */
-@ApiTags("Phản hồi và lịch sử")
+@ApiTags("Feedback and History")
 @ApiBearerAuth("access-token")
 @ApiResponse({ status: 400, description: "Dữ liệu phản hồi hoặc phân trang không hợp lệ" })
 @ApiResponse({ status: 401, description: "Cần đăng nhập bằng phiên hợp lệ" })
@@ -26,7 +26,10 @@ export class FeedbackController {
   @Get("feedback")
   @ApiOkResponse({ schema: feedbackPageSchema })
   @Header("Cache-Control", "no-store")
-  @ApiOperation({ summary: "Đọc trao đổi và quyền gửi của hồ sơ" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem trao đổi của hồ sơ và các loại phản hồi được phép gửi" })
+  @ApiParam({ name: "evaluationId", type: String, format: "uuid" })
+  @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
+  @ApiQuery({ name: "pageSize", required: false, type: Number, example: 20 })
   list(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Query() query: TimelineQueryDto, @GetCurrentUser() user: CurrentUser) { return this.service.list(id, query, user); }
 
   /** Thêm một phản hồi bất biến, không nhận authorId hoặc timestamp từ request */
@@ -34,13 +37,16 @@ export class FeedbackController {
   @ApiCreatedResponse({ schema: feedbackSchema })
   @Header("Cache-Control", "no-store")
   @ApiBody({ type: CreateFeedbackDto })
-  @ApiOperation({ summary: "Gửi phản hồi văn bản thuần theo vai trò" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Gửi phản hồi văn bản thuần theo vai trò và trạng thái hồ sơ" })
   create(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() dto: CreateFeedbackDto, @GetCurrentUser() user: CurrentUser) { return this.service.create(id, dto, user); }
 
   /** Đọc lịch sử trạng thái với tên người thao tác hoặc Hệ thống, không cho sửa/xóa */
   @Get("status-history")
   @ApiOkResponse({ schema: historyPageSchema })
   @Header("Cache-Control", "no-store")
-  @ApiOperation({ summary: "Đọc lịch sử thay đổi trạng thái hồ sơ" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem lịch sử chuyển trạng thái của hồ sơ" })
+  @ApiParam({ name: "evaluationId", type: String, format: "uuid" })
+  @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
+  @ApiQuery({ name: "pageSize", required: false, type: Number, example: 20 })
   history(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Query() query: TimelineQueryDto, @GetCurrentUser() user: CurrentUser) { return this.service.history(id, query, user); }
 }

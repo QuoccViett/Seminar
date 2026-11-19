@@ -10,8 +10,8 @@ import { UpdateCriterionDto } from "./dto/update-criterion.dto.js";
 /** Cung cấp route sửa/xóa tiêu chí theo UUID, giữ route lồng để tương thích
  * Chỉ Admin được dùng, không tạo đường GET có thể bỏ qua projection trước mở
  */
-@ApiTags("Tiêu chí")
-@ApiBearerAuth()
+@ApiTags("Criteria")
+@ApiBearerAuth("access-token")
 @Controller("api/v1/criteria")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN")
@@ -23,7 +23,7 @@ export class CriteriaItemController {
    * id qua UUID pipe, dto không cho đổi kỳ, actor lấy từ JWT đã kiểm quyền
    */
   @Patch(":id")
-  @ApiOperation({ summary: "Sửa tiêu chí nháp theo mã tiêu chí" })
+  @ApiOperation({ summary: "[ADMIN] Sửa tiêu chí nháp theo mã tiêu chí" })
   update(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateCriterionDto, @GetCurrentUser() user: CurrentUser) {
     return this.criteria.updateById(id, dto, user.id);
   }
@@ -32,7 +32,7 @@ export class CriteriaItemController {
    * Service vẫn đọc lại tiêu chí sau khóa để bảo vệ dữ liệu khi có thao tác cạnh tranh
    */
   @Delete(":id")
-  @ApiOperation({ summary: "Xóa tiêu chí nháp theo mã tiêu chí" })
+  @ApiOperation({ summary: "[ADMIN] Xóa tiêu chí nháp theo mã tiêu chí khi không có dữ liệu phụ thuộc" })
   remove(@Param("id", ParseUUIDPipe) id: string, @GetCurrentUser() user: CurrentUser) {
     return this.criteria.removeById(id, user.id);
   }

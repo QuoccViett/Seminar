@@ -7,7 +7,7 @@ import { MAX_FILE_BYTES } from "./file-policy.js";
 /** Cổng bytes private dùng capability HMAC ngắn hạn, không có route public theo storage key
  * Không gắn whitelist Auth: đây là token riêng chỉ dùng đọc/tải tệp, không gọi được nghiệp vụ khác
  */
-@ApiTags("Kho tệp có liên kết ký")
+@ApiTags("Signed Evidence Storage")
 @Controller("api/v1/storage")
 export class StorageController {
   /** Nhận service để kiểm chữ ký, phiên tải và dữ liệu thật trong cùng luồng quyền */

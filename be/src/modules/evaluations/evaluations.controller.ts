@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { GetCurrentUser, type CurrentUser } from "../../common/decorators/current-user.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js";
@@ -10,7 +10,7 @@ import { batchSelfScoreSchema, evaluationDetailSchema, evaluationMetadataSchema,
 /** Nhận HTTP đã qua Auth và DTO, chuyển danh tính thật sang service hồ sơ
  * Controller không tính điểm hoặc tin unitId/giờ/trạng thái từ client để cấp quyền
  */
-@ApiTags("Hồ sơ tự chấm")
+@ApiTags("Evaluations")
 @ApiBearerAuth("access-token")
 @ApiResponse({ status: 400, description: "Dữ liệu hoặc UUID không hợp lệ" })
 @ApiResponse({ status: 401, description: "Cần đăng nhập bằng phiên hợp lệ" })
@@ -27,7 +27,13 @@ export class EvaluationsController {
   /** Chuyển bộ lọc đã kiểm và phiên sang use-case list, không nhận phạm vi UNIT tùy ý */
   @Get()
   @ApiOkResponse({ schema: { type: "object", properties: { items: { type: "array", items: evaluationMetadataSchema }, page: { type: "integer" }, pageSize: { type: "integer" }, total: { type: "integer" } } } })
-  @ApiOperation({ summary: "Danh sách hồ sơ theo quyền và trạng thái hiệu lực" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem danh sách hồ sơ theo quyền và trạng thái hiệu lực" })
+  @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
+  @ApiQuery({ name: "pageSize", required: false, type: Number, example: 20 })
+  @ApiQuery({ name: "sortBy", required: false, type: String })
+  @ApiQuery({ name: "sortOrder", required: false, type: String, enum: ["asc", "desc"], example: "desc" })
+  @ApiQuery({ name: "periodId", required: false, type: String, format: "uuid" })
+  @ApiQuery({ name: "status", required: false, type: String, enum: ["DRAFT", "PENDING_REVIEW", "SUPPLEMENT_REQUESTED", "SUPPLEMENT_SUBMITTED", "SUPPLEMENT_EXPIRED", "FINALIZED"] })
   list(@Query() query: EvaluationQueryDto, @GetCurrentUser() user: CurrentUser) { return this.service.list(query, user); }
 
   /** Tạo bù idempotent, trả 200 cho cả lần đầu và retry để không ngụ ý tạo bản trùng */
@@ -35,19 +41,19 @@ export class EvaluationsController {
   @HttpCode(200)
   @ApiBody({ type: CreateEvaluationDto })
   @ApiOkResponse({ schema: evaluationMetadataSchema })
-  @ApiOperation({ summary: "Tạo bù hồ sơ và các điểm lá còn rỗng" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Tạo bù hồ sơ cho đơn vị trong kỳ đã công bố và khởi tạo các điểm còn trống" })
   create(@Body() body: CreateEvaluationDto, @GetCurrentUser() user: CurrentUser) { return this.service.create(body, user); }
 
   /** Đọc chi tiết bằng UUID, projection giờ mở và quyền do service quyết định */
   @Get(":evaluationId")
   @ApiOkResponse({ schema: evaluationDetailSchema })
-  @ApiOperation({ summary: "Chi tiết hồ sơ và quyền tự chấm từng tiêu chí" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem chi tiết hồ sơ và quyền thao tác trên từng tiêu chí" })
   detail(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @GetCurrentUser() user: CurrentUser) { return this.service.detail(id, user); }
 
   /** Chỉ trả tổng tự chấm và snapshot đã chốt, không dùng view tổng có điểm Admin */
   @Get(":evaluationId/score-summary")
   @ApiOkResponse({ schema: evaluationSummarySchema })
-  @ApiOperation({ summary: "Tổng điểm và xếp loại tự chấm tạm tính từ máy chủ" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem tổng điểm và xếp loại tự chấm tạm tính do máy chủ tính" })
   summary(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @GetCurrentUser() user: CurrentUser) { return this.service.summary(id, user); }
 
   /** Nhận một lá và DTO allowlist, guard chặn ADMIN trước khi service kiểm sở hữu */
@@ -55,7 +61,7 @@ export class EvaluationsController {
   @Roles("UNIT")
   @ApiBody({ type: SelfScoreDto })
   @ApiOkResponse({ schema: savedSelfScoreSchema })
-  @ApiOperation({ summary: "Lưu điểm hoặc diễn giải tự chấm một tiêu chí lá" })
+  @ApiOperation({ summary: "[UNIT] Lưu điểm hoặc diễn giải tự chấm cho một tiêu chí lá còn mở" })
   save(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Param("criterionId", new ParseUUIDPipe({ version: "4" })) criterionId: string, @Body() body: SelfScoreDto, @GetCurrentUser() user: CurrentUser) { return this.service.save(id, criterionId, body, user); }
 
   /** Kiểm nested DTO trước lưu từng ô độc lập, không trả thành công chung che lỗi từng lá */
@@ -63,7 +69,7 @@ export class EvaluationsController {
   @Roles("UNIT")
   @ApiBody({ type: BatchSelfScoreDto })
   @ApiOkResponse({ schema: batchSelfScoreSchema })
-  @ApiOperation({ summary: "Lưu hàng loạt, trả kết quả riêng từng tiêu chí" })
+  @ApiOperation({ summary: "[UNIT] Lưu điểm tự chấm hàng loạt và trả kết quả riêng cho từng tiêu chí" })
   batch(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() body: BatchSelfScoreDto, @GetCurrentUser() user: CurrentUser) { return this.service.saveBatch(id, body, user); }
 
   /** Nộp sớm bằng body rỗng, dấu thời gian và trạng thái được server cấp trong transaction */
@@ -72,7 +78,7 @@ export class EvaluationsController {
   @Roles("UNIT")
   @ApiBody({ type: SubmitEvaluationDto })
   @ApiOkResponse({ schema: evaluationMetadataSchema })
-  @ApiOperation({ summary: "Nộp hồ sơ tự chấm và khóa chỉnh sửa" })
+  @ApiOperation({ summary: "[UNIT] Nộp hồ sơ tự chấm để khóa chỉnh sửa và chuyển sang thẩm định" })
   submit(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() _body: SubmitEvaluationDto, @GetCurrentUser() user: CurrentUser) { return this.service.submit(id, user); }
 
   /** Nộp vòng bổ sung sau khi server kiểm lịch và thay đổi thực tế của từng mục
@@ -82,5 +88,6 @@ export class EvaluationsController {
   @HttpCode(200)
   @Roles("UNIT")
   @ApiBody({ type: SubmitEvaluationDto })
+  @ApiOperation({ summary: "[UNIT] Nộp hồ sơ bổ sung sau khi cập nhật các nội dung được yêu cầu" })
   supplementSubmit(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() _body: SubmitEvaluationDto, @GetCurrentUser() user: CurrentUser) { return this.service.submitSupplement(id, user); }
 }

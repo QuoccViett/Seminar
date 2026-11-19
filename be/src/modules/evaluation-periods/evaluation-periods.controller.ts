@@ -15,6 +15,7 @@ import {
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from "@nestjs/swagger";
@@ -32,8 +33,8 @@ import { PeriodWorkflowService } from "./period-workflow.service.js";
 import { TransitionPhaseDto } from "./dto/transition-phase.dto.js";
 import { PreviewSupplementScheduleDto } from "./dto/preview-supplement-schedule.dto.js";
 
-@ApiTags("Đợt đánh giá")
-@ApiBearerAuth()
+@ApiTags("Evaluation Periods")
+@ApiBearerAuth("access-token")
 @Controller("api/v1/evaluation-periods")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class EvaluationPeriodsController {
@@ -52,7 +53,7 @@ export class EvaluationPeriodsController {
   @Post("supplement-schedule/preview")
   @Roles("ADMIN")
   @HttpCode(200)
-  @ApiOperation({ summary: "Xem trước lịch bổ sung tạm theo ngày Việt Nam" })
+  @ApiOperation({ summary: "[ADMIN] Xem trước giờ mở và hạn bổ sung theo lịch tạm của ngày Việt Nam" })
   previewSupplement(@Body() dto: PreviewSupplementScheduleDto) {
     return this.workflow.previewSupplement(dto.supplementStartAt);
   }
@@ -62,7 +63,7 @@ export class EvaluationPeriodsController {
    */
   @Get(":id/phase-options")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Xem điều kiện chuyển giai đoạn kỳ đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Xem các giai đoạn có thể chuyển tới và điều kiện còn thiếu" })
   phaseOptions(@Param("id", ParseUUIDPipe) id: string) {
     return this.workflow.options(id);
   }
@@ -74,15 +75,19 @@ export class EvaluationPeriodsController {
   @Post(":id/transition-phase")
   @Roles("ADMIN")
   @HttpCode(200)
-  @ApiOperation({ summary: "Chuyển giai đoạn kỳ đánh giá theo điều kiện nghiệp vụ" })
+  @ApiOperation({ summary: "[ADMIN] Chuyển giai đoạn kỳ đánh giá khi đáp ứng các điều kiện nghiệp vụ" })
   transition(@Param("id", ParseUUIDPipe) id: string, @Body() dto: TransitionPhaseDto, @GetCurrentUser() user: CurrentUser) {
     return this.workflow.transition(id, dto.phase, user.id);
   }
 
   @Get()
   @Roles("ADMIN", "UNIT")
-  @ApiOperation({ summary: "Danh sách đợt đánh giá" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem danh sách đợt đánh giá (UNIT chỉ thấy kỳ đã công bố)" })
   @ApiResponse({ status: 200, description: "Danh sách đợt đánh giá kèm ngưỡng xếp loại" })
+  @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
+  @ApiQuery({ name: "pageSize", required: false, type: Number, example: 20 })
+  @ApiQuery({ name: "sortBy", required: false, type: String, enum: ["createdAt", "year", "name", "phase"] })
+  @ApiQuery({ name: "sortOrder", required: false, type: String, enum: ["asc", "desc"], example: "desc" })
   /** Chuyển bộ lọc phân trang và người dùng đã xác thực tới service
    * query là dữ liệu phân trang, user được guard gắn từ access token
    * Service dùng vai trò và giờ server để ẩn cấu hình trước thời điểm mở
@@ -93,7 +98,7 @@ export class EvaluationPeriodsController {
 
   @Get(":id")
   @Roles("ADMIN", "UNIT")
-  @ApiOperation({ summary: "Xem chi tiết đợt đánh giá" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem chi tiết đợt đánh giá theo quyền và thời điểm mở" })
   @ApiResponse({ status: 200, description: "Thông tin chi tiết đợt đánh giá" })
   @ApiResponse({ status: 404, description: "Không tìm thấy đợt đánh giá" })
   /** Đọc chi tiết kỳ theo vai trò của người gọi đã được guard xác thực
@@ -106,7 +111,7 @@ export class EvaluationPeriodsController {
 
   @Get(":id/thresholds")
   @Roles("ADMIN", "UNIT")
-  @ApiOperation({ summary: "Xem ngưỡng xếp loại của kỳ" })
+  @ApiOperation({ summary: "[ADMIN, UNIT] Xem ngưỡng xếp loại theo quyền và thời điểm mở của kỳ" })
   @ApiResponse({ status: 200, description: "Bộ ngưỡng theo quyền và thời điểm mở" })
   /** Đọc riêng bộ ngưỡng qua cùng bộ lọc quyền của chi tiết kỳ
    * id là UUID kỳ và user là người dùng đã được JWT guard xác thực
@@ -118,7 +123,7 @@ export class EvaluationPeriodsController {
 
   @Post()
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Tạo đợt đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Tạo đợt đánh giá ở trạng thái nháp" })
   @ApiResponse({ status: 201, description: "Tạo đợt đánh giá thành công" })
   /** Tạo nháp từ cấu hình đã qua DTO và danh tính Admin thật
    * Service cấp phase và dấu thời gian, không nhận các giá trị hệ thống qua body
@@ -129,7 +134,7 @@ export class EvaluationPeriodsController {
 
   @Patch(":id")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Cập nhật đợt đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Cập nhật cấu hình đợt đánh giá trước khi kỳ mở" })
   @ApiResponse({ status: 200, description: "Cập nhật đợt đánh giá thành công" })
   @ApiResponse({ status: 404, description: "Không tìm thấy đợt đánh giá" })
   /** Chuyển dữ liệu chỉnh sửa cùng danh tính Admin để service kiểm tra lịch và audit
@@ -147,7 +152,7 @@ export class EvaluationPeriodsController {
   @Post(":id/publish")
   @Roles("ADMIN")
   @HttpCode(200)
-  @ApiOperation({ summary: "Công bố kỳ đánh giá đã cấu hình" })
+  @ApiOperation({ summary: "[ADMIN] Công bố đợt đánh giá sau khi cấu hình vượt qua kiểm tra" })
   @ApiResponse({ status: 200, description: "Kỳ đánh giá đã được công bố" })
   /** Công bố cấu hình bằng thao tác tường minh thay vì nhận publishedAt từ request
    * id là kỳ cần công bố, user là Admin do JWT guard xác thực
@@ -159,7 +164,7 @@ export class EvaluationPeriodsController {
 
   @Get(":id/publish-check")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Kiểm tra điều kiện công bố kỳ" })
+  @ApiOperation({ summary: "[ADMIN] Kiểm tra các điều kiện cần hoàn tất trước khi công bố kỳ" })
   @ApiResponse({ status: 200, description: "Danh sách điều kiện công bố và trạng thái từng điều kiện" })
   /** Trả danh sách điều kiện còn thiếu để Admin hoàn thiện cấu hình trước công bố
    * id là UUID kỳ, quyền Admin được xác nhận bằng RolesGuard
@@ -171,7 +176,7 @@ export class EvaluationPeriodsController {
 
   @Delete(":id")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Xóa đợt đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Xóa đợt đánh giá nháp chưa phát sinh hồ sơ hoặc báo cáo" })
   @ApiResponse({ status: 200, description: "Xóa đợt đánh giá thành công" })
   @ApiResponse({ status: 400, description: "Đợt đánh giá đã có dữ liệu, không thể xóa" })
   @ApiResponse({ status: 404, description: "Không tìm thấy đợt đánh giá" })
@@ -184,7 +189,7 @@ export class EvaluationPeriodsController {
 
   @Put(":id/thresholds")
   @Roles("ADMIN")
-  @ApiOperation({ summary: "Tạo hoặc cập nhật ngưỡng xếp loại" })
+  @ApiOperation({ summary: "[ADMIN] Tạo hoặc thay thế bộ ngưỡng xếp loại của kỳ chưa công bố" })
   @ApiResponse({ status: 200, description: "Cập nhật ngưỡng xếp loại thành công" })
   /** Kiểm từng ngưỡng trong mảng trước khi lưu, giữ chỉ số khi báo lỗi trường
    * Không thay hình dạng body để các client đang gửi mảng tiếp tục hoạt động

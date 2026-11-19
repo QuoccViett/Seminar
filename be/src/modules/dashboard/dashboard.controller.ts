@@ -41,7 +41,7 @@ export class DashboardController {
 
   @Get()
   @Header("Cache-Control", "no-store")
-  @ApiOperation({ summary: "Tổng quan dashboard của một đợt đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Xem tiến độ, trạng thái và kết quả tổng quan của một đợt đánh giá" })
   @ApiQuery({ name: "periodId", required: true, format: "uuid" })
   @ApiOkResponse({ type: DashboardOverviewDto })
   getOverview(@Query("periodId", periodIdPipe) periodId: string) {
@@ -50,7 +50,7 @@ export class DashboardController {
 
   @Get("criteria-deductions")
   @Header("Cache-Control", "no-store")
-  @ApiOperation({ summary: "Danh sách tiêu chí bị Admin trừ điểm" })
+  @ApiOperation({ summary: "[ADMIN] Xem danh sách tiêu chí có điểm thẩm định thấp hơn điểm tự chấm" })
   @ApiQuery({ name: "periodId", required: true, format: "uuid" })
   @ApiOkResponse({ type: DashboardDeductionsDto })
   getDeductions(@Query("periodId", periodIdPipe) periodId: string) {
@@ -59,7 +59,7 @@ export class DashboardController {
 
   @Get("criteria-deductions/:criterionId")
   @Header("Cache-Control", "no-store")
-  @ApiOperation({ summary: "Chi tiết đơn vị bị trừ điểm ở một tiêu chí đã chốt" })
+  @ApiOperation({ summary: "[ADMIN] Xem các đơn vị bị trừ điểm ở một tiêu chí thuộc kỳ đã chọn" })
   @ApiQuery({ name: "periodId", required: true, format: "uuid" })
   @ApiOkResponse({ type: DashboardDeductionDetailDto })
   /** Chỉ Admin xem drill-down của tiêu chí thuộc kỳ, UUID sai bị chặn trước service */
@@ -69,7 +69,7 @@ export class DashboardController {
 
   @Get("leaderboard")
   @Header("Cache-Control", "no-store")
-  @ApiOperation({ summary: "Bảng xếp hạng thời gian thực của một đợt đánh giá" })
+  @ApiOperation({ summary: "[ADMIN] Xem bảng xếp hạng hiện tại của các đơn vị trong một đợt đánh giá" })
   @ApiQuery({ name: "periodId", required: true, format: "uuid" })
   @ApiOkResponse({ type: DashboardLeaderboardDto })
   @ApiQuery({ name: "limit", required: false, type: Number, description: "Số hồ sơ từ 1 đến 100" })
@@ -87,7 +87,7 @@ export class DashboardController {
 
   @Get("score-distribution")
   @Header("Cache-Control", "no-store")
-  @ApiOperation({ summary: "Phân bố xếp loại của các hồ sơ đã chốt" })
+  @ApiOperation({ summary: "[ADMIN] Xem phân bố xếp loại của các hồ sơ đã chốt trong một đợt đánh giá" })
   @ApiQuery({ name: "periodId", required: true, format: "uuid" })
   @ApiOkResponse({ type: DashboardScoreDistributionDto })
   getScoreDistribution(@Query("periodId", periodIdPipe) periodId: string) {

@@ -9,7 +9,7 @@ import { SchedulerService } from "./scheduler.service.js";
  * Cờ cấu hình mặc định tắt, controller không nhận thời gian hay người nhận từ client
  */
 @ApiTags("Scheduler")
-@ApiBearerAuth()
+@ApiBearerAuth("access-token")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN")
 @Controller("api/v1/admin/scheduler")
@@ -21,7 +21,7 @@ export class SchedulerController {
    */
   @Post("run")
   @HttpCode(200)
-  @ApiOperation({ summary: "Chạy một lượt quét lịch trong môi trường demo" })
+  @ApiOperation({ summary: "[ADMIN] Chạy thủ công một lượt quét lịch trong môi trường demo đã bật công cụ" })
   async run() {
     if (this.config.get<boolean>("ENABLE_DEMO_TOOLS") !== true || this.config.get<string>("NODE_ENV") === "production") {
       throw new ForbiddenException({ code: "DEMO_TOOLS_DISABLED", message: "Công cụ chạy lịch thủ công chưa được bật" });

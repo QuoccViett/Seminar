@@ -10,7 +10,7 @@ import { EvaluationsService } from "./evaluations.service.js";
 import { evaluationDetailSchema } from "./evaluation-openapi.js";
 
 /** Chỉ chuyển yêu cầu ADMIN đã xác thực và UUID hợp lệ sang service thẩm định */
-@ApiTags("Thẩm định hồ sơ")
+@ApiTags("Evaluation Reviews")
 @ApiBearerAuth("access-token")
 @ApiResponse({ status: 400, description: "Dữ liệu gửi lên hoặc UUID không hợp lệ" })
 @ApiResponse({ status: 403, description: "Không có quyền hoặc hồ sơ đang khóa thẩm định" })
@@ -29,7 +29,7 @@ export class ReviewController {
   @Get(":evaluationId/review")
   @Header("Cache-Control", "no-store")
   @ApiOkResponse({ schema: evaluationDetailSchema })
-  @ApiOperation({ summary: "So sánh tự chấm, thẩm định và nội dung bổ sung" })
+  @ApiOperation({ summary: "[ADMIN] Xem và đối chiếu nội dung tự chấm, thẩm định và bổ sung của hồ sơ" })
   detail(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @GetCurrentUser() user: CurrentUser) {
     return this.evaluations.detail(id, user);
   }
@@ -37,7 +37,7 @@ export class ReviewController {
   /** Nhận điểm của một lá, người duyệt lấy từ phiên thay vì body */
   @Put(":evaluationId/scores/:criterionId/review")
   @ApiBody({ type: ReviewScoreDto })
-  @ApiOperation({ summary: "Thẩm định điểm một tiêu chí lá" })
+  @ApiOperation({ summary: "[ADMIN] Ghi điểm và nhận xét thẩm định cho một tiêu chí lá" })
   review(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Param("criterionId", new ParseUUIDPipe({ version: "4" })) criterionId: string, @Body() body: ReviewScoreDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.review(id, criterionId, body, user);
   }
@@ -48,6 +48,7 @@ export class ReviewController {
   @Post(":evaluationId/accept-all")
   @HttpCode(200)
   @ApiBody({ type: SubmitEvaluationDto })
+  @ApiOperation({ summary: "[ADMIN] Chấp nhận các điểm tự chấm chưa được thẩm định của hồ sơ" })
   acceptAll(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() _body: SubmitEvaluationDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.acceptAll(id, user);
   }
@@ -58,6 +59,7 @@ export class ReviewController {
   @Post(":evaluationId/first-review-complete")
   @HttpCode(200)
   @ApiBody({ type: SubmitEvaluationDto })
+  @ApiOperation({ summary: "[ADMIN] Hoàn tất lượt thẩm định đầu tiên của hồ sơ" })
   completeFirstReview(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() _body: SubmitEvaluationDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.completeFirstReview(id, user);
   }
@@ -68,6 +70,7 @@ export class ReviewController {
   @Post(":evaluationId/finalize")
   @HttpCode(200)
   @ApiBody({ type: SubmitEvaluationDto })
+  @ApiOperation({ summary: "[ADMIN] Chốt kết quả cuối cùng cho một hồ sơ đủ điều kiện" })
   finalize(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() _body: SubmitEvaluationDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.finalize(id, user);
   }
@@ -78,6 +81,7 @@ export class ReviewController {
   @Post(":evaluationId/supplement-request")
   @HttpCode(200)
   @ApiBody({ type: SupplementRequestDto })
+  @ApiOperation({ summary: "[ADMIN] Yêu cầu đơn vị bổ sung các tiêu chí được chọn theo lịch đã xem trước" })
   requestSupplement(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() body: SupplementRequestDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.requestSupplement(id, body, user);
   }
@@ -87,6 +91,7 @@ export class ReviewController {
    */
   @Put(":evaluationId/scores/review-batch")
   @ApiBody({ type: BatchReviewDto })
+  @ApiOperation({ summary: "[ADMIN] Thẩm định hàng loạt tiêu chí và nhận kết quả riêng từng mục" })
   batchReview(@Param("evaluationId", new ParseUUIDPipe({ version: "4" })) id: string, @Body() body: BatchReviewDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.batchReview(id, body, user);
   }
@@ -97,6 +102,7 @@ export class ReviewController {
   @Post("finalize-batch")
   @HttpCode(200)
   @ApiBody({ type: BatchFinalizeDto })
+  @ApiOperation({ summary: "[ADMIN] Chốt hàng loạt hồ sơ với kết quả riêng cho từng hồ sơ" })
   batchFinalize(@Body() body: BatchFinalizeDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.batchFinalize(body, user);
   }
@@ -107,6 +113,7 @@ export class ReviewController {
   @Post("finalize-preview")
   @HttpCode(200)
   @ApiBody({ type: BatchFinalizeDto })
+  @ApiOperation({ summary: "[ADMIN] Xem trước điều kiện và kết quả dự kiến khi chốt hàng loạt hồ sơ" })
   previewFinalize(@Body() body: BatchFinalizeDto, @GetCurrentUser() user: CurrentUser) {
     return this.service.previewFinalize(body, user);
   }
