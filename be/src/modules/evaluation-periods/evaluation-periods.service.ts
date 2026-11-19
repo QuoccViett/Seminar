@@ -167,6 +167,8 @@ export class EvaluationPeriodsService {
    * Từ chối nếu chưa có lịch hợp lệ, chưa đủ bốn ngưỡng chuẩn hoặc chưa có tiêu chí
    * Khóa kỳ trước khi đọc và kiểm cấu hình, tránh sửa đồng thời tạo snapshot không nhất quán
    * publishedAt được cấp theo đồng hồ máy chủ và audit được ghi cùng hồ sơ trong transaction
+   * Cho phép tối đa 30 giây để tạo đủ hồ sơ, điểm lá và thông báo của khoảng 34 đơn vị trong một lần công bố
+   * Ngân sách này bao gồm chờ khóa, không cấp quyền theo snapshot trước khóa hoặc chia nhỏ commit
    */
   async publish(id: string, actorId: string) {
     return this.prisma.$transaction(async (transaction) => {
@@ -209,7 +211,7 @@ export class EvaluationPeriodsService {
         }
       }
       return transaction.evaluationPeriod.findUniqueOrThrow({ where: { id } });
-    });
+    }, { timeout: 30_000, maxWait: 10_000 });
   }
 
   /** Trả từng điều kiện công bố để Admin sửa đúng các mục cấu hình còn thiếu

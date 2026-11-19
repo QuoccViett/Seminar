@@ -3,7 +3,8 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "src/generated/**"],
+    // Thư mục thử chứa log, coverage và tài nguyên sinh tự động, không phải source cần lint
+    ignores: ["dist/**", "src/generated/**", ".tmp/**"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

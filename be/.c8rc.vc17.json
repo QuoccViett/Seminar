@@ -1,0 +1,25 @@
+{
+  "all": true,
+  "exclude-after-remap": true,
+  "include": [
+    "src/modules/**/*.service.ts",
+    "src/modules/evidences/storage.provider.ts",
+    "src/modules/notifications/real-notification-providers.ts",
+    "src/modules/exports/generators/*.generator.ts",
+    "src/modules/evaluations/*policy.ts",
+    "src/modules/evidences/file-policy.ts",
+    "src/common/guards/*.ts",
+    "src/common/filters/*.ts",
+    "src/common/interceptors/*.ts",
+    "src/common/pipes/*.ts",
+    "src/common/services/*.ts",
+    "src/common/utils/*.ts"
+  ],
+  "exclude": ["**/*.spec.ts", "**/generated/**"],
+  "extension": [".ts"],
+  "reporter": ["text", "json-summary", "json", "html"],
+  "reports-dir": ".tmp/vc17-coverage",
+  "temp-directory": ".tmp/vc17-v8",
+  "check-coverage": true,
+  "lines": 85
+}

@@ -131,6 +131,23 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
     assert.equal(await prisma.user.count({ where: { username: { startsWith: `vc07-stale-${suffix}-` } } }), 0);
     assert.equal(await prisma.unit.count({ where: { code: { startsWith: `VC07-STALE-${suffix}-` } } }), 1);
 
+    // Hai phiên xem trước khác khóa cùng chứa hai tài khoản phải tranh chấp trên cùng định danh dữ liệu
+    // Chỉ một giao dịch được tạo đủ cả hai dòng, giao dịch còn lại báo xung đột nghiệp vụ và không tạo thêm bản ghi
+    const competingSuffix = `${suffix}-race`;
+    const competingWorkbook = await createSmallWorkbook(competingSuffix);
+    const competingPreviews = await Promise.all([
+      preview(competingWorkbook, adminToken, `race-a-${suffix}`),
+      preview(competingWorkbook, adminToken, `race-b-${suffix}`),
+    ]);
+    assert.deepEqual(competingPreviews.map((item) => item.status), [201, 201]);
+    const competingResults = await Promise.all(competingPreviews.map((item) =>
+      request("POST", `users/import/${item.body.importId}/confirm`, adminToken, {}),
+    ));
+    assert.deepEqual(competingResults.map((item) => item.status).sort(), [200, 422]);
+    assert.equal(await prisma.user.count({ where: { username: { startsWith: `vc07-stale-${competingSuffix}-` } } }), 2);
+    assert.equal(await prisma.unit.count({ where: { code: { startsWith: `VC07-STALE-${competingSuffix}-` } } }), 2);
+    assert.equal(await prisma.credentialDispatch.count({ where: { user: { username: { startsWith: `vc07-stale-${competingSuffix}-` } } } }), 2);
+
     const unitId = randomUUID();
     const unitUserId = randomUUID();
     const unitUsername = `vc07-deny-${suffix}`;
@@ -142,8 +159,15 @@ test("VC07 import qua backend thật và PostgreSQL riêng", async () => {
     assert.equal((await preview(workbook, unitLogin.body.accessToken as string, `unit-${suffix}`)).status, 403);
 
     const importId = firstPreview.body.importId as string;
-    const confirmed = await request("POST", `users/import/${importId}/confirm`, adminToken, {});
+    // Hai xác nhận đồng thời cùng phiên phải trả cùng kết quả sau khóa transaction của PostgreSQL
+    // Các phép đếm phía dưới kiểm hậu điều kiện thật để phát hiện tạo trùng dù cả hai HTTP đều thành công
+    const [confirmed, concurrentConfirm] = await Promise.all([
+      request("POST", `users/import/${importId}/confirm`, adminToken, {}),
+      request("POST", `users/import/${importId}/confirm`, adminToken, {}),
+    ]);
     assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+    assert.equal(concurrentConfirm.status, 200, JSON.stringify(concurrentConfirm.body));
+    assert.deepEqual(concurrentConfirm.body, confirmed.body);
     assert.equal(confirmed.body.createdCount, 34);
     assert.equal(confirmed.body.unitsCreated, 34);
     const accounts = confirmed.body.accounts as Array<Record<string, unknown>>;

@@ -504,6 +504,9 @@ export class UsersService {
 
   /** Đặt lại mật khẩu về giá trị cấu hình, thu hồi refresh và tăng phiên bản access trong giao dịch
    * Tài khoản không tồn tại trả lỗi, tài khoản thành công phải đổi mật khẩu khi đăng nhập lại
+   * id là tài khoản đích và actorId dùng audit, đầu ra chỉ cấp mật khẩu cấu hình một lần cho Admin
+   * Chờ cùng khóa user với worker gửi credential, giữ ngân sách 30 giây lớn hơn lượt gửi tối đa 20 giây
+   * Reset thắng thì hủy claim cũ, gửi đã bắt đầu thì reset chỉ tăng phiên bản sau khi worker nhả khóa
    */
   async resetPassword(id: string, actorId?: string) {
     const user = await this.prisma.user.findUnique({
@@ -545,7 +548,7 @@ export class UsersService {
       await tx.webPushSubscription.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: now } });
       await this.credentials?.enqueue(tx, { userId: id, version: (versionRow?.credentialVersion ?? 0) + 1, username: before.username, password: temporaryPassword, email: before.email });
       await this.audit?.record({ actorId: actorId ?? null, action: "USER_PASSWORD_RESET", entity: "User", entityId: id, before, after: updated }, tx);
-    });
+    }, { timeout: 30_000, maxWait: 10_000 });
 
     return { userId: id, temporaryPassword, mustChangePassword: true, credentialsSentAt: null };
   }
