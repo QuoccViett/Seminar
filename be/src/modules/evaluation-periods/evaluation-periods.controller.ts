@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiQuery,
   ApiResponse,
@@ -190,6 +191,31 @@ export class EvaluationPeriodsController {
   @Put(":id/thresholds")
   @Roles("ADMIN")
   @ApiOperation({ summary: "[ADMIN] Tạo hoặc thay thế bộ ngưỡng xếp loại của kỳ chưa công bố" })
+  @ApiBody({
+    description: "Gửi đủ bốn mức chuẩn. minPercent và minExclusive phải theo đúng mức; chỉ label và color được tùy chỉnh.",
+    schema: {
+      type: "array",
+      minItems: 4,
+      maxItems: 4,
+      items: {
+        type: "object",
+        required: ["rating", "label", "minPercent"],
+        properties: {
+          rating: { type: "string", enum: ["EXCELLENT", "GOOD", "PASS", "FAIL"] },
+          label: { type: "string", example: "Xuất sắc" },
+          minPercent: { type: "number", enum: [85, 65, 50, 0] },
+          minExclusive: { type: "boolean", description: "true cho EXCELLENT; false cho các mức còn lại" },
+          color: { type: "string", nullable: true, example: "#16a34a" },
+        },
+      },
+      example: [
+        { rating: "EXCELLENT", label: "Xuất sắc", minPercent: 85, minExclusive: true, color: "#16a34a" },
+        { rating: "GOOD", label: "Tốt", minPercent: 65, minExclusive: false, color: "#2563eb" },
+        { rating: "PASS", label: "Đạt", minPercent: 50, minExclusive: false, color: "#d97706" },
+        { rating: "FAIL", label: "Chưa đạt", minPercent: 0, minExclusive: false, color: "#dc2626" },
+      ],
+    },
+  })
   @ApiResponse({ status: 200, description: "Cập nhật ngưỡng xếp loại thành công" })
   /** Kiểm từng ngưỡng trong mảng trước khi lưu, giữ chỉ số khi báo lỗi trường
    * Không thay hình dạng body để các client đang gửi mảng tiếp tục hoạt động

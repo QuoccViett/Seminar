@@ -12,7 +12,7 @@ export class UpsertRatingThresholdDto {
   @IsNotEmpty({ message: "Tên mức xếp loại không được để trống" })
   label!: string;
 
-  @ApiProperty({ example: 90 })
+  @ApiProperty({ example: 85 })
   @IsNumber({}, { message: "Tỷ lệ tối thiểu phải là số" })
   @Min(0, { message: "Tỷ lệ tối thiểu không được nhỏ hơn 0" })
   @Max(100, { message: "Tỷ lệ tối thiểu không được lớn hơn 100" })

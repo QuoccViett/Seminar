@@ -2,6 +2,62 @@ import { ApiPropertyOptional } from "@nestjs/swagger";
 import { IsDateString, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 import { TimelineQueryDto } from "../../evaluations/dto/feedback.dto.js";
 
+/** Các entity được dùng trong lời gọi AuditService.record ở backend hiện tại. */
+export const AUDIT_ENTITIES = [
+  "CredentialDelivery",
+  "CredentialDispatch",
+  "Criterion",
+  "CriterionScore",
+  "Evaluation",
+  "EvaluationFeedback",
+  "EvaluationPeriod",
+  "Evidence",
+  "ImportSession",
+  "Notification",
+  "NotificationDelivery",
+  "ReportExport",
+  "Unit",
+  "User",
+] as const;
+
+/** Các action tĩnh và mọi nhánh action động hiện có trong lời gọi AuditService.record. */
+export const AUDIT_ACTIONS = [
+  "AUTO_STATUS",
+  "CREDENTIAL_DELIVERY_RETRIED",
+  "CREDENTIAL_EMAIL_CONFIRMED",
+  "CREATE",
+  "DELETE",
+  "FEEDBACK_CREATED",
+  "FINALIZE",
+  "FIRST_REVIEW_COMPLETE",
+  "LOGIN_FAILED",
+  "LOGIN_SUCCESS",
+  "NOTIFICATION_DELIVERY",
+  "NOTIFICATION_QUEUED",
+  "PASSWORD_CHANGED",
+  "PUBLISH",
+  "REPORT_DOWNLOADED",
+  "REPORT_EXPORTED",
+  "REVIEW_INVALIDATED",
+  "REVIEW_SCORE",
+  "SELF_SCORE",
+  "SUBMIT",
+  "SUPPLEMENT_REQUEST",
+  "SUPPLEMENT_SUBMIT",
+  "TRANSITION_PHASE",
+  "UNIT_CREATED",
+  "UNIT_UPDATED",
+  "UPDATE",
+  "UPSERT_THRESHOLDS",
+  "UNITS_IMPORTED",
+  "USER_ACTIVATED",
+  "USER_CREATED",
+  "USER_DEACTIVATED",
+  "USER_IMPORTED",
+  "USER_PASSWORD_RESET",
+  "USER_UPDATED",
+] as const;
+
 /** Kiểm bộ lọc audit trước DB, SYSTEM là định danh ổn định cho actor null
  * Dùng cùng pagination với timeline, ngày có Z hoặc offset để tránh lệch múi giờ
  */
