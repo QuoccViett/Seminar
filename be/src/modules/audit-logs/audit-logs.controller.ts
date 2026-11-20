@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiQuery, ApiResponse, ApiT
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js";
 import { AuditLogsService } from "./audit-logs.service.js";
-import { QueryAuditLogDto } from "./dto/query-audit-log.dto.js";
+import { AUDIT_ACTIONS, AUDIT_ENTITIES, QueryAuditLogDto } from "./dto/query-audit-log.dto.js";
 import { auditPageSchema, auditSchema } from "../evaluations/feedback-openapi.js";
 
 /** Chỉ ADMIN đọc nhật ký, controller không nhận thao tác thêm/sửa/xóa lịch sử */
@@ -28,9 +28,9 @@ export class AuditLogsController {
   @ApiQuery({ name: "page", required: false, type: Number, example: 1 })
   @ApiQuery({ name: "pageSize", required: false, type: Number, example: 20 })
   @ApiQuery({ name: "actorId", required: false, type: String, example: "SYSTEM hoặc UUID" })
-  @ApiQuery({ name: "entity", required: false, type: String, example: "CriterionScore" })
+  @ApiQuery({ name: "entity", required: false, enum: AUDIT_ENTITIES, description: "Loại bản ghi được ghi audit" })
   @ApiQuery({ name: "entityId", required: false, type: String })
-  @ApiQuery({ name: "action", required: false, type: String, example: "REVIEW_SCORE" })
+  @ApiQuery({ name: "action", required: false, enum: AUDIT_ACTIONS, description: "Mã hành động được ghi audit" })
   @ApiQuery({ name: "from", required: false, type: String, format: "date-time" })
   @ApiQuery({ name: "to", required: false, type: String, format: "date-time" })
   findAll(@Query() query: QueryAuditLogDto) { return this.service.findAll(query); }
