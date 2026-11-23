@@ -59,6 +59,8 @@ async function verify() {
 
   /** Chọn kỳ qua giao diện trước khi thao tác hồ sơ tương ứng. */
   async function selectUnitPeriod(name) {
+    await unit.waitForURL("**/unit/records");
+    await unit.getByRole("heading", { name: "Hồ sơ tự chấm", exact: true, level: 2 }).waitFor();
     await unit.getByRole("combobox", { name: "Chọn đợt thi đua", exact: true }).click();
     await unit.locator(".ant-select-dropdown:visible .ant-select-item-option-content").filter({ hasText: name }).click();
   }
@@ -287,10 +289,11 @@ async function verify() {
     await unit.getByPlaceholder("Mật khẩu mới", { exact: true }).fill("Chu12345");
     await unit.getByPlaceholder("Xác nhận mật khẩu mới", { exact: true }).fill("Chu12345");
     await unit.getByRole("button", { name: "Xác nhận đổi", exact: true }).click();
-    await unit.waitForURL("**/unit/records");
+    await unit.waitForURL("**/unit/dashboard");
     unit.off("request", observePassword); assert.equal(passwordRequests, 1);
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: fixture.unit.userId } })).mustChangePassword, false);
     checks.push("realPasswordSevenRejectedEightAccepted"); checks.push("forcedPasswordBackendAndFrontend");
+    await unit.getByRole("menuitem", { name: /Hồ sơ tự chấm/u }).click();
 
     // Đổi Date.now của browser không được lộ tiêu chí, chỉ điều kiện mở ở DB thử mới thay quyền khi refetch
     // Không sửa đồng hồ hệ thống hoặc dùng đồng hồ client làm nguồn cấp quyền
@@ -322,9 +325,10 @@ async function verify() {
     const card = unit.locator(".ant-card").filter({ has: unit.getByText("Kỳ đang tự chấm VC16 — Nội dung tiêu chí", { exact: true }) });
     await card.getByRole("spinbutton", { name: "Điểm VC16", exact: true }).fill("80");
     await card.getByRole("textbox", { name: "Diễn giải VC16", exact: true }).fill("Nội dung <script>không chạy</script> VC16");
-    await unit.getByRole("link", { name: "Hộp thư thông báo", exact: true }).click();
+    await unit.getByRole("menuitem", { name: /Hộp thư thông báo/u }).click();
+    await unit.waitForURL("**/unit/notifications");
     // Đợi lần tải thật sau khi điều hướng, tránh đọc thẻ cũ còn trên DOM rồi ngắt mạng khi trang mới chưa có dữ liệu
-    await unit.getByRole("link", { name: "Hồ sơ tự chấm", exact: true }).click();
+    await unit.getByRole("menuitem", { name: /Hồ sơ tự chấm/u }).click();
     await selectUnitPeriod("Kỳ đang tự chấm VC16");
     await unit.getByRole("button", { name: "Làm mới", exact: true }).locator(".anticon-loading").waitFor({ state: "hidden" });
     assert.equal(await card.getByRole("spinbutton", { name: "Điểm VC16", exact: true }).inputValue(), "80.00");
