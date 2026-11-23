@@ -10,6 +10,14 @@ Source bắt đầu từ nhánh `fix/admin-unit-ui`, commit `32b6a6f`, Git sạc
 - [x] Đồng bộ danh sách API đủ 94 thao tác/78 đường dẫn từ OpenAPI, sửa hướng dẫn Auth/Web Push, Node/PDF.js và mô tả snapshot lịch bổ sung; không giữ route hoặc field snake_case cũ trong giao ước hiện hành
 - [ ] Supabase private thật, máy chủ/URL và thiết bị bảo vệ, người xác nhận UI, hai lần diễn tập: vẫn thiếu chỉ định hoặc bằng chứng thực hiện; không dùng CI/Mailpit/local để đánh dấu thay
 
+### Lượt CI tiếp theo và sửa độ ổn định browser
+
+[Run 45250774899](https://github.com/giahan358/Seminar/actions/runs/45250774899), SHA `6e2209bf30dff9bbb495f5ef6e882e6296b90dc9` chỉ đổi tài liệu, có Gitleaks/BE/FE đạt nhưng browser dừng ở 16 nhóm kiểm do timeout khi tìm nút “Làm mới” sau thẩm định bổ sung. Artifact `14855803416` đã đối chiếu checksum, manifest giữ `complete=false` với một bước browser lỗi; không ghép nó thành lượt CI đạt. Unit 218/218 và toàn bộ 56 test HTTP/PG/seed/upgrade của lượt này vẫn đạt, coverage dòng 96,19%.
+
+Kiểm độc lập trên Ant Design đang cài xác nhận khi có spinner, nút mang tên truy cập “loading Làm mới” và không khớp locator tên chính xác “Làm mới”. Đã đặt aria-label cố định trên nút làm mới của màn hồ sơ ADMIN/UNIT và dashboard UNIT; bổ sung assertion trong test UNIT ngay lúc đang tải. Browser tiếp tục dùng thao tác thật, chờ GET phase-options sau làm mới trước khi chọn giai đoạn; không force click, tăng timeout, retry toàn bộ hoặc bỏ assertion. Chẩn đoán lỗi chỉ lưu các nhãn tương tác cố định, không ghi DOM hay credential.
+
+Đồng thời bỏ hai nhãn “lịch bổ sung tạm/chờ giảng viên xác nhận” ở màn review và tự chấm, hiển thị chính xác hai mốc UTC đã lưu theo giờ Việt Nam. Browser local trên DB mới đã đạt 20/20 sau sửa nhãn; sáu test component/trang đã kiểm lại đạt sau thêm assertion loading, lint FE và lint/syntax browser đạt. CI của bản sửa cần đối chiếu đúng commit mới. Giữ lại artifact CI lỗi và lượt local riêng; kết quả run cuối được ghi tại mục 14 của [checklist hiện hành](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md) và [Actions của nhánh](https://github.com/giahan358/Seminar/actions?query=branch%3Afix%2Fadmin-unit-ui).
+
 ## Checklist theo yêu cầu
 
 | Mục | Kết quả đã kiểm | Trạng thái còn lại |

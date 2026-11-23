@@ -85,7 +85,7 @@ export default function UnitRecords() {
           options={[...periods].sort((left, right) => right.year - left.year).map((period) => ({ value: period.id, label: `${period.name} (${period.year})` }))}
           onChange={(periodId) => { selectedPeriodIdRef.current = periodId; setSelectedPeriodId(periodId); setLoading(true); setRefresh((value) => value + 1); }}
         />}
-        <Button loading={loading} onClick={() => setRefresh((value) => value + 1)}>Làm mới</Button>
+        <Button aria-label="Làm mới" loading={loading} onClick={() => setRefresh((value) => value + 1)}>Làm mới</Button>
       </Space>
     </Space>
     {error && <Alert type="error" showIcon title={error} />}

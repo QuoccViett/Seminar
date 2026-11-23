@@ -111,7 +111,7 @@ export default function ReviewCard({ record, summary, disconnected, onReload, on
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Typography.Text>Tổng tự chấm: {summary.selfTotal}/{summary.maxTotalScore} · {summary.ratingLabel}</Typography.Text>
       <Typography.Text>Lượt đầu: {vietnamTime(record.firstReviewedAt)} · Giai đoạn: {phaseLabels[record.period.phase] ?? "Chưa xác định"}</Typography.Text>
-      {record.supplementStartAt && <Alert type="info" showIcon title={`Lịch bổ sung tạm: ${vietnamTime(record.supplementStartAt)} đến trước ${vietnamTime(record.supplementDeadline)} theo giờ Việt Nam`} description="Chờ giảng viên xác nhận quy tắc lịch" />}
+      {record.supplementStartAt && <Alert type="info" showIcon title={`Lịch bổ sung: ${vietnamTime(record.supplementStartAt)} đến trước ${vietnamTime(record.supplementDeadline)} theo giờ Việt Nam`} />}
       {record.finalResult && <Alert type="success" title={`Đã chốt: ${record.finalResult.score} điểm · ${record.finalResult.percent}% · ${record.finalResult.rating}`} />}
       {disconnected && <Alert type="warning" title="Chưa tải lại được quyền từ máy chủ, vui lòng làm mới" />}
       <Table rowKey="criterionId" dataSource={tableRows(record.criteria)} columns={columns} pagination={false} defaultExpandAllRows scroll={{ x: 1500 }} />

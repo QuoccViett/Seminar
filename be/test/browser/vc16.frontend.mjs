@@ -464,7 +464,9 @@ async function verify() {
     const otherId = fixture.review.records[1].evaluationId;
     assert.equal((await adminRequest("POST", `admin/evaluations/${otherId}/accept-all`, {})).status, 200);
     assert.equal((await adminRequest("POST", `admin/evaluations/${otherId}/first-review-complete`, {})).status, 200);
-    await admin.getByRole("button", { name: "Làm mới", exact: true }).click();
+    // Chờ quyền chuyển phase tải lại từ HTTP thật, không chọn option theo snapshot trước lệnh API vừa thực hiện
+    const [phaseRefresh] = await Promise.all([admin.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/phase-options") && response.request().method() === "GET"), admin.getByRole("button", { name: "Làm mới", exact: true }).click()]);
+    assert.equal(phaseRefresh.status(), 200);
     await admin.getByRole("combobox", { name: "Giai đoạn muốn chuyển", exact: true }).click();
     await admin.locator(".ant-select-dropdown:visible .ant-select-item-option-content").filter({ hasText: "Thẩm định cuối" }).click();
     await admin.getByRole("button", { name: "Chuyển giai đoạn", exact: true }).click();
@@ -538,7 +540,9 @@ async function verify() {
     const waitingFor = error.name === "TimeoutError" ? error.log?.find((line) => line.includes("waiting for"))?.slice(0, 240) : undefined;
     // Lỗi trùng selector chỉ giữ dòng mô tả locator do bài kiểm kiểm soát, không giữ DOM hoặc stack
     const locatorHint = /strict mode violation/.test(error.message) ? error.message.split("\n")[0].slice(0, 240) : undefined;
-    await writeFile(".tmp/vc16-artifacts/browser-results.json", JSON.stringify({ checks, failedStage: stage, failureKind: error.name, waitingFor, locatorHint, authResponses, failedRequests, session, mockBackend: false }, null, 2));
+    // Chỉ lưu nhãn chẩn đoán cố định, không sao chép DOM hoặc nội dung thao tác có thể chứa credential
+    const interactionHints = ["element is not visible", "element is not enabled", "element is not stable", "intercepts pointer events", "element was detached", "element is outside of the viewport"].filter((hint) => error.log?.some((line) => line.includes(hint)));
+    await writeFile(".tmp/vc16-artifacts/browser-results.json", JSON.stringify({ checks, failedStage: stage, failureKind: error.name, waitingFor, locatorHint, interactionHints, authResponses, failedRequests, session, mockBackend: false }, null, 2));
     throw error;
   } finally { await prisma.$disconnect(); await adminContext.close(); await unitContext.close(); await browser.close(); }
 }

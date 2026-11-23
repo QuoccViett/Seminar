@@ -134,7 +134,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
   return <Card title={period.name} extra={<Tag>{statusLabels[record.status] || "Trạng thái chưa xác định"}</Tag>}>
     <Space orientation="vertical" style={{ width: "100%" }} size="middle">
       <Typography.Text>Mở: {vietnamTime(record.period.selfEvalStart)} · Kết thúc: {vietnamTime(record.period.selfEvalDeadline)} (giờ Việt Nam)</Typography.Text>
-      {record.supplementStartAt && <Typography.Text>Lịch bổ sung (tạm): {vietnamTime(record.supplementStartAt)} đến trước {vietnamTime(record.supplementDeadline)} · Chờ giảng viên xác nhận</Typography.Text>}
+      {record.supplementStartAt && <Typography.Text>Lịch bổ sung: {vietnamTime(record.supplementStartAt)} đến trước {vietnamTime(record.supplementDeadline)} (giờ Việt Nam)</Typography.Text>}
       {remaining !== null && <Typography.Text>Thời gian đến hạn {record.status === "SUPPLEMENT_REQUESTED" ? "bổ sung" : "tự chấm"}: khoảng {remaining} phút · Quyền thao tác do máy chủ kiểm tra</Typography.Text>}
       {!record.criteriaVisible ? <Alert type="info" showIcon title="Kỳ đánh giá chưa đến giờ mở tiêu chí" /> : <>
         {record.lockedReason && <Alert type="info" showIcon title={record.lockedReason} />}
