@@ -332,7 +332,7 @@ export default function AdminUsers() {
 
   return <div className={styles.pageContainer}>
     {/* Tìm kiếm gọi q trên backend, Import kéo thả chỉ ghi sau bước xem trước và xác nhận */}
-    <div className={styles.toolbar}><PageHeader title="Quản lý tài khoản" searchPlaceholder="Tìm tên đăng nhập, họ tên hoặc email" onSearch={search} onAdd={() => openForm()} addButtonText="Thêm tài khoản" /><Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>Import Excel</Button></div>
+    <div className={styles.toolbar}><div className={styles.toolbarHeader}><PageHeader title="Quản lý tài khoản" searchPlaceholder="Tìm tên đăng nhập, họ tên hoặc email" onSearch={search} onAdd={() => openForm()} addButtonText="Thêm tài khoản" /></div><Button className={styles.importButton} icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>Import Excel</Button></div>
     {loadError && <Alert type="error" title={loadError} showIcon action={<Button onClick={() => load()}>Thử tải lại tài khoản</Button>} />}
     <div className={styles.tableContainer}><Table columns={columns} dataSource={users} rowKey="id" loading={loading} locale={{ emptyText: loadError ? "Chưa tải được danh sách tài khoản" : "Không có tài khoản phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} tài khoản` }} /></div>
     {/* Form không gửi isActive hoặc mật khẩu cũ; backend quyết định allowlist cuối cùng */}

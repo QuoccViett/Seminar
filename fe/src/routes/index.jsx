@@ -18,6 +18,8 @@ const AdminConfig = lazy(() => import("../pages/admin/AdminConfig"));
 const NotificationInbox = lazy(() => import("../pages/NotificationInbox"));
 const PushOnboardingPage = lazy(() => import("../pages/auth/PushOnboardingPage"));
 const UnitRecords = lazy(() => import("../pages/unit/UnitRecords"));
+const UnitDashboard = lazy(() => import("../pages/unit/UnitDashboard"));
+const UnitProfile = lazy(() => import("../pages/unit/UnitProfile"));
 const AdminRecords = lazy(() => import("../pages/admin/AdminRecords"));
 const AdminReports = lazy(() => import("../pages/admin/AdminReports"));
 
@@ -62,8 +64,10 @@ export default function AppRoutes() {
           <Route element={<RequireRole roles={["UNIT"]} />}>
             {/* UNIT có khung điều hướng riêng và không nhận menu ADMIN */}
             <Route element={<UnitLayout />}>
+              <Route path="/unit/dashboard" element={<UnitDashboard />} />
               <Route path="/unit/records" element={<UnitRecords />} />
               <Route path="/unit/notifications" element={<NotificationInbox />} />
+              <Route path="/unit/profile" element={<UnitProfile />} />
             </Route>
           </Route>
 

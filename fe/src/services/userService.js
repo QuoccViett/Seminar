@@ -3,6 +3,8 @@ import apiClient from "./apiClient";
 export const userService = {
   /** Lấy danh sách theo bộ lọc VC04; q được backend xử lý và trả tổng số dòng */
   getUsers: (params) => apiClient.get("/users", { params }),
+  /** Lấy hồ sơ tài khoản theo ID; UNIT chỉ đọc được hồ sơ của chính mình */
+  getUser: (id) => apiClient.get(`/users/${id}`),
   /** Tạo tài khoản và nhận mật khẩu tạm một lần để ADMIN bàn giao thủ công */
   createUser: (data) => apiClient.post("/users", data),
   /** Chỉ gửi các trường hồ sơ được phép, không gửi trạng thái qua route này */

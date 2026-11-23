@@ -85,6 +85,7 @@ export default function AdminConfig() {
   const [isCriteriaModalOpen, setIsCriteriaModalOpen] = useState(false);
   const [selectedCriterion, setSelectedCriterion] = useState(null);
   const [phaseDialog, setPhaseDialog] = useState(null);
+  const [deletingPeriodId, setDeletingPeriodId] = useState(null);
   const [supplementStart, setSupplementStart] = useState(null);
   const [supplementPreview, setSupplementPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -274,6 +275,28 @@ export default function AdminConfig() {
     }
   };
 
+  /** Xóa kỳ nháp và cấu hình tiêu chí/ngưỡng sau khi Admin xác nhận
+   * Backend từ chối kỳ đã công bố hoặc đã có hồ sơ/báo cáo, FE tải lại danh sách sau thành công
+   */
+  const handleDeletePeriod = async (record) => {
+    setDeletingPeriodId(record.id);
+    try {
+      await evaluationPeriodService.deleteEvaluationPeriod(record.id);
+      if (currentPeriodId === record.id) {
+        setCurrentPeriodId(null);
+        setCriteriaList([]);
+        formPeriod.resetFields();
+        formThresholds.resetFields();
+      }
+      message.success(`Đã xóa kỳ nháp ${record.name} (${record.year})`);
+      await fetchPeriods();
+    } catch (error) {
+      message.error(error.message || "Không thể xóa kỳ nháp");
+    } finally {
+      setDeletingPeriodId(null);
+    }
+  };
+
   /** Xóa tiêu chí đã chọn và đồng bộ bảng với kết quả API
    * record là dòng tiêu chí thuộc kỳ hiện tại
    * Nếu có quan hệ con/điểm hoặc kỳ đã công bố, thông báo backend được giữ nguyên
@@ -341,16 +364,28 @@ export default function AdminConfig() {
     {
       title: "Hành động",
       key: "action",
-      width: 150,
+      width: 360,
       align: "center",
       render: (_, record) => (
-        <Space>
+        <Space wrap size="small">
           <Button type="primary" ghost icon={<EditOutlined />} onClick={() => handleEditPeriod(record)}>Cấu hình</Button>
           {record.publishedAt && <Button onClick={() => showPhaseOptions(record)}>Giai đoạn</Button>}
           {!record.publishedAt && (
-            <Popconfirm title="Công bố kỳ đánh giá?" description="Đơn vị chỉ thấy tiêu chí từ đúng thời điểm mở đã cấu hình" onConfirm={() => handlePublish(record)} okText="Công bố" cancelText="Hủy">
-              <Button type="primary">Công bố</Button>
-            </Popconfirm>
+            <>
+              <Popconfirm title="Công bố kỳ đánh giá?" description="Đơn vị chỉ thấy tiêu chí từ đúng thời điểm mở đã cấu hình" onConfirm={() => handlePublish(record)} okText="Công bố" cancelText="Hủy">
+                <Button type="primary">Công bố</Button>
+              </Popconfirm>
+              <Popconfirm
+                title={`Xóa kỳ nháp ${record.name} (${record.year})?`}
+                description="Thao tác này cũng xóa tiêu chí và ngưỡng của kỳ. Chỉ xóa được khi chưa có hồ sơ hoặc báo cáo."
+                onConfirm={() => handleDeletePeriod(record)}
+                okText="Xóa kỳ nháp"
+                cancelText="Hủy"
+                okButtonProps={{ danger: true, loading: deletingPeriodId === record.id }}
+              >
+                <Button danger icon={<DeleteOutlined />} loading={deletingPeriodId === record.id}>Xóa nháp</Button>
+              </Popconfirm>
+            </>
           )}
         </Space>
       ),

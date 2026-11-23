@@ -4,7 +4,15 @@ import apiClient from "../../services/apiClient";
 import { useRecordDrafts } from "../../contexts/WorkspaceContext";
 
 const typeLabels = { GENERAL: "Nhận xét chung", EXPLANATION_REQUEST: "Yêu cầu giải trình", UNIT_REPLY: "Đơn vị phản hồi", SUPPLEMENT_REQUEST: "Yêu cầu bổ sung" };
-const statusLabels = { DRAFT: "Đang tự chấm", PENDING_REVIEW: "Chờ thẩm định", SUPPLEMENT_REQUESTED: "Yêu cầu bổ sung", SUPPLEMENT_SUBMITTED: "Đã nộp bổ sung", SUPPLEMENT_EXPIRED: "Hết hạn bổ sung", FINALIZED: "Đã chốt" };
+const statusLabels = { DRAFT: "Đang tự chấm", SUBMITTED: "Đã nộp hồ sơ", PENDING_REVIEW: "Chờ thẩm định", SUPPLEMENT_REQUESTED: "Yêu cầu bổ sung", SUPPLEMENT_SUBMITTED: "Đã nộp bổ sung", SUPPLEMENT_EXPIRED: "Hết hạn bổ sung", FINALIZED: "Đã chốt" };
+
+/** Đổi ghi chú trạng thái mẫu có mã kỹ thuật thành câu dễ đọc cho người dùng */
+function historyComment(value) {
+  if (!value) return "";
+  const sampleTransition = value.match(/^Chuyển trạng thái mẫu sang\s+([A-Z_]+)\.?$/u);
+  if (sampleTransition) return `Hồ sơ chuyển sang trạng thái ${statusLabels[sampleTransition[1]] ?? sampleTransition[1]}.`;
+  return value.replace(/\b(DRAFT|SUBMITTED|PENDING_REVIEW|SUPPLEMENT_REQUESTED|SUPPLEMENT_SUBMITTED|SUPPLEMENT_EXPIRED|FINALIZED)\b/gu, (code) => statusLabels[code] ?? code);
+}
 
 /** Hiển thị mốc giờ Việt Nam cố định, không dùng giờ máy để cấp quyền gửi */
 function time(value) { return new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }); }
@@ -73,7 +81,7 @@ export default function FeedbackPanel({ evaluationId, status }) {
         </>}
       </>}
       <Typography.Title level={5}>Lịch sử trạng thái</Typography.Title>
-      {history && (history.items.length ? <Timeline items={history.items.map((item) => ({ key: item.id, content: <Space orientation="vertical"><Typography.Text>{statusLabels[item.fromStatus] || "Khởi tạo"} → {statusLabels[item.toStatus] || item.toStatus}</Typography.Text><Typography.Text>{item.actorName} · {time(item.createdAt)}</Typography.Text>{item.comment && <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{item.comment}</Typography.Text>}</Space> }))} /> : <Empty description="Chưa có thay đổi trạng thái" />)}
+      {history && (history.items.length ? <Timeline items={history.items.map((item) => ({ key: item.id, content: <Space orientation="vertical"><Typography.Text>{statusLabels[item.fromStatus] || "Khởi tạo"} → {statusLabels[item.toStatus] || item.toStatus}</Typography.Text><Typography.Text>{item.actorName} · {time(item.createdAt)}</Typography.Text>{item.comment && <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{historyComment(item.comment)}</Typography.Text>}</Space> }))} /> : <Empty description="Chưa có thay đổi trạng thái" />)}
       {history && <Pagination current={historyPage} pageSize={10} total={history.total} showSizeChanger={false} onChange={setHistoryPage} />}
     </Space>
   </Card>;
