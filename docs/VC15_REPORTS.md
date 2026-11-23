@@ -30,6 +30,6 @@ node --import tsx --test src/modules/exports/exports.service.spec.ts
 node --import tsx --test test/integration/vc15.exports.test.ts
 ```
 
-Kiểm tích hợp dùng HTTP và kho local thật; đọc lại XLSX bằng ExcelJS, Word bằng ZIP/XML, PDF bằng PDF.js ở dev dependency tương thích Node 20.19. Bài kiểm có lỗi storage/font/audit chủ động để chứng minh không lưu thành công giả, không gửi provider ngoài. Tệp kết quả kiểm nằm trong `.tmp/vc15-artifacts`, không commit dữ liệu hoặc credential thử.
+Kiểm tích hợp dùng HTTP và kho local thật; đọc lại XLSX bằng ExcelJS, Word bằng ZIP/XML, PDF bằng PDF.js 6.5.438 ở dev dependency yêu cầu Node 22.13 trở lên. Bài kiểm có lỗi storage/font/audit chủ động để chứng minh không lưu thành công giả, không gửi provider ngoài. Tệp kết quả kiểm nằm trong `.tmp/vc15-artifacts`, không commit dữ liệu hoặc credential thử.
 
 Browser fixture: chạy `test/integration/vc15.browser-fixture.ts` với `VC12_HTTP_PORT` và `VC15_FE_ORIGIN` riêng, bật FE bằng `VITE_API_URL` trỏ backend fixture và `VITE_API_MOCKING=disabled`. [Script Chrome](../be/test/browser/vc15.reports.mjs) chạy bằng `node --import tsx`, nhận `VC15_PLAYWRIGHT_MODULE`, `VC15_BROWSER_EXECUTABLE` và `VC15_FE_ORIGIN`. Script đăng nhập bằng tài khoản fixture, tạo/tải ba định dạng rồi đọc bytes và đối chiếu DB qua API. Không dùng mock của unit/component test để báo hoàn thành tính năng.

@@ -2,19 +2,27 @@
 
 Source bắt đầu từ nhánh `fix/admin-unit-ui`, commit `32b6a6f`, Git sạch. Đã triển khai và kiểm chức năng mới A/B/C, hardening, Docker/HTTPS, seed, tài liệu, slide và phục hồi trên môi trường local riêng. Các mục cần Supabase thật, hạ tầng bảo vệ, thiết bị hoặc người xác nhận được giữ mở; không kết luận toàn đồ án đạt 100% khi chưa có các bằng chứng đó.
 
+**Kiểm lại và tiếp tục ngày 24/11:** đã push commit sản phẩm `ab8c047e87e1ef19f6432c5bad830b4d8d2bfd59` lên `fix/admin-unit-ui`. [CI 45248745539](https://github.com/giahan358/Seminar/actions/runs/45248745539) thành công cả bốn job; head_sha khớp commit này. Artifact `vc17-evidence` ID `14854758864` đã tải và đối chiếu SHA-256 với metadata GitHub: `0d034e2a5628c12282bfe51e03e772e8790dd9cb30a3220623cbde580fa9ab34`. Manifest VC17 có `complete=true`, đủ 42/42 bước, không fail/skip; browser 20/20 với `mockBackend=false`; coverage 96,19% dòng và 89,95% nhánh. Các con số của lượt tổng local lỗi phía dưới được giữ như lịch sử, không thay cho CI mới.
+
+- [x] Kiểm credential lại trên DB local đang cấu hình: 35 `ALREADY_CHANGED`, `applied=false`; không có mật khẩu lịch sử còn khớp, không thay tài khoản và không gửi tin. Container DB được trả về trạng thái dừng sau kiểm
+- [x] Audit toàn bộ dependency BE/FE lại: cả hai 0 cảnh báo ở mọi mức, gồm dependency phát triển
+- [x] Xác nhận CI kỹ thuật VC17 của đúng commit sản phẩm; DoD VC01/VC02 local được đối chiếu, không còn giữ nhãn thiếu Auth/nested validation của mốc cũ
+- [x] Đồng bộ danh sách API đủ 94 thao tác/78 đường dẫn từ OpenAPI, sửa hướng dẫn Auth/Web Push, Node/PDF.js và mô tả snapshot lịch bổ sung; không giữ route hoặc field snake_case cũ trong giao ước hiện hành
+- [ ] Supabase private thật, máy chủ/URL và thiết bị bảo vệ, người xác nhận UI, hai lần diễn tập: vẫn thiếu chỉ định hoặc bằng chứng thực hiện; không dùng CI/Mailpit/local để đánh dấu thay
+
 ## Checklist theo yêu cầu
 
 | Mục | Kết quả đã kiểm | Trạng thái còn lại |
 |---|---|---|
 | 1. Credential lịch sử | Đối chiếu 35 tài khoản bằng bcrypt trên DB local đang cấu hình: cả 35 mật khẩu lịch sử đều đã đổi; không ghi secret vào báo cáo, không viết lại Git | Chủ các môi trường khác nếu có cần kiểm riêng; không thể suy ra từ DB local |
 | 2. Dependency | BE và FE đều 0 cảnh báo khi audit toàn bộ dependency, gồm dev; SMTP Mailpit/import/report/auth/coverage đã hồi quy | Chạy lại audit khi làm release mới vì advisory có thể thay đổi |
-| 3. CI | Sửa SC2034, Actionlint/ShellCheck đạt. Baseline `32b6a6ff92da66b7669f8be364cc41d194cf3fa0` có [Actions run thành công 45136510688](https://github.com/giahan358/Seminar/actions/runs/45136510688) | CI remote của commit chứa thay đổi mới chưa xác nhận |
+| 3. CI | SC2034 đã sửa; [CI 45248745539](https://github.com/giahan358/Seminar/actions/runs/45248745539) của `ab8c047` xanh Gitleaks/BE/FE/VC17; artifact khớp checksum, 42/42 bước đạt | Đã xác nhận commit sản phẩm; các release sau phải đối chiếu SHA/run riêng |
 | 4. Lịch bổ sung | BE/FE nhận đủ hai mốc, mọi ngày giờ; snapshot UTC, một vòng, retry so cả deadline, nhắc trong cửa sổ, giữ policy/trigger/seed/report | Đã đạt local HTTP/PG/browser và HTTPS demo; rollout môi trường đích cần kiểm kê yêu cầu đang mở |
 | 5. Sinh Excel | Form số lượng/số bắt đầu/chữ số/tiền tố/mẫu tên/domain/loại đơn vị; 1/34/100 dòng chuỗi, tải/sửa/preview/confirm thật, retry không trùng | Đã đạt local, giữ 100 dòng và 5 MiB |
 | 6. Ngưỡng | Bốn rating, mặc định 85/65/50/0; validator chung lưu/publish, cận hợp lệ, khóa sau công bố; bộ 90/70/45/0 khớp summary/SQL/chốt/dashboard/XLSX/PDF/DOCX | Đã đạt local và demo HTTPS |
 | 7. Màu UI | Palette chung, nền phân vùng, nhãn trạng thái và focus; các cặp màu chữ chính đạt tương phản 6,7–16,3:1; browser desktop/mobile không tràn ngang | Tiến Phát/Trường Huy cần xác nhận phối hợp và palette; chưa có xác nhận trực tiếp |
-| 8. Tài liệu | Sửa route transition-phase/first-review-complete, cập nhật contract/Swagger/PTCSDL/hướng dẫn/README | Mẫu hành chính và người ký thật giữ phần xác nhận của nhóm |
-| 9. Kiểm thử/DoD | BE 218/218, FE 55/55, E2E 2/2, browser hai vai trò 20/20; ba TZ, HTTP/PG/race/upgrade/seed, đối chiếu VC01/02 local ở bảng dưới | VC17 cấp release cần CI mới và môi trường đích |
+| 8. Tài liệu | Danh sách API hiện hành khớp 94 thao tác/78 đường dẫn OpenAPI, contract/Swagger/PTCSDL/hướng dẫn/README đã đồng bộ; context local được sửa khỏi mô tả cũ | Mẫu hành chính và người ký thật giữ phần xác nhận của nhóm |
+| 9. Kiểm thử/DoD | CI mới xác nhận BE 218/218, browser 20/20, ba TZ, HTTP/PG/race/upgrade/seed; coverage 96,19% dòng/89,95% nhánh; FE/E2E trong job tương ứng xanh, đối chiếu VC01/02 ở bảng dưới | VC17 kỹ thuật đã đạt; kiểm trên môi trường đích ở VC10/18/20 vẫn chờ đầu vào |
 | 10. Supabase thật | Provider private có guard; có công cụ upload/download/hash/cleanup riêng | Chưa có project/bucket được chỉ định; cấu hình local là placeholder nên chưa chạy thật |
 | 11. VC18 | Rate limit, no-store, Swagger production 404, trust proxy, app role tối thiểu, BE/FE/proxy, HTTPS local, backup/restore và smoke sau restore đã đạt | Domain public/CA thiết bị/NTP máy chủ đích, bucket backup và Email/Push thật chưa được chỉ định |
 | 12. VC19/20 | Seed base/demo riêng; 34 đơn vị, sáu trạng thái/bốn rating, minh chứng tự tạo; hướng dẫn cài/vận hành và slide HTML/PDF 12 trang đã có | Hai lần diễn tập trên URL/hạ tầng bảo vệ và thiết bị nhận thật chưa thực hiện |
