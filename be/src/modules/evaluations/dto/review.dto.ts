@@ -34,7 +34,7 @@ export class SupplementItemDto {
 }
 
 /** Nhận lịch có múi giờ cùng danh sách lá, không cho lặp hoặc gửi danh sách rỗng
- * Deadline do service tính bằng quy tắc ngày Việt Nam thay vì nhận từ client
+ * Hai mốc Admin chọn được service kiểm lại, giữ snapshot khi retry
  */
 export class SupplementRequestDto extends PreviewSupplementScheduleDto {
   @ApiProperty({ type: [SupplementItemDto], minItems: 1, maxItems: 100 })

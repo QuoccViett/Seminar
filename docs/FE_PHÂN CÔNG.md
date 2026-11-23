@@ -85,3 +85,10 @@
 3. **Tích hợp nền tảng:** nối auth và API client trước với các API sẵn có; FE 2 dùng client chung, không tự tạo một cơ chế token/API khác.
 4. **Tích hợp theo luồng:** auth → kỳ/criteria → tự chấm/minh chứng → tự khóa/chuyển chờ thẩm định khi hết hạn → review/bổ sung trong 48 giờ/chốt → dashboard, báo cáo, thông báo và audit log.
 5. **Không chờ Web Push/upload converter:** hộp thư thông báo REST có thể làm trước; đăng ký Web Push và preview Word là phần sau, phụ thuộc auth/VAPID và worker tương ứng. Email/Zalo ZNS cũng chỉ tích hợp nếu backend cung cấp.
+
+
+## Palette đề xuất ngày 24/11/2026
+
+Giữ phân công hiện hữu: Tiến Phát review nền tảng/ADMIN, Trường Huy review thẻ hồ sơ/UNIT. Source dùng chung màu chủ đạo #1d4ed8, nền #f1f5f9, panel #eff6ff, chữ #0f172a; trạng thái thành công #15803d, cảnh báo #b45309, lỗi #b91c1c. Các trạng thái luôn có nhãn, focus có viền. Các tệp cấu hình là [theme](../fe/src/theme.js) và [CSS chung](../fe/src/index.css).
+
+Palette đã được triển khai local để kiểm. Chưa ghi nhận hai người xác nhận trực tiếp; không đánh dấu “đã thống nhất” chỉ từ việc có tên trong tài liệu. Khi review, kiểm tài khoản/cấu hình/hồ sơ/dashboard ở desktop và mobile, tương phản chữ và thao tác bàn phím trước khi đóng mục D.

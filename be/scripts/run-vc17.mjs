@@ -7,7 +7,7 @@ import process from "node:process";
 import pg from "pg";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const artifacts = resolve(root, ".tmp/vc17-artifacts");
+const artifacts = resolve(root, process.env.VC17_ARTIFACT_DIR ?? ".tmp/vc17-artifacts");
 const suites = [
   ["vc03", "vc03_test", "VC03_TEST_DATABASE_URL", ["vc03.database", "vc03.auth"]],
   ["vc04", "vc04_test", "VC04_TEST_DATABASE_URL", ["vc04.management"]],
@@ -19,7 +19,7 @@ const suites = [
   ["vc10", "vc10_test", "VC10_TEST_DATABASE_URL", ["vc10.evidences"]],
   ["vc11", "vc11_test", "VC11_TEST_DATABASE_URL", ["vc11.scheduler"]],
   ["recovery", "vc11_recovery_test", "VC11_TEST_DATABASE_URL", ["vc11.recovery"]],
-  ["vc12", "vc12_test", "VC12_TEST_DATABASE_URL", ["vc12.review", "vc12.workflow"]],
+  ["vc12", "vc12_test", "VC12_TEST_DATABASE_URL", ["vc12.review", "vc12.workflow", "custom-thresholds", "generated-import"]],
   ["vc13", "vc13_test", "VC13_TEST_DATABASE_URL", ["vc13.feedback-audit"]],
   ["vc14", "vc14_test", "VC14_TEST_DATABASE_URL", ["vc14.dashboard"]],
   ["vc15", "vc15_test", "VC15_TEST_DATABASE_URL", ["vc15.exports"]],

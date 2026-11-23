@@ -4,7 +4,7 @@
 
 **Đơn vị chủ quản:** Ban Thanh niên CATP — **34 Cơ sở Đoàn trực thuộc**
 
-Phần 2 và 3 là mô tả lịch sử, trong đó các chỗ nhắc hạn 48 giờ hoặc tính từ giờ yêu cầu không mô tả chính sách mới. Phần 4 và migration hiện hành mô tả snapshot lịch bổ sung; cách tính tạm ở mục 1.4/5.4 của kế hoạch còn chờ hỏi thầy và chưa triển khai tại API
+Phần 2 và 3 là mô tả lịch sử; các chỗ nhắc hạn 48 giờ hoặc tính từ giờ yêu cầu không mô tả chính sách hiện hành. Từ 24/11, BE/FE đã nhận đủ supplementStartAt và supplementDeadline do Admin chọn, mọi ngày giờ kể cả cuối tuần, không ép đủ bảy ngày. Phần 4/5 và migration hiện hành mô tả snapshot bất biến; không backfill thời hạn đã thông báo. Bốn rating dùng phần trăm theo kỳ và khóa sau publish; xem [contract hiện hành](./API_CONTRACT.md) và [kết quả kiểm](./HOAN_THIEN_2026-11-24.md).
 
 ---
 
@@ -155,8 +155,8 @@ UNIQUE(`period_id`, `unit_id`) bảo đảm một hồ sơ mỗi đơn vị/kỳ
 | `auto_locked_at` | TIMESTAMP | Hệ thống Auto-lock khi hết hạn Giai đoạn 1 |
 | `first_reviewed_at` | TIMESTAMP | Admin hoàn tất thẩm định lần 1 |
 | `supplement_requested_at` | TIMESTAMP | Admin bấm "Yêu cầu bổ sung hồ sơ" |
-| `supplement_start_at` | TIMESTAMP | Snapshot giờ mở Admin chọn, ngày Việt Nam thứ Hai–thứ Sáu; lịch tạm chờ hỏi thầy |
-| `supplement_deadline` | TIMESTAMP | UTC 00:00 sau ngày kết thúc theo lịch tạm, lưu snapshot, không tính từ giờ gửi hoặc supplement_hours |
+| `supplement_start_at` | TIMESTAMP | Snapshot UTC giờ mở Admin chọn, chấp nhận mọi ngày trong tuần |
+| `supplement_deadline` | TIMESTAMP | Snapshot UTC hạn kết thúc Admin chọn; start < deadline, không tính lại từ giờ gửi hoặc supplement_hours |
 | `supplement_submitted_at` | TIMESTAMP | Đơn vị nộp bổ sung |
 | `finalized_at` / `finalized_by_id` | TIMESTAMP / FK | Admin bấm "Khóa sổ/Chốt điểm" |
 | `final_score`, `final_percent`, `final_rating` | DECIMAL / DECIMAL / VARCHAR | Kết quả chính thức, chốt khi khóa sổ (CHECK bắt buộc khi `FINALIZED`) |

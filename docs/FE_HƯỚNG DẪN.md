@@ -13,7 +13,7 @@ ADMIN mở `/admin/records` để lọc kỳ, phân trang và xem cây/điểm t
 Phạm vi công việc của hai thành viên FE được ghi trong [FE_PHÂN CÔNG.md](./FE_PHÂN%20C%C3%94NG.md).
 
 ## Yêu cầu
-- Node.js `20.19.0` trở lên và npm
+- Node.js 22.13+ hoặc 24 và npm
 
 ## 1. Cấu hình frontend
 
@@ -123,11 +123,11 @@ Có thể phát triển UI theo từng chức năng trước khi backend hoàn t
 2. Dùng fixture/mock data cho loading, danh sách rỗng, dữ liệu thành công và lỗi.
 3. Khi API chức năng đó sẵn sàng, đổi service sang API thật và kiểm thử quyền/trạng thái với backend.
 
-### Bật Web Push (thực hiện sau khi auth/JWT sẵn sàng)
+### Bật Web Push với phiên đăng nhập hoặc liên kết mời
 
 Web Push cần HTTPS hoặc `localhost`, trình duyệt hỗ trợ Push API và VAPID key ở cả backend/frontend. Người dùng phải chủ động bật notification từ một thao tác giao diện; không xin quyền khi render trang. Backend được hướng dẫn tại [BE_HƯỚNG DẪN.md](./BE_H%C6%AF%E1%BB%9ANG%20D%E1%BA%AAN.md).
 
-Tạo/cấu hình cặp VAPID theo [hướng dẫn backend](./BE_H%C6%AF%E1%BB%9ANG%20D%E1%BA%AAN.md), sau đó copy **Public Key** vào `VITE_WEB_PUSH_VAPID_PUBLIC_KEY` trong `fe\.env`. Private key chỉ nằm trong `be\.env`; public key FE và cặp key backend phải khớp nhau.
+Tạo/cấu hình cặp VAPID theo [hướng dẫn backend](<./BE_HƯỚNG DẪN.md>) và bật WEB_PUSH_ENABLED ở BE. FE đọc public key qua GET /api/v1/notifications/web-push/public-key; không cần chép key vào bundle. Private key chỉ nằm ở BE.
 
 Sau khi có access token từ auth:
 
@@ -140,6 +140,15 @@ await disableWebPush(accessToken);
 
 `enableWebPush` xin quyền trình duyệt, đăng ký `public/sw.js`, tạo subscription và gửi subscription lên backend. Backend gắn subscription với user đã xác thực; FE không gửi `user_id`.
 
-**Giới hạn hiện tại:** frontend/backend chưa có auth hoàn chỉnh. API đăng ký subscription yêu cầu backend gắn `request.user`, nên luồng bật Web Push xuyên suốt chỉ hoạt động sau khi Auth/JWT được tích hợp. Module Web Push nền tảng đã có, nhưng notification nghiệp vụ chỉ được gửi khi các module nghiệp vụ gọi service tương ứng.
+**Hiện trạng 24/11:** Auth/JWT, refresh và gắn subscription theo tài khoản đã tích hợp. Người chưa đổi mật khẩu dùng liên kết mời một lần qua luồng onboarding, không dùng token mời cho nghiệp vụ. Notification nghiệp vụ đi qua outbox/worker và ghi kết quả riêng từng kênh. Chỉ xác nhận nhận thật sau khi kiểm trên đúng thiết bị và HTTPS có chứng chỉ được tin cậy; cờ tắt hoặc thiếu subscription không được coi là SENT.
 
-Khi đổi VAPID key, cập nhật cả hai file `.env` local và đăng ký lại subscription. Không commit `fe\.env`; chỉ cập nhật `.env.example` nếu tên biến mẫu thay đổi, không đưa secret vào đó.
+Khi đổi VAPID key, cập nhật cặp khóa BE và đăng ký lại subscription; FE lấy public key mới từ API. Không commit `fe\.env`; chỉ cập nhật `.env.example` nếu tên biến mẫu thay đổi, không đưa secret vào đó.
+
+
+## Bổ sung ngày 24/11/2026
+
+Quản lý tài khoản → Import Excel → Tạo danh sách Excel: nhập 1–100 dòng, số bắt đầu, số chữ số, hai tiền tố, hai mẫu tên `{n}`, domain email và loại đơn vị. Xem ba dòng ví dụ, tải XLSX để sửa hoặc đưa bản nháp vào preview. Chỉ nút xác nhận import tạo tài khoản; cần kiểm tra người nhận trước khi xác nhận Email.
+
+Cấu hình và thẩm định có hai ô ngày giờ bổ sung theo giờ Việt Nam, chọn được mọi ngày. Xem trước rồi gửi yêu cầu; đổi một mốc sẽ xóa preview cũ. Thời lượng không bắt buộc bảy ngày. Ngưỡng phần trăm cho sửa trước công bố, giữ FAIL=0 và thứ tự Đạt < Tốt < Xuất sắc <100; khóa sau công bố. Backend quyết định quyền theo giờ server.
+
+Palette dùng chung tại `src/theme.js` và biến CSS: xanh #1d4ed8, nền #f1f5f9, panel #eff6ff, chữ #0f172a, thành công #15803d, cảnh báo #b45309, lỗi #b91c1c. Trạng thái luôn có chữ, focus có viền; bảng cuộn trong vùng riêng trên mobile. Palette cần người phụ trách UI xác nhận trước nghiệm thu cuối.

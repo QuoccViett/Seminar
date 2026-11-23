@@ -15,16 +15,10 @@ import type { PaginationQueryDto } from "../../common/dto/pagination-query.dto.j
 import type { CurrentUser } from "../../common/decorators/current-user.js";
 import { AuditService } from "../../common/services/audit.service.js";
 import { ClockService } from "../../common/services/clock.service.js";
+import { assertRatingThresholds } from "./rating-threshold-policy.js";
 import { lockPeriod } from "../../common/services/period-lock.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
 import { buildPaginationOptions, createPaginatedResult } from "../../common/utils/pagination.util.js";
-
-const REQUIRED_THRESHOLDS = [
-  { rating: "EXCELLENT", minPercent: 85, minExclusive: true },
-  { rating: "GOOD", minPercent: 65, minExclusive: false },
-  { rating: "PASS", minPercent: 50, minExclusive: false },
-  { rating: "FAIL", minPercent: 0, minExclusive: false },
-] as const;
 
 @Injectable()
 export class EvaluationPeriodsService {
@@ -337,18 +331,9 @@ export class EvaluationPeriodsService {
     };
   }
 
-  /** Xác nhận đủ bốn mã ngưỡng cùng cận đã thống nhất trong yêu cầu
-   * thresholds là cấu hình mới hoặc bộ đã lưu trong kỳ
-   * Mã trùng, thiếu mức hay cận khác chuẩn đều bị từ chối trước khi ghi dữ liệu
-   */
+  /** Dùng cùng quy tắc khi lưu và khi kiểm trước công bố */
   private assertThresholdSet(thresholds: Array<{ rating: string; minPercent: unknown; minExclusive?: boolean; label?: string }>): void {
-    if (thresholds.length !== REQUIRED_THRESHOLDS.length) throw this.businessRule("Cần cấu hình đủ bốn ngưỡng xếp loại");
-    for (const expected of REQUIRED_THRESHOLDS) {
-      const threshold = thresholds.find((item) => item.rating === expected.rating);
-      if (!threshold || Number(threshold.minPercent) !== expected.minPercent || Boolean(threshold.minExclusive) !== expected.minExclusive || !threshold.label?.trim()) {
-        throw this.businessRule("Ngưỡng xếp loại phải đúng các mức EXCELLENT, GOOD, PASS và FAIL đã quy định");
-      }
-    }
+    assertRatingThresholds(thresholds);
   }
 
   /** Kiểm tra cặp mốc tự chấm có thứ tự tăng dần khi cả hai cùng được cấu hình

@@ -88,7 +88,7 @@ export default function UnitDashboard() {
     </div>
     <Space wrap>
       <Select aria-label="Chọn đợt thi đua" placeholder="Chọn đợt thi đua" style={{ width: 360, maxWidth: "100%" }} value={periodId || undefined} options={periods.map((item) => ({ value: item.id, label: `${item.name} (${item.year})` }))} onChange={setPeriodId} />
-      <Button loading={loading || periodLoading} disabled={!periodId} onClick={() => setRefresh((value) => value + 1)}>Làm mới</Button>
+      <Button aria-label="Làm mới" loading={loading || periodLoading} disabled={!periodId} onClick={() => setRefresh((value) => value + 1)}>Làm mới</Button>
       <Button type="primary" onClick={() => navigate("/unit/records")}>Mở hồ sơ tự chấm</Button>
     </Space>
     {error && <Alert type="error" showIcon title={error} action={<Button onClick={() => setRefresh((value) => value + 1)}>Thử lại</Button>} />}

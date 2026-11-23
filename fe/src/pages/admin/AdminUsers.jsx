@@ -3,6 +3,7 @@ import { Alert, Button, Form, Input, Modal, Select, Space, Table, Tag, Upload, m
 import { EditOutlined, LockOutlined, UnlockOutlined, KeyOutlined, UploadOutlined } from "@ant-design/icons";
 import { userService } from "../../services/userService";
 import { unitService } from "../../services/unitService";
+import ImportWorkbookGenerator from "../../components/common/ImportWorkbookGenerator";
 import PageHeader from "../../components/common/PageHeader";
 import styles from "./AdminUsers.module.css";
 import { applyFormError } from "../../services/formErrors";
@@ -100,6 +101,7 @@ export default function AdminUsers() {
    */
   function openForm(user = null) {
     setEditing(user);
+    if (user?.unit && !units.some((unit) => unit.id === user.unit.id)) setUnits((current) => [...current, user.unit]);
     form.resetFields();
     form.setFieldsValue(user ? { fullName: user.fullName, email: user.email, phone: user.phone, role: user.role, unitId: user.unitId } : { role: "UNIT" });
     setOpen(true);
@@ -337,7 +339,7 @@ export default function AdminUsers() {
     <div className={styles.tableContainer}><Table columns={columns} dataSource={users} rowKey="id" loading={loading} locale={{ emptyText: loadError ? "Chưa tải được danh sách tài khoản" : "Không có tài khoản phù hợp" }} pagination={{ current: page, pageSize, total, showSizeChanger: true, onChange: (p, size) => { setPage(p); setPageSize(size); load(p, size, q); }, showTotal: (count) => `${count} tài khoản` }} /></div>
     {/* Form không gửi isActive hoặc mật khẩu cũ; backend quyết định allowlist cuối cùng */}
     <Modal title={editing ? "Sửa tài khoản" : "Thêm tài khoản"} open={open} confirmLoading={saving} okText="Lưu" cancelText="Hủy" onOk={() => form.submit()} onCancel={() => setOpen(false)}>
-      <Form form={form} layout="vertical" onFinish={save}>
+      <Form name="admin-user-form" form={form} layout="vertical" onFinish={save}>
         {!editing && <Form.Item name="username" label="Tên đăng nhập" rules={[{ required: true, message: "Vui lòng nhập tên đăng nhập." }]}><Input maxLength={64} /></Form.Item>}
         <Form.Item name="fullName" label="Họ và tên" rules={[{ required: true, message: "Vui lòng nhập họ và tên." }]}><Input /></Form.Item>
         <Form.Item name="email" label="Email" rules={[{ type: "email", message: "Email không hợp lệ." }]}><Input /></Form.Item>
@@ -349,7 +351,7 @@ export default function AdminUsers() {
     {/* Khu vực này chỉ chọn file và gọi backend preview; sự kiện thả không tự ghi tài khoản */}
     <Modal title="Import Excel tài khoản UNIT" open={importOpen} width={1000} confirmLoading={importConfirming} okText="Xác nhận tạo tài khoản" cancelText="Đóng" onOk={confirmImport} onCancel={closeImport} okButtonProps={{ disabled: !importPreview || importPreview.validRows === 0 || importPreview.invalidRows > 0 || !!importResult }}>
       <Space orientation="vertical" style={{ width: "100%" }} size="middle">
-        <Space wrap><Button onClick={downloadImportTemplate}>Tải tệp mẫu</Button><span>Tệp XLSX tối đa 5 MiB và 100 dòng; email bắt buộc để gửi thông tin đăng nhập</span></Space>
+        <Space wrap><ImportWorkbookGenerator onUse={selectImportFile} /><Button onClick={downloadImportTemplate}>Tải tệp mẫu</Button><span>Tệp XLSX tối đa 5 MiB và 100 dòng; email bắt buộc để gửi thông tin đăng nhập</span></Space>
         <Upload.Dragger accept=".xlsx" maxCount={1} fileList={importFile ? [{ uid: "import-file", name: importFile.name, status: "done" }] : []} beforeUpload={(file) => { selectImportFile(file); return false; }} onRemove={() => { selectImportFile(null); return true; }} showUploadList>
           <p><UploadOutlined /></p><p>Kéo thả tệp Excel vào đây hoặc bấm để chọn</p><p>Chọn tệp không tạo tài khoản; cần xem trước rồi xác nhận</p>
         </Upload.Dragger>

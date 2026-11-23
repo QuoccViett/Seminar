@@ -8,6 +8,9 @@ export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid("development", "test", "production").default("development"),
   // Công cụ chạy quét thủ công mặc định tắt và không được bật tại production
   ENABLE_DEMO_TOOLS: Joi.when("NODE_ENV", { is: "production", then: Joi.boolean().valid(false).default(false), otherwise: Joi.boolean().default(false) }),
+  TRUST_PROXY: Joi.string().allow("").default(""),
+  RATE_LIMIT_ENABLED: Joi.when("NODE_ENV", { is: "production", then: Joi.boolean().valid(true).default(true), otherwise: Joi.boolean().default(true) }),
+  SWAGGER_ENABLED: Joi.when("NODE_ENV", { is: "production", then: Joi.boolean().valid(false).default(false), otherwise: Joi.boolean().default(true) }),
   PORT: Joi.number().port().default(3000),
   WEB_ORIGINS: Joi.string().optional(),
   CORS_ORIGINS: Joi.string().optional(),
@@ -80,6 +83,12 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
     } catch { return true; }
   })) throw new Error("Cấu hình CORS_ORIGINS hoặc WEB_ORIGINS phải là origin HTTP hoặc HTTPS cụ thể");
   const normalized = result.value as Record<string, unknown>;
+  if (normalized.TRUST_PROXY && /^(?:true|\d+|\*|0\.0\.0\.0\/0|::\/0)$/i.test(String(normalized.TRUST_PROXY))) throw new Error("TRUST_PROXY phải là mạng proxy tin cậy cụ thể");
+  if (normalized.NODE_ENV === "production") {
+    if (origins.some((origin) => new URL(origin.trim()).protocol !== "https:")) throw new Error("Production yêu cầu CORS HTTPS");
+    if (!normalized.PUBLIC_APP_URL || new URL(String(normalized.PUBLIC_APP_URL)).protocol !== "https:") throw new Error("Production yêu cầu PUBLIC_APP_URL HTTPS");
+    if (/replace|change.?me|example|ci-only/i.test(String(normalized.JWT_SECRET))) throw new Error("Production yêu cầu JWT_SECRET ngẫu nhiên riêng");
+  }
   // Không kích hoạt provider ngoài khi thiếu cấu hình, không dùng kho local trong production
   // Bucket private được provider kiểm thực tế trước I/O, không tự thay ACL của môi trường
   if (normalized.STORAGE_ENABLED && normalized.STORAGE_PROVIDER === "supabase" && (!normalized.SUPABASE_URL || !normalized.SUPABASE_KEY)) throw new Error("Cần cấu hình SUPABASE_URL và SUPABASE_KEY khi bật kho Supabase");

@@ -11,10 +11,10 @@ export const evaluationPeriodService = {
    */
   transitionPhase: (periodId, phase) => apiClient.post(`/evaluation-periods/${periodId}/transition-phase`, { phase }),
 
-  /** Xin xem trước lịch bổ sung tạm từ mốc mở có offset rõ ràng
+  /** Kiểm hai mốc bổ sung tự chọn có offset rõ ràng
    * Không tạo yêu cầu, hạn hiển thị do backend trả và không cộng supplementHours trên FE
    */
-  previewSupplementSchedule: (supplementStartAt) => apiClient.post("/evaluation-periods/supplement-schedule/preview", { supplementStartAt }),
+  previewSupplementSchedule: (supplementStartAt, supplementDeadline) => apiClient.post("/evaluation-periods/supplement-schedule/preview", { supplementStartAt, supplementDeadline }),
   /** Lấy danh sách kỳ để Admin cấu hình hoặc UNIT xem kỳ được mở theo quyền backend
    * params là bộ lọc và phân trang tùy chọn
    * FE chỉ hiển thị dữ liệu máy chủ trả về, không tự tính quyền theo đồng hồ thiết bị

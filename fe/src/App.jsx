@@ -3,6 +3,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import AppRoutes from "./routes";
 import { App as AntdApp } from "antd";
 import { ConfigProvider } from "antd";
+import { appTheme } from "./theme";
 import viVN from "antd/locale/vi_VN";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import ErrorBoundary from "./components/common/ErrorBoundary";
@@ -11,7 +12,7 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 export default function App() {
   return (
     <BrowserRouter>
-      <ConfigProvider locale={viVN}><AntdApp>
+      <ConfigProvider locale={viVN} theme={appTheme}><AntdApp>
         <AuthProvider>
           <WorkspaceProvider><ErrorBoundary><AppRoutes /></ErrorBoundary></WorkspaceProvider>
         </AuthProvider>

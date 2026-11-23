@@ -2,9 +2,9 @@ import "reflect-metadata";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, rmdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { ConfigService } from "@nestjs/config";
@@ -33,6 +33,9 @@ test("seed qua trigger VC09 trên DB trống và chạy lại giữ nguyên hồ
   const prisma = new PrismaService(new ConfigService({ DATABASE_URL: databaseUrl }));
   const directory = await mkdtemp(join(tmpdir(), "seminar-seed-test-"));
   const credentialsFile = join(directory, "credentials.json");
+  const cleanupTarget = resolve(directory);
+  assert.ok(cleanupTarget.startsWith(resolve(tmpdir()) + sep) && basename(cleanupTarget).startsWith("seminar-seed-test-"), "Đích dọn test phải nằm trong thư mục tạm được tạo");
+
 
   /** Chạy đúng entrypoint tsx của npm run db:seed với env độc lập cho tài khoản và credential tạm
    * Giữ DB cùng đích kiểm thử, cố định UTC như CI Linux và không truyền mật khẩu trên command line
@@ -41,7 +44,7 @@ test("seed qua trigger VC09 trên DB trống và chạy lại giữ nguyên hồ
   async function seed() {
     return executeFile(process.execPath, ["--import", "tsx", "prisma/seed.ts"], {
       cwd: process.cwd(), timeout: 180_000,
-      env: { ...process.env, DATABASE_URL: databaseUrl, TZ: "UTC", SEED_ADMIN_USERNAME: "admin", SEED_ADMIN_EMAIL: "admin@seminar.local", SEED_ADMIN_PASSWORD: "ci-only-seed-password", SEED_CREDENTIALS_FILE: credentialsFile, SEED_ROTATE_PASSWORDS: "false" },
+      env: { ...process.env, DATABASE_URL: databaseUrl, SEED_DEMO_ENABLED: "true", NODE_ENV: "test", STORAGE_PROVIDER: "local", STORAGE_LOCAL_DIR: join(directory, "storage"), TZ: "UTC", SEED_ADMIN_USERNAME: "admin", SEED_ADMIN_EMAIL: "admin@seminar.local", SEED_ADMIN_PASSWORD: "ci-only-seed-password", SEED_CREDENTIALS_FILE: credentialsFile, SEED_ROTATE_PASSWORDS: "false" },
     });
   }
 
@@ -69,8 +72,11 @@ test("seed qua trigger VC09 trên DB trống và chạy lại giữ nguyên hồ
     assert.equal(await prisma.user.count(), 35);
     assert.equal(await prisma.evaluation.count(), 42);
     assert.equal(await prisma.criterionScore.count(), 336);
-    assert.equal(await prisma.evaluation.count({ where: { status: "FINALIZED" } }), 10);
-    assert.equal(await prisma.evaluation.count({ where: { status: "SUPPLEMENT_REQUESTED" } }), 7);
+    assert.equal(await prisma.evaluation.count({ where: { status: "FINALIZED" } }), 9);
+    assert.equal(await prisma.evaluation.count({ where: { status: "SUPPLEMENT_REQUESTED" } }), 5);
+    assert.equal(await prisma.evaluation.count({ where: { status: "SUPPLEMENT_SUBMITTED" } }), 5);
+    assert.equal(await prisma.evaluation.count({ where: { status: "SUPPLEMENT_EXPIRED" } }), 4);
+    assert.equal((await prisma.evaluation.groupBy({ by: ["finalRating"], where: { status: "FINALIZED" } })).length, 4);
     assert.equal(await prisma.evaluation.count({ where: { status: { not: "DRAFT" }, submittedAt: null } }), 0);
 
     // Lịch và phase sau commit phải là snapshot lịch sử, không được để cửa sổ SELF_EVAL tạm trong DB
@@ -98,6 +104,6 @@ test("seed qua trigger VC09 trên DB trống và chạy lại giữ nguyên hồ
     // Chỉ dọn đúng tệp credential và thư mục tạm do test tạo, không xóa DB hoặc đụng lịch sử append-only
     await prisma.$disconnect();
     await rm(credentialsFile, { force: true });
-    await rmdir(directory);
+    await rm(cleanupTarget, { recursive: true, force: true });
   }
 });

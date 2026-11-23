@@ -71,9 +71,11 @@ test("UNIT chỉ hiện tiêu chí và tải summary sau khi máy chủ xác nh�
   const { record } = setup();
   getEvaluation.mockResolvedValueOnce({ ...record, criteriaVisible: false, criteria: [] });
   render(<UnitRecords />);
+  // Spinner không được đổi tên truy cập thành loading Làm mới khi đang chờ dữ liệu
+  expect(screen.getByRole("button", { name: "Làm mới", exact: true })).toHaveAccessibleName("Làm mới");
   expect(await screen.findByText("Kỳ đánh giá chưa đến giờ mở tiêu chí")).toBeInTheDocument();
   expect(getScoreSummary).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: /Làm mới/u }));
+  fireEvent.click(screen.getByRole("button", { name: "Làm mới", exact: true }));
   expect(await screen.findByText("Tiêu chí đã mở")).toBeInTheDocument();
   await waitFor(() => expect(getScoreSummary).toHaveBeenCalledWith("evaluation-1"));
 });

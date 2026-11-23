@@ -1,0 +1,138 @@
+name: seminar-demo
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: seminar_owner
+      POSTGRES_DB: seminar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Cần POSTGRES_PASSWORD}
+      TZ: UTC
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U seminar_owner -d seminar"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    image: seminar-migrate:${RELEASE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: be/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://seminar_owner:${POSTGRES_PASSWORD}@postgres:5432/seminar
+    depends_on:
+      postgres: { condition: service_healthy }
+  permissions:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGDATABASE: seminar
+      PGUSER: seminar_owner
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Cần DB_APP_PASSWORD}
+    volumes:
+      - ./app-role.sql:/app-role.sql:ro
+    command: [psql, -f, /app-role.sql]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  backend:
+    image: seminar-backend:${RELEASE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: be/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      NODE_ENV: ${RUNTIME_ENV:-production}
+      TZ: UTC
+      DATABASE_URL: postgresql://seminar_app:${DB_APP_PASSWORD}@postgres:5432/seminar
+      JWT_SECRET: ${JWT_SECRET:?Cần JWT_SECRET}
+      INITIAL_ACCOUNT_PASSWORD: ${INITIAL_ACCOUNT_PASSWORD:?Cần INITIAL_ACCOUNT_PASSWORD}
+      WEB_ORIGINS: ${PUBLIC_APP_URL:-https://${APP_HOST:-localhost}}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://${APP_HOST:-localhost}}
+      TRUST_PROXY: uniquelocal
+      RATE_LIMIT_ENABLED: true
+      SWAGGER_ENABLED: false
+      ENABLE_DEMO_TOOLS: false
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-}
+      WEB_PUSH_ENABLED: ${WEB_PUSH_ENABLED:-false}
+      WEB_PUSH_VAPID_PUBLIC_KEY: ${WEB_PUSH_VAPID_PUBLIC_KEY:-}
+      WEB_PUSH_VAPID_PRIVATE_KEY: ${WEB_PUSH_VAPID_PRIVATE_KEY:-}
+      WEB_PUSH_SUBJECT: ${WEB_PUSH_SUBJECT:-mailto:admin@example.com}
+      ZALO_ZNS_ENABLED: false
+      STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-supabase}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-evidences}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
+      REPORT_EXPORT_DIR: /app/storage/report-exports
+    volumes:
+      - reports:/app/storage/report-exports
+      - local-files:/app/.private-storage
+    depends_on:
+      permissions: { condition: service_completed_successfully }
+  frontend:
+    image: seminar-frontend:${RELEASE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: fe/Dockerfile
+    restart: unless-stopped
+  seed:
+    user: "1000:1000"
+    profiles: [tools]
+    image: seminar-migrate:${RELEASE_TAG:-local}
+    environment:
+      DATABASE_URL: postgresql://seminar_owner:${POSTGRES_PASSWORD}@postgres:5432/seminar
+      NODE_ENV: development
+      HOME: /home/node
+      NPM_CONFIG_CACHE: /tmp/npm-cache
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      INITIAL_ACCOUNT_PASSWORD: ${INITIAL_ACCOUNT_PASSWORD}
+      SEED_DEMO_ENABLED: ${SEED_DEMO_ENABLED:-false}
+      SEED_LIVE_PERIODS: true
+      SEED_CREDENTIALS_FILE: /app/.private-storage/.seed-credentials.json
+      STORAGE_PROVIDER: local
+      STORAGE_LOCAL_DIR: /app/.private-storage
+    volumes:
+      - local-files:/app/.private-storage
+    command: [npx, tsx, prisma/seed-base.ts]
+    depends_on:
+      backend: { condition: service_healthy }
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, "wget -q --no-check-certificate --header='Host: ${APP_HOST:-localhost}' -O /dev/null https://${APP_HOST:-localhost}/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 10
+    environment:
+      APP_HOST: ${APP_HOST:-localhost}
+    ports:
+      - "${HTTP_BIND:-80}:80"
+      - "${HTTPS_BIND:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+      - caddy-config:/config
+    depends_on:
+      backend: { condition: service_healthy }
+      frontend: { condition: service_healthy }
+volumes:
+  database:
+  reports:
+  local-files:
+  certificates:
+  caddy-config:

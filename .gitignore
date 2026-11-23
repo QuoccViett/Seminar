@@ -45,3 +45,8 @@ be/credentials*.json
 be/credentials*.json
 **/.seed-credentials*.json
 PROJECT_CONTEXT.md
+
+# Cấu hình triển khai và backup có dữ liệu riêng tư
+deploy/.env*
+!deploy/.env.example
+deploy/backups/

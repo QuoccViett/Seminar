@@ -139,7 +139,7 @@ test("VC17 golden path Import → đổi mật khẩu → công bố → minh ch
     const record = records[index]; const unit = units.find((item) => item.id === record.unitId)!;
     await h.firstReview(record.id);
     const path = `admin/evaluations/${record.id}`;
-    const requested = await request("POST", `${path}/supplement-request`, h.adminToken, { supplementStartAt: h.futureWeekday(5), items: [{ criterionId, note: "Bổ sung báo cáo cho tiêu chí VC17" }] });
+    const requested = await request("POST", `${path}/supplement-request`, h.adminToken, { supplementStartAt: h.futureWeekday(6), supplementDeadline: new Date(Date.parse(h.futureWeekday(6)) + 90 * 60000).toISOString(), items: [{ criterionId, note: "Bổ sung báo cáo cho tiêu chí VC17" }] });
     assert.equal(requested.status, 200);
     const snapshot = await h.prisma.evaluation.findUniqueOrThrow({ where: { id: record.id } });
     assert.ok(snapshot.supplementRequestedAt! < snapshot.supplementStartAt!);

@@ -1,6 +1,8 @@
 # VC17 — Kiểm thử toàn hệ thống và dữ liệu cạnh tranh
 
-Ngày 19/11/2026, baseline `main` tại `cccf167`, Git sạch trước lượt làm việc ban đầu. Các kiểm thử kỹ thuật local VC17 theo lịch bổ sung tạm đã đạt như bảng bên dưới. **Đang chờ xác nhận CI remote sau bản sửa fixture VC11 tại PR #31**, chưa kết luận hoàn tất DoD của VC17. Chỉ triển khai VC17 trong [kế hoạch](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md); chưa thay thế xác nhận chính sách của thầy hoặc kết quả Actions remote.
+**Hiện trạng 24/11/2026:** VC17 kỹ thuật đã đạt trên [CI 45248745539](https://github.com/giahan358/Seminar/actions/runs/45248745539), đúng commit `ab8c047e87e1ef19f6432c5bad830b4d8d2bfd59`, sau triển khai lịch hai mốc, generator Excel và ngưỡng tùy chỉnh. Cả bốn job xanh; artifact đã đối chiếu checksum, manifest `complete=true`, 42/42 bước không fail/skip, browser 20/20 không mock; coverage 96,19% dòng/89,95% nhánh. Xem [biên bản hiện hành](./HOAN_THIEN_2026-11-24.md). Supabase thật/hạ tầng/thiết bị và hai lần diễn tập thuộc điều kiện VC10/18/20 đang mở.
+
+Phần kết quả và chẩn đoán ngày 19/11 bên dưới là lịch sử tại baseline `main`/`cccf167`: khi đó còn chờ CI fixture VC11 và quyết định lịch tạm. Quy tắc lịch tạm đã được thay bằng phản hồi 23/11 và source mới 24/11; không đọc các giới hạn cũ thành trạng thái hiện hành.
 
 ## Môi trường và cách chạy
 
@@ -125,6 +127,11 @@ Kiểm thực tế sau sửa, từ thư mục làm việc thử không có tệp
 
 Giữ riêng artifact remote, log tái hiện và hai lượt sau sửa; không ghi đè bằng chứng trước, không reset DB dùng chung hoặc sửa migration. Hai container mới được dừng sau kiểm. Chưa chạy lại toàn bộ VC17 hoặc Actions remote sau bản sửa fixture này; các bộ remote đã đạt được ghi nhận theo run của chúng, không ghép thành một lượt CI hoàn tất. Checklist điều kiện CI tiếp tục chờ lượt remote mới.
 
-## Giới hạn xác nhận
+## Giới hạn xác nhận tại mốc 19/11
 
 Chưa có quyết định chính sách của thầy; không biến lịch tạm thành chính sách đã nghiệm thu. Actions remote gần nhất `44459025787` còn lỗi fixture VC11; bản sửa đã kiểm hai lượt local nhưng chưa xác nhận lượt remote mới. SMTP thật tại Mailpit không phải bằng chứng gửi Web Push đến thiết bị thật hoặc email tới người thật. ZNS mặc định tắt, không yêu cầu secret/template hay demo gửi thật có phí trong VC17.
+
+
+## Kiểm lại yêu cầu mới ngày 24/11/2026
+
+Xem [biên bản hoàn thiện](./HOAN_THIEN_2026-11-24.md): lịch hai mốc, Excel sinh, ngưỡng tùy chỉnh, browser hai vai trò 20/20, dependency đã vá, Docker/HTTPS và backup/restore trên project riêng. Giữ kết quả lượt tổng đầu có lỗi PDF.js/Form ID và các lượt kiểm lại đạt. CI mới của `ab8c047` đã xác nhận thành công cả bốn job, 42/42 bước VC17; chưa nghiệm thu môi trường Supabase/hạ tầng bảo vệ. Không sửa kết quả lịch sử ở trên thành kết quả của chính sách mới.

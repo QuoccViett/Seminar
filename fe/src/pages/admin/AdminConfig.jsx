@@ -36,7 +36,7 @@ function defaultThresholdValues() {
  * Thứ tự cố định giữ request ổn định và mỗi ngưỡng mang cả cận lẫn nhãn/màu
  */
 function thresholdPayload(thresholds) {
-  return ["EXCELLENT", "GOOD", "PASS", "FAIL"].map((rating) => ({ rating, ...thresholds[rating] }));
+  return ["EXCELLENT", "GOOD", "PASS", "FAIL"].map((rating) => ({ rating, label: thresholds[rating].label, minPercent: thresholds[rating].minPercent, minExclusive: rating === "EXCELLENT", color: thresholds[rating].color ?? null }));
 }
 
 /** Hiển thị một instant UTC trong bộ chọn như giờ lịch Việt Nam UTC+07
@@ -87,6 +87,7 @@ export default function AdminConfig() {
   const [phaseDialog, setPhaseDialog] = useState(null);
   const [deletingPeriodId, setDeletingPeriodId] = useState(null);
   const [supplementStart, setSupplementStart] = useState(null);
+  const [supplementEnd, setSupplementEnd] = useState(null);
   const [supplementPreview, setSupplementPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -335,10 +336,10 @@ export default function AdminConfig() {
    * Lựa chọn bị xóa thì xóa preview, lỗi không giữ hạn cũ khiến Admin hiểu nhầm
    */
   const previewSupplement = async () => {
-    if (!supplementStart) return;
+    if (!supplementStart || !supplementEnd) return;
     setPreviewLoading(true);
     setSupplementPreview(null);
-    try { setSupplementPreview(await evaluationPeriodService.previewSupplementSchedule(fromVietnamDatePicker(supplementStart))); }
+    try { setSupplementPreview(await evaluationPeriodService.previewSupplementSchedule(fromVietnamDatePicker(supplementStart), fromVietnamDatePicker(supplementEnd))); }
     catch (error) { message.error(error.message || "Không thể xem trước lịch bổ sung"); }
     finally { setPreviewLoading(false); }
   };
@@ -406,14 +407,15 @@ export default function AdminConfig() {
       <Table columns={periodColumns} dataSource={periodsList} rowKey="id" loading={loadingPeriods} scroll={{ x: 850 }} />
       <Divider />
       <Space orientation="vertical">
-        <Title level={5}>Lịch bổ sung (tạm)</Title>
-        <Text>Chờ giảng viên xác nhận · Chỉ xem trước, chưa tạo yêu cầu bổ sung</Text>
-        <Text>Mở thứ Hai–thứ Năm: đến hết ngày kế tiếp; mở thứ Sáu: đến hết chính ngày thứ Sáu (giờ Việt Nam)</Text>
+        <Title level={5}>Lịch bổ sung</Title>
+        <Text>Chỉ xem trước; gửi yêu cầu tại màn thẩm định hồ sơ</Text>
+        <Text>Chọn ngày giờ bắt đầu và kết thúc bất kỳ, kể cả cuối tuần (giờ Việt Nam)</Text>
         <Space wrap>
-          <DatePicker aria-label="Ngày giờ mở bổ sung tạm" placeholder="Chọn ngày giờ mở bổ sung" showTime={{ format: "HH:mm" }} format="DD/MM/YYYY HH:mm"
-            value={supplementStart} disabled={previewLoading} disabledDate={(date) => [0, 6].includes(date.day())}
+          <DatePicker aria-label="Ngày giờ mở bổ sung" placeholder="Chọn ngày giờ mở bổ sung" showTime={{ format: "HH:mm" }} format="DD/MM/YYYY HH:mm"
+            value={supplementStart} disabled={previewLoading}
             onChange={(value) => { setSupplementStart(value); setSupplementPreview(null); }} />
-          <Button onClick={previewSupplement} loading={previewLoading} disabled={!supplementStart}>Xem trước hạn bổ sung</Button>
+          <DatePicker aria-label="Ngày giờ kết thúc bổ sung" placeholder="Chọn ngày giờ kết thúc bổ sung" showTime={{ format: "HH:mm" }} format="DD/MM/YYYY HH:mm" value={supplementEnd} disabled={previewLoading} onChange={(value) => { setSupplementEnd(value); setSupplementPreview(null); }} />
+          <Button onClick={previewSupplement} loading={previewLoading} disabled={!supplementStart || !supplementEnd}>Xem trước hạn bổ sung</Button>
         </Space>
         {supplementPreview && <Alert type="info" title={`${supplementPreview.notice}: ${supplementPreview.displayUntil} (giờ Việt Nam)`} />}
       </Space>
@@ -491,20 +493,23 @@ export default function AdminConfig() {
       </Form>
 
       {/* Bộ ngưỡng cố định theo quy ước được lưu nguyên bộ trước công bố */}
-      <Form name="vc08-thresholds" form={formThresholds} layout="vertical" initialValues={{ thresholds: defaultThresholdValues() }} onFinish={onFinishThresholds}>
+      <Form disabled={!!periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} name="vc08-thresholds" form={formThresholds} layout="vertical" initialValues={{ thresholds: defaultThresholdValues() }} onFinish={onFinishThresholds}>
         <Space align="center" style={{ marginBottom: 16 }}>
           <SettingOutlined style={{ color: "#1677ff", fontSize: 18 }} />
           <Title level={5} style={{ margin: 0 }}>Ngưỡng xếp loại</Title>
         </Space>
         <Row gutter={16}>
           {["EXCELLENT", "GOOD", "PASS", "FAIL"].map((rating) => (
-            <Col span={6} key={rating}>
+            <Col xs={24} sm={12} lg={6} key={rating}>
               <Text strong>{rating}</Text>
               <Form.Item name={["thresholds", rating, "label"]} label="Nhãn" rules={[{ required: true, message: "Vui lòng nhập nhãn" }]}>
                 <Input />
               </Form.Item>
-              <Form.Item name={["thresholds", rating, "minPercent"]} label="Điểm tối thiểu (%)">
-                <InputNumber min={0} max={100} style={{ width: "100%" }} disabled />
+              <Form.Item name={["thresholds", rating, "minPercent"]} label="Điểm tối thiểu (%)" dependencies={[["thresholds", "PASS", "minPercent"], ["thresholds", "GOOD", "minPercent"], ["thresholds", "EXCELLENT", "minPercent"]]} rules={[({ getFieldValue }) => ({ validator() {
+                  const t = getFieldValue("thresholds");
+                  return t && t.FAIL.minPercent === 0 && t.PASS.minPercent > 0 && t.PASS.minPercent < t.GOOD.minPercent && t.GOOD.minPercent < t.EXCELLENT.minPercent && t.EXCELLENT.minPercent < 100 ? Promise.resolve() : Promise.reject(new Error("Cần 0 < Đạt < Tốt < Xuất sắc < 100"));
+                } })]}>
+                <InputNumber aria-label={`Ngưỡng ${rating}`} min={0} max={rating === "EXCELLENT" ? 99.99 : 100} precision={2} style={{ width: "100%" }} disabled={rating === "FAIL" || !currentPeriodId || !!periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} />
               </Form.Item>
               <Form.Item name={["thresholds", rating, "color"]} label="Màu">
                 <Input />
@@ -514,7 +519,7 @@ export default function AdminConfig() {
         </Row>
         <Space>
           <Button htmlType="submit" disabled={!currentPeriodId || periodsList.find((period) => period.id === currentPeriodId)?.publishedAt}>Lưu ngưỡng</Button>
-          <Text type="secondary">EXCELLENT &gt; 85, GOOD ≥ 65, PASS ≥ 50, FAIL ≥ 0</Text>
+          <Text type="secondary">Mặc định 85/65/50/0. Cần 0 &lt; PASS &lt; GOOD &lt; EXCELLENT &lt; 100; Xuất sắc dùng &gt;, các mức còn lại dùng ≥. Khóa sau công bố.</Text>
         </Space>
       </Form>
     </div>

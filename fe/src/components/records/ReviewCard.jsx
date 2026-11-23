@@ -15,7 +15,7 @@ const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_RE
 export default function ReviewCard({ record, summary, disconnected, onReload, onBusyChange, onFinalize }) {
   const [drafts, setDrafts] = useRecordDrafts(`review:${record.id}`); const [states, setStates] = useState({});
   const [selected, setSelected] = useState([]); const [notes, setNotes] = useState({});
-  const [start, setStart] = useState(null); const [schedule, setSchedule] = useState(null);
+  const [start, setStart] = useState(null); const [end, setEnd] = useState(null); const [schedule, setSchedule] = useState(null);
   const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(null);
   const busyRef = useRef(false);
   const permissions = record.permissions ?? {};
@@ -74,8 +74,8 @@ export default function ReviewCard({ record, summary, disconnected, onReload, on
    * Lưu mốc backend đã xác nhận để lệnh yêu cầu không tự tính lại deadline trên FE
    */
   async function previewSchedule() {
-    if (!start || !begin()) return;
-    try { setSchedule(await evaluationPeriodService.previewSupplementSchedule(`${start.format("YYYY-MM-DDTHH:mm:ss")}+07:00`)); }
+    if (!start || !end || !begin()) return;
+    try { setSchedule(await evaluationPeriodService.previewSupplementSchedule(`${start.format("YYYY-MM-DDTHH:mm:ss")}+07:00`, `${end.format("YYYY-MM-DDTHH:mm:ss")}+07:00`)); }
     catch (failure) { setNotice({ type: "error", text: failure.message || "Không thể xem lịch bổ sung" }); }
     finally { finish(); }
   }
@@ -85,7 +85,7 @@ export default function ReviewCard({ record, summary, disconnected, onReload, on
    */
   async function supplement() {
     if (!schedule || !selected.length) return;
-    const body = { supplementStartAt: schedule.supplementStartAt, items: selected.map((criterionId) => ({ criterionId, note: notes[criterionId] ?? "" })) };
+    const body = { supplementStartAt: schedule.supplementStartAt, supplementDeadline: schedule.supplementDeadline, items: selected.map((criterionId) => ({ criterionId, note: notes[criterionId] ?? "" })) };
     await execute(() => requestSupplement(record.id, body), "Đã gửi yêu cầu bổ sung theo lịch đã chọn");
   }
 
@@ -111,13 +111,13 @@ export default function ReviewCard({ record, summary, disconnected, onReload, on
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Typography.Text>Tổng tự chấm: {summary.selfTotal}/{summary.maxTotalScore} · {summary.ratingLabel}</Typography.Text>
       <Typography.Text>Lượt đầu: {vietnamTime(record.firstReviewedAt)} · Giai đoạn: {phaseLabels[record.period.phase] ?? "Chưa xác định"}</Typography.Text>
-      {record.supplementStartAt && <Alert type="info" showIcon title={`Lịch bổ sung tạm: ${vietnamTime(record.supplementStartAt)} đến trước ${vietnamTime(record.supplementDeadline)} theo giờ Việt Nam`} description="Chờ giảng viên xác nhận quy tắc lịch" />}
+      {record.supplementStartAt && <Alert type="info" showIcon title={`Lịch bổ sung: ${vietnamTime(record.supplementStartAt)} đến trước ${vietnamTime(record.supplementDeadline)} theo giờ Việt Nam`} />}
       {record.finalResult && <Alert type="success" title={`Đã chốt: ${record.finalResult.score} điểm · ${record.finalResult.percent}% · ${record.finalResult.rating}`} />}
       {disconnected && <Alert type="warning" title="Chưa tải lại được quyền từ máy chủ, vui lòng làm mới" />}
       <Table rowKey="criterionId" dataSource={tableRows(record.criteria)} columns={columns} pagination={false} defaultExpandAllRows scroll={{ x: 1500 }} />
       <Space wrap><Button type="primary" loading={busy} disabled={disabled || !dirty || !permissions.canReview} onClick={() => save()}>Lưu tất cả thẩm định</Button><Button disabled={disabled || dirty || !permissions.canReview} onClick={() => confirm(() => execute(() => acceptAllScores(record.id), "Đã chấp nhận các ô chưa duyệt"), "Chấp nhận toàn bộ ô chưa duyệt?")}>Chấp nhận các ô chưa duyệt</Button><Button disabled={disabled || dirty || !permissions.canCompleteFirstReview} onClick={() => confirm(() => execute(() => completeFirstReview(record.id), "Đã hoàn tất thẩm định lần đầu"), "Hoàn tất thẩm định lần đầu?")}>Hoàn tất thẩm định lần đầu</Button><Button disabled={disabled || dirty} onClick={() => onFinalize([record.id])}>Xem trước và chốt hồ sơ</Button></Space>
       {dirty && <Typography.Text type="warning">Có nháp chưa lưu, cần xử lý trước khi hoàn tất lượt đầu, yêu cầu bổ sung hoặc chốt</Typography.Text>}
-      <Space wrap><DatePicker aria-label="Ngày giờ mở bổ sung theo giờ Việt Nam" showTime format="DD/MM/YYYY HH:mm" placeholder="Giờ mở theo giờ Việt Nam" value={start} disabled={disabled || !permissions.canRequestSupplement || dirty} disabledDate={(date) => [0, 6].includes(date.day())} onChange={(value) => { setStart(value); setSchedule(null); }} /><Button disabled={disabled || !start || !permissions.canRequestSupplement || dirty} onClick={previewSchedule}>Xem trước lịch bổ sung</Button><Button disabled={disabled || !schedule || !permissions.canRequestSupplement || dirty || !selected.length || selected.some((id) => !notes[id]?.trim())} onClick={() => confirm(supplement, "Gửi yêu cầu bổ sung theo lịch đã xem?")}>Gửi yêu cầu bổ sung</Button></Space>
+      <Space wrap><DatePicker aria-label="Ngày giờ mở bổ sung theo giờ Việt Nam" showTime format="DD/MM/YYYY HH:mm" placeholder="Giờ mở theo giờ Việt Nam" value={start} disabled={disabled || !permissions.canRequestSupplement || dirty} onChange={(value) => { setStart(value); setSchedule(null); }} /><DatePicker showTime={{ format: "HH:mm" }} format="DD/MM/YYYY HH:mm" aria-label="Ngày giờ kết thúc bổ sung" placeholder="Giờ kết thúc theo giờ Việt Nam" value={end} disabled={disabled || !permissions.canRequestSupplement || dirty} onChange={(value) => { setEnd(value); setSchedule(null); }} /><Button disabled={disabled || !start || !end || !permissions.canRequestSupplement || dirty} onClick={previewSchedule}>Xem trước lịch bổ sung</Button><Button disabled={disabled || !schedule || !permissions.canRequestSupplement || dirty || !selected.length || selected.some((id) => !notes[id]?.trim())} onClick={() => confirm(supplement, "Gửi yêu cầu bổ sung theo lịch đã xem?")}>Gửi yêu cầu bổ sung</Button></Space>
       {schedule && <Alert type="info" title={`Mở ${vietnamTime(schedule.supplementStartAt)}, ${schedule.displayUntil}`} description={schedule.notice} />}
       {notice && <Alert type={notice.type} showIcon title={notice.text} />}
     </Space>

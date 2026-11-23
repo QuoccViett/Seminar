@@ -78,13 +78,12 @@ test("đóng kỳ cần đủ kết quả cho mọi hồ sơ và giai đoạn đ
   assert.equal((await service.options("period")).options.some((item) => item.allowed), false);
 });
 
-/** Lịch preview dùng helper dùng chung, trả UTC và nhãn tạm rõ ràng cho FE
- * Thứ Sáu mở 23:30 chỉ còn nửa giờ, thứ Bảy bị từ chối dù gửi trực tiếp API helper
- */
-test("preview lịch tạm không cộng giờ và từ chối cuối tuần", () => {
+/** Preview giữ chính xác hai mốc có offset, không dịch thứ Bảy hoặc Chủ nhật */
+test("preview lịch bổ sung tùy chọn trả hai mốc UTC", () => {
   const { service } = fixture();
-  const result = service.previewSupplement("2026-11-20T23:30:00+07:00");
-  assert.equal(result.supplementDeadline, "2026-11-20T17:00:00.000Z");
-  assert.match(result.displayUntil, /23:59.*20\/11\/2026/u);
-  assert.throws(() => service.previewSupplement("2026-11-21T00:00:00+07:00"));
+  const result = service.previewSupplement("2026-11-21T23:30:00+07:00", "2026-11-22T08:15:00+07:00");
+  assert.equal(result.supplementStartAt, "2026-11-21T16:30:00.000Z");
+  assert.equal(result.supplementDeadline, "2026-11-22T01:15:00.000Z");
+  assert.equal(result.policy, "ADMIN_DEFINED");
+  assert.throws(() => service.previewSupplement("2026-11-21T08:00:00Z", "2026-11-21T08:00:00Z"));
 });

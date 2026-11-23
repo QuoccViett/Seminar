@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.tmp
+**/.tmp*
+**/.env
+**/.env.*
+!**/.env.example
+**/.seed-credentials*.json
+**/credentials*.json
+**/.private-storage
+**/report-exports
+**/storage
+**/*.log
+.git
+deploy/backups
