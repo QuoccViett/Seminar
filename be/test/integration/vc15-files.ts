@@ -22,11 +22,12 @@ export async function readReportWord(bytes: Buffer) {
   return file.async("string");
 }
 
-/** Trích text Unicode từ mọi trang PDF bằng PDF.js với thực thi JavaScript bị tắt
+/** Trích text Unicode từ mọi trang PDF bằng PDF.js đã vá bảo mật, chỉ trích text và không chạy action/script của tài liệu
  * Không dùng OCR hoặc dữ liệu đầu vào generator làm bằng chứng, chỉ đọc bytes đã tải
  */
 export async function readReportPdf(bytes: Buffer) {
-  const document = await getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, useSystemFonts: false, verbosity: 0 }).promise;
+  const task = getDocument({ data: new Uint8Array(bytes), useSystemFonts: false, verbosity: 0 });
+  const document = await task.promise;
   try {
     const pages = [];
     for (let page = 1; page <= document.numPages; page++) {
@@ -34,5 +35,5 @@ export async function readReportPdf(bytes: Buffer) {
       pages.push(content.items.map((item) => "str" in item ? item.str : "").join(" "));
     }
     return { text: pages.join("\n").normalize("NFC"), pages: document.numPages };
-  } finally { await document.destroy(); }
+  } finally { await task.destroy(); }
 }

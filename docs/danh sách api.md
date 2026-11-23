@@ -80,7 +80,7 @@ Mã HTTP khuyến nghị: `400` dữ liệu sai; `401` chưa xác thực/token s
 - `POST /evaluation-periods` — ADMIN. Tạo đợt; `year` duy nhất, `max_total_score > 0`, `supplement_hours > 0`; `created_by_id` lấy từ tài khoản ADMIN.
 - `GET /evaluation-periods/:periodId` — Đã đăng nhập theo phạm vi. Trả thông tin đợt, phase/thời hạn và tổng điểm tối đa.
 - `PATCH /evaluation-periods/:periodId` — ADMIN. Cập nhật cấu hình và mốc thời gian. Kiểm tra không đảo `self_eval_start`/`self_eval_deadline`; không cho sửa các cấu hình đã khóa theo chính sách phase.
-- `POST /evaluation-periods/:periodId/phase-transitions` — ADMIN. Nhận `to_phase`; cho phép các bước chuyển hợp lệ theo state machine, ghi log/audit. Không cho tùy ý nhảy phase hoặc mở lại `CLOSED` nếu không có quy trình được duyệt.
+- `POST /evaluation-periods/:periodId/transition-phase` — ADMIN. Nhận `phase`; cho phép các bước chuyển hợp lệ theo state machine, ghi log/audit. Không cho tùy ý nhảy phase hoặc mở lại `CLOSED` nếu không có quy trình được duyệt.
 - `GET /evaluation-periods/:periodId/thresholds` — Đã đăng nhập theo phạm vi.
 - `PUT /evaluation-periods/:periodId/thresholds` — ADMIN. Thay toàn bộ cấu hình ngưỡng; cần có đủ bốn mức, `min_percent` trong 0–100, giá trị theo yêu cầu: `EXCELLENT` >85, `GOOD` từ 65, `PASS` từ 50, `FAIL` từ 0.
 - `GET /evaluation-periods/:periodId/criteria` — Đã đăng nhập theo phạm vi. Trả cây tiêu chí theo `parent_id`, sắp xếp `sort_order`; có thể hỗ trợ `include_inactive` nếu sau này có cờ trạng thái.
@@ -115,10 +115,10 @@ Batch trả kết quả từng tệp, metadata không chứa storagePath; chưa 
 ## 5. Thẩm định và bổ sung (`/evaluations`)
 
 - `GET /admin/evaluations/:evaluationId/review` — ADMIN. Trả dữ liệu side-by-side: tiêu chí/điểm tối đa, điểm và diễn giải UNIT, minh chứng, điểm Admin/bình luận/cờ bổ sung.
-- `PUT /admin/evaluations/:evaluationId/scores/:criterionId/review` — ADMIN. Nhận `admin_score`, `admin_comment`, `needs_supplement`, `supplement_note`; bắt buộc lý do khi điểm khác tự chấm. Gán reviewer từ token và `reviewed_at` từ server.
-- `POST /admin/evaluations/:evaluationId/supplement-request` — thiết kế VC12, ADMIN chọn supplementStartAt thứ Hai–thứ Sáu, server lưu snapshot deadline theo lịch tạm mục 1.4/5.4 của kế hoạch; không cộng supplementHours; chi tiết request và quy tắc chờ hỏi thầy tại API_CONTRACT
+- `PUT /admin/evaluations/:evaluationId/scores/:criterionId/review` — ADMIN. Nhận `{adminScore,adminComment?}`; bắt buộc lý do khi điểm khác tự chấm hoặc self chưa có. Không nhận cờ bổ sung ở lệnh chấm; dùng supplement-request riêng. Người duyệt và reviewedAt do server cấp.
+- `POST /admin/evaluations/:evaluationId/supplement-request` — ADMIN gửi cả supplementStartAt và supplementDeadline có múi giờ, start < deadline và start không trước giờ DB; mọi ngày trong tuần, một vòng, giữ snapshot và so cả hai mốc khi retry; chi tiết tại API_CONTRACT
 - `POST /evaluations/:evaluationId/supplement-submit` — UNIT sở hữu hồ sơ. Chỉ trước deadline khi trạng thái `SUPPLEMENT_REQUESTED`; xác nhận hoàn tất bổ sung, đổi `SUPPLEMENT_SUBMITTED`, ghi thời gian/lịch sử và báo ADMIN.
-- `POST /admin/evaluations/:evaluationId/first-review/complete` — ADMIN. Đánh dấu đã hoàn tất thẩm định lần 1 bằng `first_reviewed_at`. Nếu cần bổ sung, dùng endpoint `supplement-request` để chuyển riêng hồ sơ đó sang `SUPPLEMENT_REQUESTED`; nếu không, hồ sơ giữ trạng thái chờ xử lý phù hợp cho vòng chốt. Không dùng endpoint này để tự chuyển phase toàn đợt.
+- `POST /admin/evaluations/:evaluationId/first-review-complete` — ADMIN. Đánh dấu đã hoàn tất thẩm định lần 1 bằng `first_reviewed_at`. Nếu cần bổ sung, dùng endpoint `supplement-request` để chuyển riêng hồ sơ đó sang `SUPPLEMENT_REQUESTED`; nếu không, hồ sơ giữ trạng thái chờ xử lý phù hợp cho vòng chốt. Không dùng endpoint này để tự chuyển phase toàn đợt.
 - `POST /admin/evaluations/:evaluationId/finalize` — ADMIN. Chỉ chốt hồ sơ hợp lệ ở giai đoạn `FINAL_REVIEW`; tính điểm hiệu lực từ điểm Admin nếu có, nếu không dùng điểm tự chấm; tính phần trăm trên `max_total_score`, phân loại theo `fn_rating_for_percent`; ghi `final_score`, `final_percent`, `final_rating`, `finalized_at`, `finalized_by_id`, trạng thái `FINALIZED`, lịch sử và audit trong transaction.
 
 ### Tác vụ nền bắt buộc
@@ -126,7 +126,8 @@ Batch trả kết quả từng tệp, metadata không chứa storagePath; chưa 
 - Scheduler kiểm tra hạn tự chấm: khi phase `SELF_EVAL` hết hạn, chuyển các hồ sơ `DRAFT` sang `PENDING_REVIEW`, ghi `auto_locked_at`, `status_histories`, thông báo nếu chính sách yêu cầu.
 - Scheduler kiểm tra deadline bổ sung: chuyển `SUPPLEMENT_REQUESTED` quá hạn sang `SUPPLEMENT_EXPIRED`, ghi lịch sử. Chạy lặp an toàn/idempotent để không ghi sự kiện trùng.
 - Trigger SQL khóa sửa điểm/minh chứng nhưng **không tự đổi status**; scheduler/API phải làm việc đó.
-- Mốc “48 giờ (2 ngày làm việc)” trong đề tài cần chủ sản phẩm xác nhận cách tính. Cột hiện tại là `supplement_hours` và trigger so sánh timestamp thực (`now()`); mặc định seed 48 giờ liên tục, không tự loại trừ ngày nghỉ.
+- Thời hạn bổ sung do Admin chọn bằng hai mốc có múi giờ, gồm cuối tuần; supplementHours chỉ là legacy, không dùng tính hạn. Quyền ghi dùng giờ DB sau khóa và cửa sổ `[start,deadline)`.
+
 
 ## 6. Phản hồi, lịch sử, thông báo và audit
 

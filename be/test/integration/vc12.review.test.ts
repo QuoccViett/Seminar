@@ -84,16 +84,15 @@ test("VC12 kiểm quyền, lý do, accept-all, hoàn tất và chốt cạnh tra
     assert.equal((await prisma.criterionScore.findUniqueOrThrow({ where: { evaluationId_criterionId: { evaluationId, criterionId: leaf1 } } })).adminScore?.toNumber(), 40);
     assert.equal((await request("POST", `${path}/first-review-complete`, adminToken, {})).status, 200);
 
-    // Chọn ngày thường tương lai theo giờ Việt Nam, sau đó chỉ điều chỉnh snapshot fixture riêng
-    // Nhờ vậy kiểm được trước mở, thay đổi thực tế và nộp mà không thay đồng hồ hệ thống
+    // Chọn cuối tuần tương lai với cửa sổ 90 phút do Admin quyết định
     let start = new Date(Date.now() + 86400000);
-    while ([0, 6].includes(new Date(+start + 7 * 3600000).getUTCDay())) start = new Date(+start + 86400000);
-    let weekend = new Date(+start + 86400000);
-    while (new Date(+weekend + 7 * 3600000).getUTCDay() !== 6) weekend = new Date(+weekend + 86400000);
-    assert.equal((await request("POST", `${path}/supplement-request`, adminToken, { supplementStartAt: weekend.toISOString(), items: [{ criterionId: leaf1, note: "Bổ sung báo cáo" }] })).status, 400);
-    const requestBody = { supplementStartAt: start.toISOString(), items: [{ criterionId: leaf1, note: "Bổ sung báo cáo" }] };
+    while (new Date(+start + 7 * 3600000).getUTCDay() !== 6) start = new Date(+start + 86400000);
+    const requestBody = { supplementStartAt: start.toISOString(), supplementDeadline: new Date(+start + 90 * 60000).toISOString(), items: [{ criterionId: leaf1, note: "Bổ sung báo cáo" }] };
+    assert.equal((await request("POST", `${path}/supplement-request`, adminToken, { ...requestBody, supplementDeadline: start.toISOString() })).status, 400);
     const supplement = await request("POST", `${path}/supplement-request`, adminToken, requestBody);
     assert.equal(supplement.status, 200, JSON.stringify(supplement.body));
+    assert.equal(supplement.body.supplementDeadline, requestBody.supplementDeadline);
+    assert.equal((await request("POST", `${path}/supplement-request`, adminToken, { ...requestBody, supplementDeadline: new Date(+start + 91 * 60000).toISOString() })).status, 409);
     const retried = await request("POST", `${path}/supplement-request`, adminToken, requestBody);
     assert.equal(retried.body.supplementDeadline, supplement.body.supplementDeadline);
     assert.equal((await request("POST", `${path}/supplement-request`, adminToken, { ...requestBody, supplementStartAt: new Date(+start + 604800000).toISOString() })).status, 409);

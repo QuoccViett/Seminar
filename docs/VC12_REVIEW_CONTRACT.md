@@ -14,11 +14,11 @@ Chấm điểm được phép trong FIRST_REVIEW/SUPPLEMENT/FINAL_REVIEW với P
 
 ## Một vòng bổ sung
 
-`POST /admin/evaluations/:evaluationId/supplement-request` nhận `{supplementStartAt,items:[{criterionId,note}]}`, mỗi ghi chú riêng không trắng. Hồ sơ phải PENDING_REVIEW, hoàn tất lượt đầu, chưa từng yêu cầu. Backend khóa kỳ rồi hồ sơ, lấy giờ DB sau khi khóa và kiểm mốc mở không trước giờ yêu cầu.
+`POST /admin/evaluations/:evaluationId/supplement-request` nhận `{supplementStartAt,supplementDeadline,items:[{criterionId,note}]}`, mỗi ghi chú riêng không trắng. Hồ sơ phải PENDING_REVIEW, hoàn tất lượt đầu, chưa từng yêu cầu. Backend khóa kỳ rồi hồ sơ, lấy giờ DB sau khi khóa và kiểm mốc mở không trước giờ yêu cầu.
 
-Lịch tạm chờ giảng viên xác nhận: mở thứ Hai–thứ Sáu theo giờ Việt Nam; thứ Hai–thứ Năm đóng hết ngày kế tiếp, thứ Sáu đóng hết chính ngày; deadline loại trừ tại 00:00 sau ngày kết thúc. Không dùng `supplementHours`. Lưu `supplementRequestedAt`, `supplementStartAt`, `supplementDeadline` duy nhất; cùng transaction lưu baseline từng lá, flags, feedback, history, audit và outbox. Nếu kỳ còn FIRST_REVIEW, chuyển SUPPLEMENT trong cùng transaction qua use-case giai đoạn dùng chung.
+Admin tự chọn cả ngày giờ bắt đầu/kết thúc có offset/Z, gồm thứ Bảy/Chủ nhật và qua tháng/năm, không ép đủ bảy ngày. Kiểm `start < deadline` và start không trước giờ DB sau khóa; lưu UTC, không tính lại từ `supplementHours`. Lưu `supplementRequestedAt`, `supplementStartAt`, `supplementDeadline` duy nhất cùng baseline/flags/feedback/history/audit/outbox. Nếu kỳ còn FIRST_REVIEW, chuyển SUPPLEMENT cùng transaction. Reminder deadline−24h chỉ tạo khi nằm trong cửa sổ; thông báo và báo cáo dùng đúng snapshot.
 
-Retry đúng lịch và danh sách ghi chú trả snapshot đã lưu, không tạo thêm vòng hoặc dời hạn. Payload khác sau khi đã yêu cầu trả `409 SUPPLEMENT_ALREADY_REQUESTED`.
+Retry đúng cả start, deadline và danh sách ghi chú trả snapshot đã lưu, không tạo thêm vòng hoặc dời hạn. Payload khác sau khi đã yêu cầu trả `409 SUPPLEMENT_ALREADY_REQUESTED`.
 
 UNIT chỉ đổi các lá được yêu cầu trong `[start,deadline)`. Điểm/diễn giải thay đổi hoặc thêm/xóa minh chứng hợp lệ làm mất hiệu lực điểm, lý do và người duyệt cũ; snapshot và audit giữ thông tin trước thay đổi. Minh chứng INITIAL bất biến trong vòng bổ sung.
 

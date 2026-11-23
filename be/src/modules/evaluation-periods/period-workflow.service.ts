@@ -106,19 +106,16 @@ export class PeriodWorkflowService {
       return after;
   }
 
-  /** Tính lịch xem trước bằng cùng helper sẽ dùng khi VC12 lưu snapshot yêu cầu
-   * start là ISO có offset đã qua DTO, đầu ra UTC và câu hiển thị theo giờ Việt Nam
-   * Không ghi DB hoặc suy diễn từ supplementHours, ngày cuối tuần bị helper từ chối
-   */
-  previewSupplement(start: string) {
+  /** Kiểm và trả snapshot hai mốc tự chọn; quyền ghi được kiểm lại với giờ DB khi gửi */
+  previewSupplement(start: string, end: string) {
     const supplementStartAt = new Date(start);
-    const deadline = this.deadlines.supplementDeadline(supplementStartAt);
-    const lastMinute = new Date(deadline.getTime() - 60_000);
+    const deadline = this.deadlines.supplementDeadline(supplementStartAt, new Date(end));
+    const format = (value: Date) => new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short", hourCycle: "h23" }).format(value);
     return {
       supplementStartAt: supplementStartAt.toISOString(), supplementDeadline: deadline.toISOString(),
-      serverTime: this.clock.now().toISOString(), policy: "TEMPORARY_WEEKDAY",
-      displayUntil: `đến hết 23:59 ngày ${new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric" }).format(lastMinute)}`,
-      notice: "Lịch bổ sung tạm, chờ giảng viên xác nhận",
+      serverTime: this.clock.now().toISOString(), policy: "ADMIN_DEFINED",
+      displayUntil: `kết thúc lúc ${format(deadline)}`,
+      notice: "Lịch do Admin chọn; khóa đúng thời hạn kết thúc (giờ Việt Nam)",
     };
   }
 

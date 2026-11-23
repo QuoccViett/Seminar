@@ -36,5 +36,5 @@ export const userService = {
    * Chỉ truyền ID phiên; backend đọc lại rows đã lưu, kiểm DB trong transaction và trả kết quả delivery
    * Client không thể đổi nội dung hàng giữa bước preview và confirm
    */
-  confirmImport: (importId) => apiClient.post(`/users/import/${importId}/confirm`, {}),
+  confirmImport: (importId) => apiClient.post(`/users/import/${importId}/confirm`, {}, { timeout: 180000 }),
 };

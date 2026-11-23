@@ -2,7 +2,7 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -13,14 +13,17 @@
     "db:validate": "prisma validate",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:reset": "prisma migrate reset --force",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "node scripts/reset-demo.mjs",
+    "db:seed": "npm run db:seed:base",
     "db:verify:vc03": "node --import tsx --test test/integration/vc03.database.test.ts test/integration/vc03.auth.test.ts",
     "test": "npm run test:unit",
     "test:e2e": "node scripts/run-tests.mjs test/e2e .e2e.test.ts",
     "test:unit": "node scripts/run-tests.mjs src .spec.ts,.spec.js",
     "test:cov": "node scripts/run-tests.mjs src .spec.ts,.spec.js --coverage",
-    "test:vc17": "c8 --config .c8rc.vc17.json node scripts/run-vc17.mjs"
+    "test:vc17": "c8 --config .c8rc.vc17.json node scripts/run-vc17.mjs",
+    "db:seed:base": "tsx prisma/seed-base.ts",
+    "db:seed:demo": "tsx prisma/seed.ts",
+    "test:supabase": "node scripts/verify-supabase.mjs"
   },
   "dependencies": {
     "@nestjs/common": "11.2.7",
@@ -38,10 +41,11 @@
     "docx": "^9.12.0",
     "dotenv": "^16.6.1",
     "exceljs": "^4.4.0",
+    "express-rate-limit": "^8.7.5",
     "helmet": "^8.3.0",
     "joi": "^18.3.2",
     "jszip": "^3.10.2",
-    "nodemailer": "^7.0.13",
+    "nodemailer": "^10.6.1",
     "pdfkit": "^0.20.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
@@ -58,7 +62,7 @@
     "@types/web-push": "^3.6.4",
     "c8": "^12.0.0",
     "eslint": "^9.39.1",
-    "pdfjs-dist": "5.6.205",
+    "pdfjs-dist": "6.5.438",
     "playwright": "^1.65.1",
     "prisma": "7.10.1",
     "tsx": "^4.20.6",
@@ -68,6 +72,13 @@
   "overrides": {
     "multer": "2.5.0",
     "js-yaml": "5.5.0",
-    "minimatch": "11.0.4"
+    "minimatch": "11.0.4",
+    "effect": "3.22.5",
+    "exceljs": {
+      "uuid": "11.1.1"
+    },
+    "test-exclude": {
+      "glob": "14.0.6"
+    }
   }
 }

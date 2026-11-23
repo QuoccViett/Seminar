@@ -48,7 +48,8 @@ test("ma trận HTTP quyền thẩm định, validation, IDOR và projection ri�
 test("yêu cầu bổ sung nguyên tử, cạnh tranh, một vòng và lịch thứ Sáu", async () => {
   const s = await h.scenario(2); const r = s.records[0]; const path = `admin/evaluations/${r.evaluationId}`;
   await h.firstReview(r.evaluationId);
-  const body = { supplementStartAt: h.futureWeekday(5), items: [{ criterionId: s.leaf1, note: "Bổ sung báo cáo riêng mục A" }] };
+  const start = h.futureWeekday(6);
+  const body = { supplementStartAt: start, supplementDeadline: new Date(Date.parse(start) + 90 * 60000).toISOString(), items: [{ criterionId: s.leaf1, note: "Bổ sung báo cáo riêng mục A" }] };
   const originalAudit = h.audit.record.bind(h.audit);
   h.audit.record = async (input, tx) => { if (input.action === "SUPPLEMENT_REQUEST") throw new Error("Lỗi audit được chủ động tạo để kiểm rollback"); return originalAudit(input, tx); };
   try { assert.equal((await h.request("POST", `${path}/supplement-request`, h.adminToken, body)).status, 500); }
@@ -61,9 +62,7 @@ test("yêu cầu bổ sung nguyên tử, cạnh tranh, một vòng và lịch th
   const race = await Promise.all([h.request("POST", `${path}/supplement-request`, h.adminToken, body), h.request("POST", `${path}/supplement-request`, h.adminToken, body)]);
   assert.deepEqual(race.map((item) => item.status), [200, 200]);
   assert.equal(race[0].body.supplementDeadline, race[1].body.supplementDeadline);
-  const localStart = new Date(Date.parse(body.supplementStartAt) + 7 * 3600000);
-  const expected = new Date(Date.UTC(localStart.getUTCFullYear(), localStart.getUTCMonth(), localStart.getUTCDate() + 1) - 7 * 3600000);
-  assert.equal(race[0].body.supplementDeadline, expected.toISOString());
+  assert.equal(race[0].body.supplementDeadline, body.supplementDeadline);
   assert.equal((await h.prisma.evaluationPeriod.findUniqueOrThrow({ where: { id: s.periodId } })).phase, "SUPPLEMENT");
   assert.equal(await h.prisma.statusHistory.count({ where: { evaluationId: r.evaluationId, toStatus: "SUPPLEMENT_REQUESTED" } }), 1);
   assert.equal(await h.prisma.evaluationFeedback.count({ where: { evaluationId: r.evaluationId, type: "SUPPLEMENT_REQUEST" } }), 1);

@@ -162,6 +162,28 @@ async function verify() {
     await admin.getByRole("button", { name: "Đóng", exact: true }).last().click();
     checks.push("realExcelDropPreviewConfirmDisabledChannels");
 
+    stage = "Tạo danh sách Excel qua form thật"; console.log(`VC16: ${stage}`);
+    const beforeGenerated = await prisma.user.count();
+    await admin.getByRole("button", { name: /Import Excel/u }).click();
+    await admin.getByRole("button", { name: "Tạo danh sách Excel", exact: true }).click();
+    const generatorDialog = admin.getByRole("dialog", { name: "Tạo danh sách Excel", exact: true });
+    await generatorDialog.getByLabel("Số lượng", { exact: true }).fill("1");
+    await generatorDialog.getByLabel("Tiền tố mã đơn vị", { exact: true }).fill(`GEN-${suffix}`);
+    await generatorDialog.getByLabel("Tiền tố tên đăng nhập", { exact: true }).fill(`gen-${suffix}`);
+    await generatorDialog.getByLabel("Domain email", { exact: true }).fill("example.invalid");
+    const [draftDownload] = await Promise.all([admin.waitForEvent("download"), generatorDialog.getByRole("button", { name: "Tải bản nháp Excel", exact: true }).click()]);
+    const draftBook = new ExcelJS.Workbook(); await draftBook.xlsx.load(await readFile(await draftDownload.path()));
+    assert.equal(draftBook.worksheets[0].getCell("D2").value, `gen-${suffix}001`);
+    await generatorDialog.getByRole("button", { name: "Dùng bản nháp để xem trước", exact: true }).click();
+    await admin.getByRole("button", { name: "Xem trước và kiểm tra", exact: true }).click();
+    await admin.getByText(/1 dòng, 1 hợp lệ, 0 có lỗi/u).waitFor();
+    assert.equal(await prisma.user.count(), beforeGenerated);
+    await admin.getByRole("button", { name: "Xác nhận tạo tài khoản", exact: true }).click();
+    await admin.getByText(/Đã tạo 1 tài khoản và 1 đơn vị mới/u).waitFor();
+    assert.equal(await prisma.user.count(), beforeGenerated + 1);
+    await admin.getByRole("button", { name: "Đóng", exact: true }).last().click();
+    checks.push("generatedExcelDownloadPreviewConfirm");
+
     // Chỉ sửa tài khoản vừa import trong DB thử, kiểm cả xác nhận reset và trạng thái gửi chưa được tiếp nhận
     // Không xác nhận địa chỉ Email hoặc gọi retry provider, mật khẩu tạm chỉ được đọc trong modal một lần
     stage = "sửa tài khoản, đặt lại mật khẩu và khóa mở bằng UI"; console.log(`VC16: ${stage}`);
@@ -405,16 +427,19 @@ async function verify() {
     await confirmReview("Hoàn tất thẩm định lần đầu");
     await admin.getByText("Đã hoàn tất thẩm định lần đầu", { exact: true }).waitFor();
     const friday = new Date(Date.now() + 7 * 86400000 + 7 * 3600000);
-    while (friday.getUTCDay() !== 5) friday.setUTCDate(friday.getUTCDate() + 1);
+    while (friday.getUTCDay() !== 6) friday.setUTCDate(friday.getUTCDate() + 1);
     const formattedStart = `${String(friday.getUTCDate()).padStart(2, "0")}/${String(friday.getUTCMonth() + 1).padStart(2, "0")}/${friday.getUTCFullYear()} 23:00`;
     await admin.getByLabel("Ngày giờ mở bổ sung theo giờ Việt Nam", { exact: true }).fill(formattedStart);
     await admin.getByLabel("Ngày giờ mở bổ sung theo giờ Việt Nam", { exact: true }).press("Enter");
+    const formattedEnd = formattedStart.replace("23:00", "23:45");
+    await admin.getByLabel("Ngày giờ kết thúc bổ sung", { exact: true }).fill(formattedEnd);
+    await admin.getByLabel("Ngày giờ kết thúc bổ sung", { exact: true }).press("Enter");
     await admin.getByRole("checkbox", { name: "Chọn bổ sung A", exact: true }).check();
     await admin.getByRole("textbox", { name: "Yêu cầu bổ sung A", exact: true }).fill("Bổ sung diễn giải tiêu chí A qua kiểm VC16");
     const [scheduleResponse] = await Promise.all([admin.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/supplement-schedule/preview")), admin.getByRole("button", { name: "Xem trước lịch bổ sung", exact: true }).click()]);
     assert.equal(scheduleResponse.status(), 200);
     const schedule = await scheduleResponse.json();
-    assert.equal(new Date(Date.parse(schedule.supplementDeadline) + 7 * 3600000).getUTCDay(), 6);
+    assert.equal(Date.parse(schedule.supplementDeadline) - Date.parse(schedule.supplementStartAt), 45 * 60000);
     await confirmReview("Gửi yêu cầu bổ sung");
     await admin.getByText("Đã gửi yêu cầu bổ sung theo lịch đã chọn", { exact: true }).waitFor();
     // Chuyển điều kiện trước về cửa sổ đang mở trong DB test, không đổi đồng hồ hoặc tính hạn bằng supplementHours

@@ -104,6 +104,11 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
       { rating: "FAIL", label: "Chưa đạt", minPercent: 0, minExclusive: false },
     ];
     assert.equal((await request("PUT", `evaluation-periods/${id}/thresholds`, adminToken, thresholds)).status, 200);
+    const custom = thresholds.map((row, index) => ({ ...row, minPercent: [90, 70, 45, 0][index] }));
+    for (const invalid of [custom.slice(1), [custom[0], custom[0], custom[2], custom[3]], custom.map((row) => ({ ...row, minPercent: row.rating === "EXCELLENT" ? 100 : row.minPercent })), custom.map((row) => ({ ...row, minPercent: row.rating === "PASS" ? 75 : row.minPercent }))]) {
+      assert.equal((await request("PUT", `evaluation-periods/${id}/thresholds`, adminToken, invalid)).status, 400);
+    }
+    assert.equal((await request("PUT", `evaluation-periods/${id}/thresholds`, adminToken, custom)).status, 200);
     // Ba yêu cầu tranh cùng khóa kỳ: chỉ một publish thành công và sửa không được lọt sau publish
     const [first, second, edit] = await Promise.all([
       request("POST", `evaluation-periods/${id}/publish`, adminToken),
@@ -137,22 +142,24 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
     assert.equal((await request("POST", `evaluation-periods/${id}/transition-phase`, adminToken, { phase: "SETUP" })).status, 400);
     assert.equal((await request("PUT", `evaluation-periods/${id}/thresholds`, adminToken, thresholds)).status, 400);
 
-    // Mọi ví dụ lịch tạm đều qua HTTP thật, ngày UTC khác Việt Nam vẫn phải chặn đúng cuối tuần
+    // Hai mốc mọi ngày trong tuần giữ chính xác cả giờ, phút và offset
     for (const [start, expected] of [
-      ["2026-11-16T07:00:00+07:00", "2026-11-17T17:00:00.000Z"],
-      ["2026-11-17T07:00:00+07:00", "2026-11-18T17:00:00.000Z"],
-      ["2026-11-18T07:00:00+07:00", "2026-11-19T17:00:00.000Z"],
-      ["2026-11-19T07:00:00+07:00", "2026-11-20T17:00:00.000Z"],
-      ["2026-11-20T23:30:00+07:00", "2026-11-20T17:00:00.000Z"],
+      ["2026-11-21T23:30:00+07:00", "2026-11-22T01:15:00.000Z"],
+      ["2026-11-22T08:00:00+07:00", "2026-11-22T01:01:00.000Z"],
+      ["2026-12-31T23:00:00+07:00", "2027-01-02T08:15:00.000Z"],
     ]) {
-      const preview = await request("POST", "evaluation-periods/supplement-schedule/preview", adminToken, { supplementStartAt: start });
+      const preview = await request("POST", "evaluation-periods/supplement-schedule/preview", adminToken, { supplementStartAt: start, supplementDeadline: expected });
       assert.equal(preview.status, 200, JSON.stringify(preview.body));
       assert.equal(preview.body.supplementDeadline, expected);
     }
-    for (const start of ["2026-11-21T00:00:00+07:00", "2026-11-22T23:30:00+07:00", "2026-11-20T07:00:00", "2026-02-30T07:00:00Z"]) {
-      assert.equal((await request("POST", "evaluation-periods/supplement-schedule/preview", adminToken, { supplementStartAt: start })).status, 400);
-    }
-    assert.equal((await request("POST", "evaluation-periods/supplement-schedule/preview", unitToken, { supplementStartAt: "2026-11-20T00:00:00Z" })).status, 403);
+    for (const payload of [
+      { supplementStartAt: "2026-11-21T08:00:00Z" },
+      { supplementStartAt: "2026-11-21T08:00:00Z", supplementDeadline: "2026-11-21T08:00:00Z" },
+      { supplementStartAt: "2026-11-21T08:00:00Z", supplementDeadline: "2026-11-21T07:59:00Z" },
+      { supplementStartAt: "2026-11-21T08:00:00", supplementDeadline: "2026-11-22T08:00:00Z" },
+      { supplementStartAt: "2026-02-30T08:00:00Z", supplementDeadline: "2026-11-22T08:00:00Z" },
+    ]) assert.equal((await request("POST", "evaluation-periods/supplement-schedule/preview", adminToken, payload)).status, 400);
+    assert.equal((await request("POST", "evaluation-periods/supplement-schedule/preview", unitToken, { supplementStartAt: "2026-11-20T00:00:00Z", supplementDeadline: "2026-11-22T00:00:00Z" })).status, 403);
 
     // Bỏ lỡ job mở vẫn khóa được tại deadline, lỗi audit phải rollback phase, hồ sơ và history
     audit.record = async () => { throw new Error("Lỗi audit kiểm thử giai đoạn"); };

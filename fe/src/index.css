@@ -1,3 +1,16 @@
+/* Palette chung cho ADMIN và UNIT, trạng thái luôn kèm nhãn hoặc biểu tượng */
+:root {
+  --app-primary: #1d4ed8;
+  --app-background: #f1f5f9;
+  --app-surface: #ffffff;
+  --app-section: #eff6ff;
+  --app-border: #cbd5e1;
+  --app-text: #0f172a;
+  --app-muted: #475569;
+  --app-success: #15803d;
+  --app-warning: #b45309;
+  --app-error: #b91c1c;
+}
 /* Reset CSS cơ bản để xóa khoảng trắng mặc định của trình duyệt */
 * {
   box-sizing: border-box;
@@ -34,12 +47,13 @@ html, body, #root {
 .ant-table-wrapper { max-width: 100%; overflow-x: auto; }
 .ant-table-wrapper .ant-table-thead > tr > th {
   text-align: center;
-  background: #e4e9ee !important;
+  background: var(--app-section) !important;
+  color: var(--app-text);
 }
 .ant-table-wrapper .ant-table-tbody > tr > td {
   text-align: center !important;
 }
-button:focus-visible, a:focus-visible { outline: 3px solid #1677ff; outline-offset: 3px; }
+button:focus-visible, a:focus-visible { outline: 3px solid var(--app-primary); outline-offset: 3px; }
 @media (max-width: 700px) {
   .ant-space { max-width: 100%; }
   /* Gỡ min-width cố định của bộ lọc quản trị trên điện thoại, giữ bảng rộng trong vùng cuộn riêng */
@@ -48,3 +62,9 @@ button:focus-visible, a:focus-visible { outline: 3px solid #1677ff; outline-offs
   .ant-select, .ant-picker { min-width: 0 !important; max-width: 100%; }
   .ant-col-12 { flex-basis: 100%; max-width: 100%; }
 }
+
+/* Giữ chữ trạng thái đủ tương phản trên nền nhạt, không dựa riêng vào màu */
+:root .ant-tag.ant-tag-green, :root .ant-tag.ant-tag-success { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+:root .ant-tag.ant-tag-red, :root .ant-tag.ant-tag-error { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+:root .ant-tag.ant-tag-orange, :root .ant-tag.ant-tag-gold, :root .ant-tag.ant-tag-warning { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+:root .ant-tag.ant-tag-blue, :root .ant-tag.ant-tag-processing { color: #1e40af; background: #eff6ff; border-color: #bfdbfe; }

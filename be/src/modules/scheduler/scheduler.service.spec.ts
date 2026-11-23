@@ -54,7 +54,7 @@ test("mở đúng mốc và hết hạn bổ sung đúng snapshot", async () => 
 });
 
 /** Nhắc hạn chỉ xuất hiện tại mốc hợp lệ bên trong cửa sổ và không nhắc vòng ngắn
- * Ví dụ bổ sung mở sau mốc 24 giờ phản ánh quy tắc thứ Sáu theo lịch tạm
+ * Ví dụ vòng ngắn do Admin chọn mở sau mốc nhắc 24 giờ nên không được nhắc
  */
 test("nhắc hạn đúng cửa sổ và bỏ mốc trước giờ mở bổ sung", async () => {
   const first = fixture(new Date("2026-11-19T00:00:00Z"));

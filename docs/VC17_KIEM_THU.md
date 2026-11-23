@@ -128,3 +128,8 @@ Giữ riêng artifact remote, log tái hiện và hai lượt sau sửa; không 
 ## Giới hạn xác nhận
 
 Chưa có quyết định chính sách của thầy; không biến lịch tạm thành chính sách đã nghiệm thu. Actions remote gần nhất `44459025787` còn lỗi fixture VC11; bản sửa đã kiểm hai lượt local nhưng chưa xác nhận lượt remote mới. SMTP thật tại Mailpit không phải bằng chứng gửi Web Push đến thiết bị thật hoặc email tới người thật. ZNS mặc định tắt, không yêu cầu secret/template hay demo gửi thật có phí trong VC17.
+
+
+## Kiểm lại yêu cầu mới ngày 24/11/2026
+
+Xem [biên bản hoàn thiện](./HOAN_THIEN_2026-11-24.md): lịch hai mốc, Excel sinh, ngưỡng tùy chỉnh, browser hai vai trò 20/20, dependency đã vá, Docker/HTTPS và backup/restore trên project riêng. Giữ kết quả lượt tổng đầu có lỗi PDF.js/Form ID và các lượt kiểm lại đạt; chưa xác nhận CI remote của commit mới hoặc môi trường Supabase/hạ tầng bảo vệ. Không sửa kết quả lịch sử ở trên thành kết quả của chính sách mới.

@@ -4,7 +4,7 @@ Hướng dẫn này dành cho môi trường phát triển local trên Windows v
 
 ## Yêu cầu
 
-- Node.js `20.19.0` trở lên và npm
+- Node.js 22.13+ hoặc 24 và npm
 - Docker Desktop đang chạy
 
 

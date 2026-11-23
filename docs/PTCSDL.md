@@ -155,8 +155,8 @@ UNIQUE(`period_id`, `unit_id`) bảo đảm một hồ sơ mỗi đơn vị/kỳ
 | `auto_locked_at` | TIMESTAMP | Hệ thống Auto-lock khi hết hạn Giai đoạn 1 |
 | `first_reviewed_at` | TIMESTAMP | Admin hoàn tất thẩm định lần 1 |
 | `supplement_requested_at` | TIMESTAMP | Admin bấm "Yêu cầu bổ sung hồ sơ" |
-| `supplement_start_at` | TIMESTAMP | Snapshot giờ mở Admin chọn, ngày Việt Nam thứ Hai–thứ Sáu; lịch tạm chờ hỏi thầy |
-| `supplement_deadline` | TIMESTAMP | UTC 00:00 sau ngày kết thúc theo lịch tạm, lưu snapshot, không tính từ giờ gửi hoặc supplement_hours |
+| `supplement_start_at` | TIMESTAMP | Snapshot UTC giờ mở Admin chọn, chấp nhận mọi ngày trong tuần |
+| `supplement_deadline` | TIMESTAMP | Snapshot UTC hạn kết thúc Admin chọn; start < deadline, không tính lại từ giờ gửi hoặc supplement_hours |
 | `supplement_submitted_at` | TIMESTAMP | Đơn vị nộp bổ sung |
 | `finalized_at` / `finalized_by_id` | TIMESTAMP / FK | Admin bấm "Khóa sổ/Chốt điểm" |
 | `final_score`, `final_percent`, `final_rating` | DECIMAL / DECIMAL / VARCHAR | Kết quả chính thức, chốt khi khóa sổ (CHECK bắt buộc khi `FINALIZED`) |

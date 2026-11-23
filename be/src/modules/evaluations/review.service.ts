@@ -156,14 +156,14 @@ export class ReviewService {
         const existing = await tx.criterionScore.findMany({ where: { evaluationId: id, needsSupplement: true }, orderBy: { criterionId: "asc" } });
         const expected = existing.map((score) => ({ criterionId: score.criterionId, note: score.supplementNote }));
         const requested = [...dto.items].sort((a, b) => a.criterionId.localeCompare(b.criterionId)).map((item) => ({ criterionId: item.criterionId, note: item.note.trim() }));
-        if (evaluation.supplementStartAt?.getTime() !== new Date(dto.supplementStartAt).getTime() || JSON.stringify(expected) !== JSON.stringify(requested)) throw new ConflictException({ code: "SUPPLEMENT_ALREADY_REQUESTED", message: "Hồ sơ đã có một vòng bổ sung, không được tạo vòng mới hoặc thay đổi lịch" });
+        if (evaluation.supplementStartAt?.getTime() !== new Date(dto.supplementStartAt).getTime() || evaluation.supplementDeadline?.getTime() !== new Date(dto.supplementDeadline).getTime() || JSON.stringify(expected) !== JSON.stringify(requested)) throw new ConflictException({ code: "SUPPLEMENT_ALREADY_REQUESTED", message: "Hồ sơ đã có một vòng bổ sung, không được tạo vòng mới hoặc thay đổi lịch" });
         const feedback = await tx.evaluationFeedback.findFirst({ where: { evaluationId: id, type: "SUPPLEMENT_REQUEST" }, orderBy: { createdAt: "asc" } });
         return { evaluationId: id, status: evaluation.status, supplementRequestedAt: evaluation.supplementRequestedAt.toISOString(), supplementStartAt: evaluation.supplementStartAt?.toISOString() ?? null, supplementDeadline: evaluation.supplementDeadline?.toISOString() ?? null, feedbackId: feedback?.id ?? null };
       }
       if (!["FIRST_REVIEW", "SUPPLEMENT"].includes(evaluation.period.phase) || evaluation.status !== "PENDING_REVIEW" || !evaluation.firstReviewedAt) throw new ForbiddenException({ code: "REVIEW_LOCKED", message: "Hồ sơ chưa đủ điều kiện yêu cầu bổ sung" });
       const now = await this.state.databaseNow(tx);
       const start = new Date(dto.supplementStartAt);
-      const deadline = this.deadlines.supplementDeadline(start);
+      const deadline = this.deadlines.supplementDeadline(start, new Date(dto.supplementDeadline));
       if (start < now) throw new UnprocessableEntityException({ code: "BUSINESS_RULE_VIOLATION", message: "Thời gian mở bổ sung không được trước thời điểm yêu cầu" });
       const scores = await tx.criterionScore.findMany({ where: { evaluationId: id, criterionId: { in: dto.items.map((item) => item.criterionId) }, criterion: { children: { none: {} }, periodId: ref.periodId } }, include: { evidences: true } });
       if (scores.length !== dto.items.length || dto.items.some((item) => !item.note.trim())) throw new UnprocessableEntityException({ code: "BUSINESS_RULE_VIOLATION", message: "Mỗi tiêu chí lá được chọn phải thuộc hồ sơ và có yêu cầu bổ sung" });

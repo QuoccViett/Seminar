@@ -13,7 +13,7 @@ ADMIN mở `/admin/records` để lọc kỳ, phân trang và xem cây/điểm t
 Phạm vi công việc của hai thành viên FE được ghi trong [FE_PHÂN CÔNG.md](./FE_PHÂN%20C%C3%94NG.md).
 
 ## Yêu cầu
-- Node.js `20.19.0` trở lên và npm
+- Node.js 22.13+ hoặc 24 và npm
 
 ## 1. Cấu hình frontend
 
@@ -143,3 +143,12 @@ await disableWebPush(accessToken);
 **Giới hạn hiện tại:** frontend/backend chưa có auth hoàn chỉnh. API đăng ký subscription yêu cầu backend gắn `request.user`, nên luồng bật Web Push xuyên suốt chỉ hoạt động sau khi Auth/JWT được tích hợp. Module Web Push nền tảng đã có, nhưng notification nghiệp vụ chỉ được gửi khi các module nghiệp vụ gọi service tương ứng.
 
 Khi đổi VAPID key, cập nhật cả hai file `.env` local và đăng ký lại subscription. Không commit `fe\.env`; chỉ cập nhật `.env.example` nếu tên biến mẫu thay đổi, không đưa secret vào đó.
+
+
+## Bổ sung ngày 24/11/2026
+
+Quản lý tài khoản → Import Excel → Tạo danh sách Excel: nhập 1–100 dòng, số bắt đầu, số chữ số, hai tiền tố, hai mẫu tên `{n}`, domain email và loại đơn vị. Xem ba dòng ví dụ, tải XLSX để sửa hoặc đưa bản nháp vào preview. Chỉ nút xác nhận import tạo tài khoản; cần kiểm tra người nhận trước khi xác nhận Email.
+
+Cấu hình và thẩm định có hai ô ngày giờ bổ sung theo giờ Việt Nam, chọn được mọi ngày. Xem trước rồi gửi yêu cầu; đổi một mốc sẽ xóa preview cũ. Thời lượng không bắt buộc bảy ngày. Ngưỡng phần trăm cho sửa trước công bố, giữ FAIL=0 và thứ tự Đạt < Tốt < Xuất sắc <100; khóa sau công bố. Backend quyết định quyền theo giờ server.
+
+Palette dùng chung tại `src/theme.js` và biến CSS: xanh #1d4ed8, nền #f1f5f9, panel #eff6ff, chữ #0f172a, thành công #15803d, cảnh báo #b45309, lỗi #b91c1c. Trạng thái luôn có chữ, focus có viền; bảng cuộn trong vùng riêng trên mobile. Palette cần người phụ trách UI xác nhận trước nghiệm thu cuối.

@@ -1,12 +1,16 @@
 import "dotenv/config";
-import { randomBytes } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
+import { seedAssets } from "./seed-assets.js";
 import { captureSupplementBaseline } from "../src/modules/evaluations/review-policy.js";
-import { calculateSupplementDeadline } from "../src/common/services/deadline-calculator.js";
+
+
+if (process.env.SEED_DEMO_ENABLED !== "true" || process.env.NODE_ENV === "production") throw new Error("Seed demo chỉ chạy khi SEED_DEMO_ENABLED=true ngoài production");
+if (process.env.STORAGE_PROVIDER === "supabase") throw new Error("Seed demo minh chứng chỉ dùng kho local riêng; không ghi bucket thật");
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -90,11 +94,13 @@ const criterionDefinitions = [
   { code: "D2", name: "Chế độ thông tin, báo cáo", maxScore: 35, parent: false },
 ] as const;
 
-type EvaluationStatus = "DRAFT" | "SUBMITTED" | "IN_REVIEW" | "NEEDS_SUPPLEMENT" | "FINALIZED";
+type EvaluationStatus = "DRAFT" | "SUBMITTED" | "IN_REVIEW" | "NEEDS_SUPPLEMENT" | "SUPPLEMENT_SUBMITTED" | "SUPPLEMENT_EXPIRED" | "FINALIZED";
 type DatabaseEvaluationStatus =
   | "DRAFT"
   | "PENDING_REVIEW"
   | "SUPPLEMENT_REQUESTED"
+  | "SUPPLEMENT_SUBMITTED"
+  | "SUPPLEMENT_EXPIRED"
   | "FINALIZED";
 
 function databaseStatus(status: EvaluationStatus): DatabaseEvaluationStatus {
@@ -105,7 +111,7 @@ function databaseStatus(status: EvaluationStatus): DatabaseEvaluationStatus {
 
 function statusFor(index: number, periodYear: number): EvaluationStatus {
   if (periodYear === 2025) return index % 2 === 0 ? "FINALIZED" : "SUBMITTED";
-  return ["DRAFT", "SUBMITTED", "IN_REVIEW", "NEEDS_SUPPLEMENT", "FINALIZED"][index % 5] as EvaluationStatus;
+  return ["DRAFT", "SUBMITTED", "IN_REVIEW", "NEEDS_SUPPLEMENT", "FINALIZED", "SUPPLEMENT_SUBMITTED", "SUPPLEMENT_EXPIRED"][index % 7] as EvaluationStatus;
 }
 
 function statusChain(status: EvaluationStatus): EvaluationStatus[] {
@@ -114,6 +120,8 @@ function statusChain(status: EvaluationStatus): EvaluationStatus[] {
     case "SUBMITTED": return ["DRAFT", "SUBMITTED"];
     case "IN_REVIEW": return ["DRAFT", "SUBMITTED", "IN_REVIEW"];
     case "NEEDS_SUPPLEMENT": return ["DRAFT", "SUBMITTED", "IN_REVIEW", "NEEDS_SUPPLEMENT"];
+    case "SUPPLEMENT_SUBMITTED": return ["DRAFT", "SUBMITTED", "IN_REVIEW", "NEEDS_SUPPLEMENT", "SUPPLEMENT_SUBMITTED"];
+    case "SUPPLEMENT_EXPIRED": return ["DRAFT", "SUBMITTED", "IN_REVIEW", "NEEDS_SUPPLEMENT", "SUPPLEMENT_EXPIRED"];
     case "FINALIZED": return ["DRAFT", "SUBMITTED", "IN_REVIEW", "FINALIZED"];
   }
 }
@@ -128,6 +136,7 @@ function statusChain(status: EvaluationStatus): EvaluationStatus[] {
  * Không chạy trên DB dùng chung khi chưa chỉ định đích seed an toàn, lỗi DB được xử lý tại biên script
  */
 async function main(): Promise<void> {
+  const assets = await seedAssets();
   const generatedCredentials: { username: string; password: string }[] = [];
   const existingUsers = await prisma.user.findMany({
     where: { username: { in: [adminUsername, ...units.map((unit) => unit.username)] } },
@@ -181,9 +190,9 @@ async function main(): Promise<void> {
         where: { username: unitSeed.username },
         select: { id: true },
       });
-      const password = !existing || rotatePasswords ? randomBytes(18).toString("base64url") : null;
+      const password = !existing || rotatePasswords ? (process.env.INITIAL_ACCOUNT_PASSWORD ?? "123456") : null;
       const passwordHash = password ? await bcrypt.hash(password, 12) : undefined;
-      const createPasswordHash = passwordHash ?? (await bcrypt.hash(randomBytes(18).toString("base64url"), 12));
+      const createPasswordHash = passwordHash ?? "";
       const user = await tx.user.upsert({
         where: { username: unitSeed.username },
         update: {
@@ -211,6 +220,8 @@ async function main(): Promise<void> {
     }
 
     for (const periodSeed of periods) {
+      // Không thay lịch, ngưỡng hoặc điểm của kỳ đã tồn tại khi chạy lại seed
+      if (await tx.evaluationPeriod.findUnique({ where: { year: periodSeed.year }, select: { id: true } })) continue;
       // Đọc giờ statement sau bước tạo tài khoản để thời gian băm mật khẩu không làm hết cửa sổ trước khi dựng hồ sơ
       // Cửa sổ dài bằng ngân sách giao dịch, chỉ tồn tại trong giao dịch và không vô hiệu hóa bất kỳ trigger nào
       const [databaseClock] = await tx.$queryRaw<{ now: Date }[]>`SELECT statement_timestamp() AT TIME ZONE 'UTC' AS now`;
@@ -263,9 +274,10 @@ async function main(): Promise<void> {
         const status = statusFor(index, periodSeed.year);
         const evaluationId = uuid(2000 + (periodSeed.year - 2025) * 100 + index);
         const submittedAt = status === "DRAFT" ? null : new Date(periodSeed.year, 1, 10 + index);
-        const inReview = status === "IN_REVIEW" || status === "NEEDS_SUPPLEMENT" || status === "FINALIZED";
+        const supplemental = ["NEEDS_SUPPLEMENT", "SUPPLEMENT_SUBMITTED", "SUPPLEMENT_EXPIRED"].includes(status);
+        const inReview = status === "IN_REVIEW" || supplemental || status === "FINALIZED";
         const finalized = status === "FINALIZED";
-        const finalScore = finalized ? 210 + (index % 8) * 7 : null;
+        const ratio = finalized ? [0.3, 0.55, 0.75, 0.95][index % 4] : (0.55 + (index % 4) * 0.1);
         const evaluation = await tx.evaluation.create({
           data: { id: evaluationId, periodId: period.id, unitId: unitUser.unitId, status: "DRAFT", createdAt: now, updatedAt: now },
         });
@@ -273,34 +285,35 @@ async function main(): Promise<void> {
         const leafCriteria = criteria.filter((criterion) => criterion.parentId !== null);
         for (const [criterionIndex, criterion] of leafCriteria.entries()) {
           const scoreId = uuid(4000 + (periodSeed.year - 2025) * 1000 + index * 20 + criterionIndex);
-          const seededSelfScore = Math.round(Number(criterion.maxScore) * (0.55 + (index % 4) * 0.1) * 100) / 100;
+          const seededSelfScore = Math.round(Number(criterion.maxScore) * ratio * 100) / 100;
           const score = await tx.criterionScore.upsert({
             where: { evaluationId_criterionId: { evaluationId: evaluation.id, criterionId: criterion.id } },
             update: { selfScore: status === "DRAFT" ? null : seededSelfScore, selfNote: status === "DRAFT" ? null : `Tự đánh giá của ${unitUser.username}.`, adminScore: null, adminComment: null, needsSupplement: false, supplementNote: null, reviewedById: null, reviewedAt: null, updatedAt: now },
             create: { id: scoreId, evaluationId: evaluation.id, criterionId: criterion.id, selfScore: status === "DRAFT" ? null : seededSelfScore, selfNote: status === "DRAFT" ? null : `Tự đánh giá của ${unitUser.username}.`, adminScore: null, adminComment: null, needsSupplement: false, supplementNote: null, reviewedById: null, reviewedAt: null, createdAt: now, updatedAt: now },
           });
 
-          if (status !== "DRAFT" && (!inReview || criterionIndex % 2 === 0)) {
-            await tx.evidence.upsert({
-              where: { id: uuid(6000 + (periodSeed.year - 2025) * 1000 + index * 20 + criterionIndex) },
-              update: { description: "Minh chứng mẫu phục vụ kiểm thử.", previewStatus: "READY" },
-              create: { id: uuid(6000 + (periodSeed.year - 2025) * 1000 + index * 20 + criterionIndex), criterionScoreId: score.id, uploaderId: unitUser.userId, kind: criterionIndex % 2 === 0 ? "FILE" : "LINK", round: "INITIAL", fileName: criterionIndex % 2 === 0 ? `minh-chung-${index + 1}-${criterion.code}.pdf` : null, mimeType: criterionIndex % 2 === 0 ? "application/pdf" : null, sizeBytes: criterionIndex % 2 === 0 ? BigInt(1024 + criterionIndex * 256) : null, storagePath: criterionIndex % 2 === 0 ? `seed/evidences/${evaluation.id}/${criterion.code}.pdf` : null, externalUrl: criterionIndex % 2 === 0 ? null : `https://example.com/evidence/${evaluation.id}/${criterion.code}`, description: "Minh chứng mẫu phục vụ kiểm thử.", previewStatus: criterionIndex % 2 === 0 ? "READY" : "NOT_REQUIRED", previewPath: criterionIndex % 2 === 0 ? `seed/previews/${evaluation.id}/${criterion.code}.png` : null, createdAt: now },
-            });
+          if (status !== "DRAFT") {
+            const evidenceId = uuid(6000 + (periodSeed.year - 2025) * 1000 + index * 20 + criterionIndex);
+            const asset = assets[criterionIndex % assets.length];
+            const storagePath = `final/${evaluation.id}/${evidenceId}`;
+            const filePath = resolve(process.env.STORAGE_LOCAL_DIR ?? ".private-storage", storagePath);
+            await mkdir(dirname(filePath), { recursive: true }); await writeFile(filePath, asset.bytes, { mode: 0o600 });
+            await tx.evidence.create({ data: { id: evidenceId, criterionScoreId: score.id, uploaderId: unitUser.userId, kind: "FILE", round: "INITIAL", fileName: `minh-chung-demo.${asset.extension}`, mimeType: asset.mime, sizeBytes: BigInt(asset.bytes.length), storagePath, description: "Minh chứng do nhóm tự tạo phục vụ diễn tập", previewStatus: asset.extension === "docx" ? "NOT_REQUIRED" : "READY", createdAt: now } });
           }
         }
 
         const dbEvaluationStatus = databaseStatus(status);
         for (const [criterionIndex, criterion] of leafCriteria.entries()) {
-          const criterionSelfScore = Math.round(Number(criterion.maxScore) * (0.55 + (index % 4) * 0.1) * 100) / 100;
-          const adminScore = finalized ? Math.round(criterionSelfScore * 0.95 * 100) / 100 : null;
+          const criterionSelfScore = Math.round(Number(criterion.maxScore) * ratio * 100) / 100;
+          const adminScore = inReview && status !== "IN_REVIEW" ? criterionSelfScore : null;
           await tx.criterionScore.update({
             where: { evaluationId_criterionId: { evaluationId: evaluation.id, criterionId: criterion.id } },
             data: {
               selfScore: status === "DRAFT" ? null : criterionSelfScore,
               adminScore,
               adminComment: adminScore ? "Đã kiểm tra minh chứng." : null,
-              needsSupplement: status === "NEEDS_SUPPLEMENT" && criterionIndex % 2 === 0,
-              supplementNote: status === "NEEDS_SUPPLEMENT" && criterionIndex % 2 === 0 ? "Bổ sung tài liệu còn thiếu." : null,
+              needsSupplement: supplemental && criterionIndex % 2 === 0,
+              supplementNote: supplemental && criterionIndex % 2 === 0 ? "Bổ sung tài liệu còn thiếu." : null,
               reviewedById: inReview ? admin.id : null,
               reviewedAt: inReview ? new Date(periodSeed.year, 1, 18 + index) : null,
               updatedAt: now,
@@ -315,23 +328,25 @@ async function main(): Promise<void> {
           where: { id: evaluation.id }, data: { status: "PENDING_REVIEW", submittedAt, updatedAt: now },
         });
 
-        // Mẫu bổ sung dùng cùng lịch tạm với API, chọn phút tương lai gần nhất trong ngày thường Việt Nam
-        // Cuối tuần dời riêng mốc mẫu sang ngày thường kế tiếp, deadline luôn do helper chính sách tính
-        const supplementStartAt = new Date(now.getTime() + 60_000);
-        while ([0, 6].includes(new Date(+supplementStartAt + 7 * 3600000).getUTCDay())) supplementStartAt.setUTCDate(supplementStartAt.getUTCDate() + 1);
-        const supplementDeadline = calculateSupplementDeadline(supplementStartAt);
-        // Hồ sơ mẫu chờ bổ sung cần baseline nội dung hiện tại để trigger VC12 kiểm được thay đổi thật
-        // Chỉ tác động hồ sơ mới trong seed, lần chạy lại đã bỏ qua hồ sơ có dữ liệu để giữ lịch sử
-        if (status === "NEEDS_SUPPLEMENT") {
+        const requestedAt = new Date(Date.now() - 120_000);
+        const supplementStartAt = new Date(Date.now() - 60_000);
+        const supplementDeadline = new Date(Date.now() + 90 * 60_000);
+        if (supplemental) {
+          await tx.evaluationPeriod.update({ where: { id: period.id }, data: { phase: "SUPPLEMENT" } });
           const flagged = await tx.criterionScore.findMany({ where: { evaluationId: evaluation.id, needsSupplement: true }, include: { evidences: true } });
-          for (const score of flagged) await tx.criterionScore.update({ where: { id: score.id }, data: { supplementBaseline: { ...captureSupplementBaseline(score, now), source: "SEED" } } });
+          for (const score of flagged) await tx.criterionScore.update({ where: { id: score.id }, data: { supplementBaseline: { ...captureSupplementBaseline(score, requestedAt), source: "SEED" } } });
+          await tx.evaluation.update({ where: { id: evaluation.id }, data: { status: "SUPPLEMENT_REQUESTED", firstReviewedAt: requestedAt, supplementRequestedAt: requestedAt, supplementStartAt, supplementDeadline } });
+          if (status === "SUPPLEMENT_SUBMITTED") {
+            for (const score of flagged) await tx.criterionScore.update({ where: { id: score.id }, data: { selfNote: "Đã bổ sung tài liệu demo", supplementedAt: new Date() } });
+            await tx.evaluation.update({ where: { id: evaluation.id }, data: { status: "SUPPLEMENT_SUBMITTED", supplementSubmittedAt: new Date() } });
+          } else if (status === "SUPPLEMENT_EXPIRED") {
+            await tx.evaluation.update({ where: { id: evaluation.id }, data: { status: "SUPPLEMENT_EXPIRED", supplementDeadline: new Date(Date.now() - 1000) } });
+          }
+          await tx.evaluationPeriod.update({ where: { id: period.id }, data: { phase: "SELF_EVAL" } });
+        } else {
+          const [total] = await tx.$queryRaw<{ current_total: { toNumber(): number }; current_percent: { toNumber(): number }; suggested_rating: string }[]>`SELECT current_total, current_percent, suggested_rating FROM v_evaluation_totals WHERE evaluation_id = ${evaluation.id}::uuid`;
+          await tx.evaluation.update({ where: { id: evaluation.id }, data: { status: dbEvaluationStatus, firstReviewedAt: inReview ? now : null, finalizedAt: finalized ? now : null, finalizedById: finalized ? admin.id : null, finalScore: finalized ? total.current_total.toNumber() : null, finalPercent: finalized ? total.current_percent.toNumber() : null, finalRating: finalized ? total.suggested_rating : null, updatedAt: now } });
         }
-        // Nhánh mẫu đã chốt đi trực tiếp từ chờ duyệt, không giả mốc nộp bổ sung khi chưa có vòng bổ sung
-        // Mốc supplementSubmittedAt chỉ được use-case nộp thật cấp trong cửa sổ snapshot hợp lệ
-        await tx.evaluation.update({
-          where: { id: evaluation.id },
-          data: { status: dbEvaluationStatus, submittedAt, firstReviewedAt: inReview ? new Date(periodSeed.year, 1, 18 + index) : null, supplementRequestedAt: status === "NEEDS_SUPPLEMENT" ? now : null, supplementStartAt: status === "NEEDS_SUPPLEMENT" ? supplementStartAt : null, supplementDeadline: status === "NEEDS_SUPPLEMENT" ? supplementDeadline : null, supplementSubmittedAt: null, finalizedAt: finalized ? new Date(periodSeed.year, 3, 10 + index) : null, finalizedById: finalized ? admin.id : null, finalScore, finalPercent: finalScore ? Number(finalScore) / 3 : null, finalRating: finalScore ? (Number(finalScore) >= 255 ? "EXCELLENT" : "GOOD") : null, updatedAt: now },
-        });
 
         for (const [historyIndex, toStatus] of statusChain(status).entries()) {
           // status_histories là bảng chỉ-thêm (trigger chặn UPDATE/DELETE): chạy lại seed thì bỏ qua dòng đã có
@@ -349,19 +364,12 @@ async function main(): Promise<void> {
         await tx.notification.upsert({
           where: { id: uuid(10000 + (periodSeed.year - 2025) * 100 + index) },
           update: { title: `Cập nhật hồ sơ ${periodSeed.year}`, body: `Hồ sơ của ${unitUser.username} đang ở trạng thái ${status}.`, isRead: index % 3 === 0 },
-          create: { id: uuid(10000 + (periodSeed.year - 2025) * 100 + index), userId: unitUser.userId, channel: index % 2 === 0 ? "SYSTEM" : "WEB_PUSH", type: "EVALUATION_STATUS_CHANGED", title: `Cập nhật hồ sơ ${periodSeed.year}`, body: `Hồ sơ của ${unitUser.username} đang ở trạng thái ${status}.`, refType: "EVALUATION", refId: evaluation.id, isRead: index % 3 === 0, scheduledAt: null, sentAt: index % 3 === 0 ? now : null, createdAt: now },
+          create: { id: uuid(10000 + (periodSeed.year - 2025) * 100 + index), userId: unitUser.userId, channel: "SYSTEM", type: "EVALUATION_STATUS_CHANGED", title: `Cập nhật hồ sơ ${periodSeed.year}`, body: `Hồ sơ của ${unitUser.username} đang ở trạng thái ${status}.`, refType: "EVALUATION", refId: evaluation.id, isRead: index % 3 === 0, scheduledAt: null, sentAt: null, createdAt: now },
         });
 
         // audit_logs là bảng chỉ-thêm (trigger chặn UPDATE/DELETE): chạy lại seed thì bỏ qua dòng đã có
         await tx.auditLog.createMany({ data: [{ id: uuid(12000 + (periodSeed.year - 2025) * 100 + index), actorId: status === "DRAFT" ? unitUser.userId : admin.id, action: "SEED_EVALUATION", entity: "Evaluation", entityId: evaluation.id, after: { status, periodYear: periodSeed.year }, ip: "127.0.0.1", createdAt: now }], skipDuplicates: true });
 
-        if (index < 3) {
-          await tx.reportExport.upsert({
-            where: { id: uuid(14000 + (periodSeed.year - 2025) * 100 + index) },
-            update: { storagePath: `seed/reports/${periodSeed.year}/${unitUser.username}.xlsx` },
-            create: { id: uuid(14000 + (periodSeed.year - 2025) * 100 + index), periodId: period.id, evaluationId: evaluation.id, reportType: "UNIT_APPRAISAL_MINUTES", format: index % 2 === 0 ? "XLSX" : "PDF", storagePath: `seed/reports/${periodSeed.year}/${unitUser.username}.${index % 2 === 0 ? "xlsx" : "pdf"}`, createdById: admin.id, createdAt: now },
-          });
-        }
       }
 
       // Khôi phục lịch, phase và mốc chốt mẫu sau khi mọi hồ sơ mới hoàn chỉnh, không commit kỳ SELF_EVAL tạm
@@ -371,20 +379,31 @@ async function main(): Promise<void> {
       });
     }
 
-    const tokenUsers = [admin.id, ...unitUsers.slice(0, 6).map((user) => user.userId)];
-    for (const [index, userId] of tokenUsers.entries()) {
-      await tx.refreshToken.upsert({
-        where: { tokenHash: `seed-refresh-token-hash-${index}` },
-        update: { expiresAt: new Date("2027-01-01T00:00:00.000Z"), revokedAt: index % 3 === 0 ? now : null },
-        create: { id: uuid(15000 + index), userId, tokenHash: `seed-refresh-token-hash-${index}`, expiresAt: new Date("2027-01-01T00:00:00.000Z"), revokedAt: index % 3 === 0 ? now : null, createdAt: now },
-      });
-      await tx.webPushSubscription.upsert({
-        where: { endpoint: `https://push.example.test/subscription/${index}` },
-        update: { userId, userAgent: "Seed Browser", revokedAt: index % 4 === 0 ? now : null, updatedAt: now },
-        create: { id: uuid(16000 + index), userId, endpoint: `https://push.example.test/subscription/${index}`, p256dh: `seed-p256dh-${index}`, auth: `seed-auth-${index}`, expirationTime: null, userAgent: "Seed Browser", createdAt: now, updatedAt: now, revokedAt: index % 4 === 0 ? now : null },
+  }, { maxWait: 10_000, timeout: 120_000 });
+
+  // Hai kỳ live chỉ tạo khi được yêu cầu, không đổi lịch của lần seed trước
+  if (process.env.SEED_LIVE_PERIODS === "true") {
+    for (const [position, year] of [2027, 2028].entries()) {
+      if (await prisma.evaluationPeriod.findUnique({ where: { year } })) continue;
+      const timestamp = new Date(); const admin = await prisma.user.findUniqueOrThrow({ where: { username: adminUsername } });
+      await prisma.$transaction(async (tx) => {
+        const periodId = uuid(18000 + position);
+        await tx.evaluationPeriod.create({ data: { id: periodId, year, name: position === 0 ? "Demo kỳ nháp chưa công bố" : "Demo mở sau hai phút", phase: "SETUP", maxTotalScore: 300, selfEvalStart: new Date(+timestamp + 120000), selfEvalDeadline: new Date(+timestamp + 86400000), publishedAt: position === 1 ? timestamp : null, createdById: admin.id, createdAt: timestamp, updatedAt: timestamp } });
+        await tx.ratingThreshold.createMany({ data: thresholds.map((row) => ({ ...row, id: uuid(18100 + position * 10 + thresholds.indexOf(row)), periodId })) });
+        const parentIds = new Map<string, string>(); const leaves: string[] = [];
+        for (const [index, definition] of criterionDefinitions.entries()) {
+          const id = uuid(18200 + position * 100 + index); const parentCode = definition.code.length > 1 ? definition.code[0] : null;
+          await tx.criterion.create({ data: { id, periodId, code: definition.code, name: definition.name, maxScore: definition.maxScore, parentId: parentCode ? parentIds.get(parentCode) : null, sortOrder: index, evidenceRequired: false, createdAt: timestamp, updatedAt: timestamp } });
+          if (definition.parent) parentIds.set(definition.code, id); else leaves.push(id);
+        }
+        if (position === 1) for (const [index, unit] of units.entries()) {
+          const evaluationId = uuid(19000 + index);
+          await tx.evaluation.create({ data: { id: evaluationId, periodId, unitId: unit.id, status: "DRAFT", createdAt: timestamp, updatedAt: timestamp } });
+          await tx.criterionScore.createMany({ data: leaves.map((criterionId, leafIndex) => ({ id: uuid(20000 + index * 20 + leafIndex), evaluationId, criterionId, createdAt: timestamp, updatedAt: timestamp })) });
+        }
       });
     }
-  }, { maxWait: 10_000, timeout: 120_000 });
+  }
 
   if (generatedCredentials.length > 0) {
     if (!credentialsFile) throw new Error("Cần cấu hình SEED_CREDENTIALS_FILE để lưu thông tin tài khoản mẫu");
@@ -392,7 +411,7 @@ async function main(): Promise<void> {
     await writeFile(filePath, `${JSON.stringify(generatedCredentials, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     console.info("Đã lưu thông tin tài khoản mẫu, cần bảo quản an toàn và xóa sau khi sử dụng");
   }
-  console.info(`Đã tạo dữ liệu mẫu cho ${units.length} đơn vị, ${unitUsersCount()} tài khoản và 2 kỳ đánh giá`);
+  console.info(`Đã tạo dữ liệu mẫu cho ${units.length} đơn vị, ${unitUsersCount()} tài khoản; hai kỳ lịch sử${process.env.SEED_LIVE_PERIODS === "true" ? " và hai kỳ live" : ""}`);
 }
 
 function unitUsersCount(): number {

@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - dev
+      - fix/admin-unit-ui
+  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -64,12 +66,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: be/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm ci --prefix ../fe
 
       - name: Generate Prisma Client
         run: npx prisma generate
@@ -179,7 +183,7 @@ jobs:
         run: |
           PGPASSWORD=ci createdb -h localhost -U ci vc12_test
           DATABASE_URL="$VC12_TEST_DATABASE_URL" npx prisma migrate deploy
-          node --import tsx --test --test-concurrency=1 test/integration/vc12.review.test.ts test/integration/vc12.workflow.test.ts
+          node --import tsx --test --test-concurrency=1 test/integration/vc12.review.test.ts test/integration/vc12.workflow.test.ts test/integration/custom-thresholds.test.ts test/integration/generated-import.test.ts
 
       # Nâng cấp riêng từ SQL nền để chứng minh cột baseline không làm mất dữ liệu đang tồn tại
       # Database mới chỉ phục vụ phép nâng cấp, test từ chối chạy lại trên schema đã nâng cấp
@@ -191,7 +195,7 @@ jobs:
           node --import tsx --test test/integration/vc12.migration.test.ts
 
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=critical
+        run: npm audit --audit-level=high
 
       - name: Build backend
         run: npm run build
@@ -248,7 +252,7 @@ jobs:
         run: |
           docker run -d --name vc17-postgres -e POSTGRES_USER=vc17 -e POSTGRES_PASSWORD=vc17_test -e POSTGRES_DB=vc17_control_test -p 127.0.0.1:55433:5432 postgres:16-alpine -c shared_preload_libraries=pg_stat_statements -c log_min_duration_statement=250 -c track_io_timing=on
           docker run -d --name vc17-mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
-          for attempt in {1..30}; do
+          for _ in {1..30}; do
             if docker exec vc17-postgres pg_isready -h 127.0.0.1 -U vc17 -d vc17_control_test; then exit 0; fi
             sleep 1
           done
@@ -264,6 +268,7 @@ jobs:
             be/.tmp/vc17-artifacts
             be/.tmp/vc17-coverage
             be/.tmp/vc16-artifacts
+            be/.tmp/vc15-artifacts
 
   frontend-ci:
     name: Frontend CI
@@ -290,6 +295,9 @@ jobs:
 
       - name: Run frontend unit tests
         run: npm test
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
 
       - name: Build frontend
         run: npm run build

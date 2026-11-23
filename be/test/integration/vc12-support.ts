@@ -99,14 +99,14 @@ export async function createVc12Harness(database = { url: process.env.VC12_TEST_
    * count chọn số hồ sơ, maximum chọn thang điểm, selfScores cho điểm hai lá, đầu ra chứa ID và phiên fixture để gọi HTTP
    * submitted=false giữ DRAFT hợp lệ để VC17 đo tải ghi, không hoàn tác hồ sơ đã nộp hoặc tắt trigger
    */
-  async function scenario(count = 1, maximum = 100, selfScores = [50, 35], submitted = true) {
+  async function scenario(count = 1, maximum = 100, selfScores = [50, 35], submitted = true, ratingPercents = [85, 65, 50, 0]) {
     const timestamp = new Date(); const key = randomUUID().slice(0, 8);
     const periodId = randomUUID(); const parentId = randomUUID(); const leaf1 = randomUUID(); const leaf2 = randomUUID();
     const year = await prisma.evaluationPeriod.aggregate({ _max: { year: true } });
     await prisma.evaluationPeriod.create({ data: { id: periodId, year: Math.max(2050, (year._max.year ?? 2049) + 1), name: `Kỳ VC12 ${key}`, phase: "SELF_EVAL", maxTotalScore: maximum, publishedAt: timestamp, selfEvalStart: new Date(+timestamp - 60000), selfEvalDeadline: new Date(+timestamp + 3600000), createdById: adminId, createdAt: timestamp, updatedAt: timestamp } });
     await prisma.criterion.create({ data: { id: parentId, periodId, code: "G", name: "Nhóm tiêu chí", maxScore: maximum, sortOrder: 0, createdAt: timestamp, updatedAt: timestamp } });
     await prisma.criterion.createMany({ data: [{ id: leaf1, code: "A", maxScore: maximum === 100 ? 60 : maximum }, { id: leaf2, code: "B", maxScore: maximum === 100 ? 40 : maximum }].map((item, index) => ({ ...item, periodId, parentId, name: `Tiêu chí ${item.code}`, evidenceRequired: false, sortOrder: index, createdAt: timestamp, updatedAt: timestamp })) });
-    await prisma.ratingThreshold.createMany({ data: [{ rating: "EXCELLENT", minPercent: 85, minExclusive: true }, { rating: "GOOD", minPercent: 65, minExclusive: false }, { rating: "PASS", minPercent: 50, minExclusive: false }, { rating: "FAIL", minPercent: 0, minExclusive: false }].map((item) => ({ ...item, id: randomUUID(), periodId, label: ({ EXCELLENT: "Xuất sắc", GOOD: "Tốt", PASS: "Đạt", FAIL: "Chưa đạt" } as Record<string, string>)[item.rating] })) });
+    await prisma.ratingThreshold.createMany({ data: [{ rating: "EXCELLENT", minPercent: 85, minExclusive: true }, { rating: "GOOD", minPercent: 65, minExclusive: false }, { rating: "PASS", minPercent: 50, minExclusive: false }, { rating: "FAIL", minPercent: 0, minExclusive: false }].map((item, position) => ({ ...item, minPercent: ratingPercents[position], id: randomUUID(), periodId, label: ({ EXCELLENT: "Xuất sắc", GOOD: "Tốt", PASS: "Đạt", FAIL: "Chưa đạt" } as Record<string, string>)[item.rating] })) });
     const records = [];
     for (let index = 0; index < count; index++) {
       const unitId = randomUUID(); const userId = randomUUID(); const evaluationId = randomUUID(); const unitUsername = `vc12-unit-${key}-${index}`;
@@ -140,7 +140,7 @@ export async function createVc12Harness(database = { url: process.env.VC12_TEST_
   /** Tạo yêu cầu qua API thật rồi mở cửa sổ fixture riêng để kiểm mà không phải chờ nhiều ngày */
   async function supplement(s: Awaited<ReturnType<typeof scenario>>, position = 0, both = false) {
     const { evaluationId } = s.records[position]; await firstReview(evaluationId);
-    const body = { supplementStartAt: futureWeekday(), items: (both ? [s.leaf1, s.leaf2] : [s.leaf1]).map((criterionId) => ({ criterionId, note: "Bổ sung báo cáo và minh chứng" })) };
+    const body = { supplementStartAt: futureWeekday(6), supplementDeadline: new Date(Date.parse(futureWeekday(6)) + 90 * 60000).toISOString(), items: (both ? [s.leaf1, s.leaf2] : [s.leaf1]).map((criterionId) => ({ criterionId, note: "Bổ sung báo cáo và minh chứng" })) };
     const response = await request("POST", `admin/evaluations/${evaluationId}/supplement-request`, adminToken, body);
     assert.equal(response.status, 200, JSON.stringify(response.body));
     await prisma.evaluation.update({ where: { id: evaluationId }, data: { supplementStartAt: new Date(Date.now() - 60000), supplementDeadline: new Date(Date.now() + 3600000) } });

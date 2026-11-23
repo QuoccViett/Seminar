@@ -9,19 +9,12 @@ export type SelfEvaluationWindow = {
   phase: string;
 };
 
-const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
-
-/** Tính hạn loại trừ của lịch bổ sung tạm từ ngày giờ mở có múi giờ rõ ràng
- * Dùng UTC cộng bảy giờ để xác định ngày Việt Nam, không phụ thuộc timezone tiến trình hoặc supplementHours
- * Thứ Hai–thứ Năm đóng hết ngày kế tiếp, thứ Sáu đóng hết chính ngày, cuối tuần bị từ chối
- * Hàm thuần được dùng chung bởi API, preview và seed để không sinh lịch mẫu sai chính sách
- */
-export function calculateSupplementDeadline(supplementStartAt: Date): Date {
-  if (!Number.isFinite(supplementStartAt.getTime())) throw new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message: "Thời gian mở bổ sung không hợp lệ" });
-  const vietnamDate = new Date(supplementStartAt.getTime() + VIETNAM_OFFSET_MS);
-  const weekday = vietnamDate.getUTCDay();
-  if (weekday === 0 || weekday === 6) throw new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message: "Ngày mở bổ sung chỉ được chọn từ thứ Hai đến thứ Sáu" });
-  return new Date(Date.UTC(vietnamDate.getUTCFullYear(), vietnamDate.getUTCMonth(), vietnamDate.getUTCDate() + (weekday === 5 ? 1 : 2)) - VIETNAM_OFFSET_MS);
+/** Kiểm cặp mốc Admin chọn, giữ mọi ngày giờ và không tự tính lại hạn đã thông báo */
+export function validateSupplementSchedule(start: Date, deadline: Date): Date {
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(deadline.getTime()) || start >= deadline) {
+    throw new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message: "Thời gian mở bổ sung phải hợp lệ và sớm hơn thời hạn kết thúc" });
+  }
+  return new Date(deadline);
 }
 
 @Injectable()
@@ -35,13 +28,9 @@ export class DeadlineCalculator {
     return configuredDeadline ? new Date(configuredDeadline) : null;
   }
 
-  /** Tính hạn bổ sung loại trừ theo phương án tạm ngày 17/11/2026
-   * supplementStartAt là mốc do Admin chọn và đã được API lưu theo UTC
-   * Thứ Hai đến thứ Năm kết thúc lúc 00:00 sau ngày kế tiếp, thứ Sáu kết thúc lúc 00:00 ngày kế tiếp
-   * Ngày mở cuối tuần hoặc ngày không hợp lệ bị từ chối để không tự dời sang thứ Hai
-   */
-  supplementDeadline(supplementStartAt: Date): Date {
-    return calculateSupplementDeadline(supplementStartAt);
+  /** Giữ hạn được Admin chọn sau khi kiểm cặp mốc tăng dần */
+  supplementDeadline(start: Date, deadline: Date): Date {
+    return validateSupplementSchedule(start, deadline);
   }
 
   /** So sánh hạn loại trừ với thời gian server hoặc clock kiểm thử được truyền vào

@@ -13,11 +13,23 @@
     "src/common/interceptors/*.ts",
     "src/common/pipes/*.ts",
     "src/common/services/*.ts",
-    "src/common/utils/*.ts"
+    "src/common/utils/*.ts",
+    "src/modules/evaluation-periods/*policy.ts",
+    "src/common/middleware/http-security.ts"
   ],
-  "exclude": ["**/*.spec.ts", "**/generated/**"],
-  "extension": [".ts"],
-  "reporter": ["text", "json-summary", "json", "html"],
+  "exclude": [
+    "**/*.spec.ts",
+    "**/generated/**"
+  ],
+  "extension": [
+    ".ts"
+  ],
+  "reporter": [
+    "text",
+    "json-summary",
+    "json",
+    "html"
+  ],
   "reports-dir": ".tmp/vc17-coverage",
   "temp-directory": ".tmp/vc17-v8",
   "check-coverage": true,

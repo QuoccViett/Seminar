@@ -4,54 +4,33 @@ import { DeadlineCalculator } from "./deadline-calculator.js";
 
 const calculator = new DeadlineCalculator({ now: () => new Date("2026-11-18T00:00:00.000Z") } as never);
 
-/** So sánh các mốc mẫu của phương án tạm bằng instant UTC tương ứng với giờ Việt Nam
- * Mỗi đầu vào là một ngày mở hợp lệ từ thứ Hai đến thứ Sáu
- * Kỳ vọng thứ Hai đến thứ Năm kết thúc hết ngày kế tiếp, còn thứ Sáu kết thúc trong ngày
- */
-test("lịch bổ sung tạm tính hạn cuối tuần theo ngày mở Việt Nam", () => {
-  const examples = [
-    ["2026-11-16T00:00:00.000Z", "2026-11-17T17:00:00.000Z"],
-    ["2026-11-17T00:00:00.000Z", "2026-11-18T17:00:00.000Z"],
-    ["2026-11-18T00:00:00.000Z", "2026-11-19T17:00:00.000Z"],
-    ["2026-11-19T00:00:00.000Z", "2026-11-20T17:00:00.000Z"],
-    ["2026-11-20T00:00:00.000Z", "2026-11-20T17:00:00.000Z"],
-  ];
-  for (const [start, expected] of examples) {
-    assert.equal(calculator.supplementDeadline(new Date(start!)).toISOString(), expected);
+/** Mọi ngày trong tuần và mọi thời lượng dương giữ nguyên hai mốc Admin chọn */
+test("lịch bổ sung giữ cuối tuần, qua năm và khoảng dưới bảy ngày", () => {
+  for (let day = 0; day < 7; day += 1) {
+    const begin = new Date(Date.parse("2026-11-16T23:30:00+07:00") + day * 86400000);
+    for (const duration of [1, 45 * 60000, 10 * 86400000]) {
+      const deadline = new Date(+begin + duration);
+      assert.equal(calculator.supplementDeadline(begin, deadline).getTime(), +deadline);
+    }
+  }
+  for (const [start, end] of [
+    ["2026-11-21T23:30:00+07:00", "2026-11-22T00:15:00+07:00"],
+    ["2026-11-22T08:00:00+07:00", "2026-11-22T08:01:00+07:00"],
+    ["2026-12-31T23:59:00+07:00", "2027-01-10T09:30:00+07:00"],
+  ]) {
+    const begin = new Date(start!); const deadline = new Date(end!);
+    assert.equal(calculator.supplementDeadline(begin, deadline).toISOString(), deadline.toISOString());
+    assert.equal(begin.toISOString(), new Date(start!).toISOString());
   }
 });
 
-/** Không tự chuyển ngày cuối tuần sang thứ Hai và từ chối ngày không hợp lệ
- * Hai ngày cuối tuần được biểu diễn theo giờ UTC tương ứng với giờ Việt Nam
- * Lỗi có status HTTP 400 và câu tiếng Việt do service quản lý
- */
-test("lịch bổ sung tạm từ chối cuối tuần và ngày không hợp lệ", () => {
-  for (const value of ["2026-11-21T00:00:00.000Z", "2026-11-22T00:00:00.000Z", "invalid"]) {
-    assert.throws(() => calculator.supplementDeadline(new Date(value)), (error: unknown) =>
-      (error as { getStatus(): number }).getStatus() === 400,
-    );
+/** Cửa sổ rỗng, ngược và ngày không tồn tại không thể được dùng để cấp quyền */
+test("lịch bổ sung chặn hai mốc không hợp lệ", () => {
+  const start = new Date("2026-11-21T08:00:00Z");
+  for (const end of [start, new Date(+start - 1), new Date("invalid")]) {
+    assert.throws(() => calculator.supplementDeadline(start, end));
   }
-});
-
-/** Giữ đúng phút mở trong lịch nhưng kết thúc vào ranh giới nửa đêm loại trừ
- * Thứ Sáu lúc 23:30 giờ Việt Nam còn ba mươi phút đến deadline dự kiến
- * Kết quả không cộng giờ liên tục từ lúc mở
- */
-test("lịch bổ sung thứ Sáu mở muộn vẫn hết hạn lúc nửa đêm Việt Nam", () => {
-  assert.equal(calculator.supplementDeadline(new Date("2026-11-20T16:30:00.000Z")).toISOString(), "2026-11-20T17:00:00.000Z");
-  assert.equal(calculator.supplementDeadline(new Date("2026-11-20T16:59:00.000Z")).toISOString(), "2026-11-20T17:00:00.000Z");
-});
-
-/** Kiểm tra lịch qua năm và giữ nguyên đầu vào khi tính nhiều lần
- * Thứ Năm cuối năm tại Việt Nam phải kết thúc sau hết thứ Sáu đầu năm kế tiếp
- * Cùng một Date phải cho cùng kết quả dù người gọi tái sử dụng đối tượng
- */
-test("lịch bổ sung qua năm không thay đổi đầu vào", () => {
-  const start = new Date("2026-12-31T00:00:00.000Z");
-  for (let index = 0; index < 2; index += 1) {
-    assert.equal(calculator.supplementDeadline(start).toISOString(), "2027-01-01T17:00:00.000Z");
-    assert.equal(start.toISOString(), "2026-12-31T00:00:00.000Z");
-  }
+  assert.throws(() => calculator.supplementDeadline(new Date("invalid"), start));
 });
 
 /** Khóa quyền INITIAL tại deadline hoặc giai đoạn terminal dù scheduler chưa chạy

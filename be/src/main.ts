@@ -8,6 +8,7 @@ import { createApiValidationPipe } from "./common/pipes/api-validation.pipe.js";
 import { ApiSerializationInterceptor } from "./common/interceptors/api-serialization.interceptor.js";
 import helmet from "helmet";
 import express from "express";
+import { installHttpSecurity } from "./common/middleware/http-security.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -33,8 +34,11 @@ async function bootstrap(): Promise<void> {
       },
     }),
   );
-  app.use(express.json({ limit: "10mb" }));
-  app.getHttpAdapter().getInstance().set("trust proxy", 1);
+  app.use(express.json({ limit: "1mb" }));
+  installHttpSecurity(app.getHttpAdapter().getInstance(), {
+    trustProxy: config.get<string>("TRUST_PROXY") || false,
+    rateLimit: config.get<boolean>("RATE_LIMIT_ENABLED", true),
+  });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new ApiSerializationInterceptor());
   // Giới hạn parser được cài trước bộ lọc và pipe để lỗi đầu vào vẫn theo contract
@@ -112,7 +116,7 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  SwaggerModule.setup("api/docs", app, swaggerDocument, {
+  if (config.get<boolean>("SWAGGER_ENABLED", true)) SwaggerModule.setup("api/docs", app, swaggerDocument, {
     jsonDocumentUrl: "api/docs-json",
     swaggerOptions: { persistAuthorization: true },
   });

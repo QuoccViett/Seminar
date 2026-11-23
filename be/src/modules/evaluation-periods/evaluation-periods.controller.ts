@@ -48,15 +48,15 @@ export class EvaluationPeriodsController {
   ) {}
 
   /** Xem trước lịch bổ sung tạm bằng giờ Việt Nam, không tạo yêu cầu cho đơn vị
-   * Body chỉ nhận mốc mở có múi giờ, service tự tính hạn và từ chối cuối tuần
+   * Body nhận hai mốc có múi giờ, chấp nhận mọi ngày trong tuần
    * Route chuyên dụng đặt trước route UUID để không nhầm preview thành mã kỳ
    */
   @Post("supplement-schedule/preview")
   @Roles("ADMIN")
   @HttpCode(200)
-  @ApiOperation({ summary: "[ADMIN] Xem trước giờ mở và hạn bổ sung theo lịch tạm của ngày Việt Nam" })
+  @ApiOperation({ summary: "[ADMIN] Xem trước giờ mở và hạn bổ sung với hai mốc Admin tự chọn" })
   previewSupplement(@Body() dto: PreviewSupplementScheduleDto) {
-    return this.workflow.previewSupplement(dto.supplementStartAt);
+    return this.workflow.previewSupplement(dto.supplementStartAt, dto.supplementDeadline);
   }
 
   /** Đọc các đích giai đoạn được phép theo điều kiện do backend kiểm tra
@@ -203,7 +203,7 @@ export class EvaluationPeriodsController {
         properties: {
           rating: { type: "string", enum: ["EXCELLENT", "GOOD", "PASS", "FAIL"] },
           label: { type: "string", example: "Xuất sắc" },
-          minPercent: { type: "number", enum: [85, 65, 50, 0] },
+          minPercent: { type: "number", minimum: 0, maximum: 100, multipleOf: 0.01, description: "FAIL = 0 < PASS < GOOD < EXCELLENT < 100; EXCELLENT dùng >, các mức khác dùng >=" },
           minExclusive: { type: "boolean", description: "true cho EXCELLENT; false cho các mức còn lại" },
           color: { type: "string", nullable: true, example: "#16a34a" },
         },

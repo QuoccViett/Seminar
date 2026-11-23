@@ -64,7 +64,7 @@ export default function AdminDashboard() {
     { title: "Đơn vị", dataIndex: "unitName" },
     { title: "Tự chấm", dataIndex: "selfTotal", render: formatNumber },
     { title: "Điểm hiệu lực", dataIndex: "currentTotal", render: formatNumber },
-    { title: "Xếp loại", render: (_, row) => <Space><Tag color={row.ratingColor ?? "default"}>{row.ratingLabel ?? "Chưa xếp loại"}</Tag>{!row.isFinal && <Tag>Tạm tính</Tag>}</Space> },
+    { title: "Xếp loại", render: (_, row) => <Space><Tag color={row.ratingColor ?? "default"} style={{ backgroundColor: "#ffffff", color: "#0f172a", borderLeftWidth: 4 }}>{row.ratingLabel ?? "Chưa xếp loại"}</Tag>{!row.isFinal && <Tag>Tạm tính</Tag>}</Space> },
     { title: "Trạng thái", dataIndex: "status", render: (value) => statusLabels[value] ?? "Chưa xác định" },
     { title: "Hồ sơ", render: (_, row) => <Button type="link" onClick={() => navigate(`/admin/records?periodId=${periodId}&evaluationId=${row.evaluationId}`)}>Xem chi tiết</Button> },
   ];
