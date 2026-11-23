@@ -23,7 +23,7 @@ export default function LoginPage() {
     if (identity.mustChangePassword) return "/change-password";
     const prefix = identity.role === "ADMIN" ? "/admin/" : "/unit/";
     const from = location.state?.from;
-    return from?.pathname?.startsWith(prefix) ? `${from.pathname}${from.search ?? ""}` : identity.role === "ADMIN" ? "/admin/dashboard" : "/unit/records";
+    return from?.pathname?.startsWith(prefix) ? `${from.pathname}${from.search ?? ""}` : identity.role === "ADMIN" ? "/admin/dashboard" : "/unit/dashboard";
   };
 
   if (user) {

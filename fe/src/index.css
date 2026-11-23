@@ -30,17 +30,17 @@ html, body, #root {
   background-color: #999;
 }
 
-/* Khung đơn vị co giãn trên điện thoại, bảng nghiệp vụ có thanh cuộn riêng không tràn viewport */
-.unit-header, .unit-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 12px 24px; background: white; }
-.unit-header { justify-content: space-between; }
-.unit-nav { border-bottom: 1px solid #ddd; }
-.unit-nav a[aria-current="page"] { font-weight: 700; text-decoration: underline; }
-.unit-content { padding: 24px; min-width: 0; }
 .ant-layout { min-width: 0; }
 .ant-table-wrapper { max-width: 100%; overflow-x: auto; }
+.ant-table-wrapper .ant-table-thead > tr > th {
+  text-align: center;
+  background: #e4e9ee !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  text-align: center !important;
+}
 button:focus-visible, a:focus-visible { outline: 3px solid #1677ff; outline-offset: 3px; }
 @media (max-width: 700px) {
-  .unit-content, .unit-header, .unit-nav { padding: 12px; }
   .ant-space { max-width: 100%; }
   /* Gỡ min-width cố định của bộ lọc quản trị trên điện thoại, giữ bảng rộng trong vùng cuộn riêng */
   .ant-space-item { min-width: 0; max-width: 100%; }

@@ -1,0 +1,139 @@
+.layoutContainer {
+  height: 100dvh;
+  overflow: hidden;
+  background: #f9f9f9;
+}
+
+.sider {
+  height: 100dvh;
+  overflow-y: auto;
+  background: #eef6ff !important;
+  border-right: 1px solid #dbeafe;
+}
+
+.siderHeader {
+  height: 72px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #dbeafe;
+}
+
+.logoText {
+  color: #111;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.collapseBtn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.collapseBtn:hover {
+  color: #133091;
+  background: #a1bfe5;
+}
+
+.sider :global(.ant-menu-light) {
+  margin-top: 12px;
+  background: transparent !important;
+  border-right: 0 !important;
+}
+
+.sider :global(.ant-menu-item) {
+  width: calc(100% - 24px);
+  height: 48px !important;
+  margin: 4px 12px;
+  color: #333;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 48px !important;
+  border-radius: 8px;
+}
+
+.sider :global(.ant-menu-item .anticon) {
+  margin-right: 12px;
+  font-size: 18px;
+}
+
+.sider :global(.ant-menu-item-selected) {
+  color: #1625a8 !important;
+  font-weight: 600;
+  background: #c2e1f8 !important;
+}
+
+.mainLayout {
+  min-width: 0;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.header {
+  height: 64px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  color: #333;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.userInfo span:last-child {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content {
+  height: calc(100dvh - 64px);
+  padding: 24px;
+  overflow: auto;
+  background: transparent;
+}
+
+.innerContent {
+  min-height: 100%;
+  padding: 24px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+@media (max-width: 700px) {
+  .header { padding: 0 12px; }
+  .content { padding: 8px; }
+  .innerContent { padding: 12px; }
+  .userInfo span:last-child { max-width: 130px; }
+}

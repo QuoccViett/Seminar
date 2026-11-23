@@ -37,6 +37,9 @@ export const evaluationPeriodService = {
    */
   updateEvaluationPeriod: (periodId, data) => apiClient.patch(`/evaluation-periods/${periodId}`, data),
 
+  /** Xóa kỳ nháp chưa có hồ sơ hoặc báo cáo; backend kiểm tra điều kiện và ghi audit */
+  deleteEvaluationPeriod: (periodId) => apiClient.delete(`/evaluation-periods/${periodId}`),
+
   /** Công bố cấu hình đã đủ lịch, tiêu chí và ngưỡng
    * periodId là UUID kỳ cần công bố
    * Máy chủ tự gắn thời điểm công bố rồi trả kỳ được cập nhật

@@ -28,7 +28,7 @@ export default function ChangePasswordPage() {
     try {
       await changePassword(values.currentPassword, values.newPassword);
       message.success("Đổi mật khẩu thành công!");
-      const defaultRoute = user.role === "ADMIN" ? "/admin/dashboard" : "/unit/records";
+      const defaultRoute = user.role === "ADMIN" ? "/admin/dashboard" : "/unit/dashboard";
       navigate(defaultRoute, { replace: true });
     } catch (error) {
       // Gắn lỗi vào đúng trường nếu backend trả chi tiết, đồng thời giữ thông báo tổng quát
