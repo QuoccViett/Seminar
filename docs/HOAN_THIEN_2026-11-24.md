@@ -18,11 +18,21 @@ Kiểm độc lập trên Ant Design đang cài xác nhận khi có spinner, nú
 
 Đồng thời bỏ hai nhãn “lịch bổ sung tạm/chờ giảng viên xác nhận” ở màn review và tự chấm, hiển thị chính xác hai mốc UTC đã lưu theo giờ Việt Nam. Browser local trên DB mới đã đạt 20/20 sau sửa nhãn; sáu test component/trang đã kiểm lại đạt sau thêm assertion loading, lint FE và lint/syntax browser đạt. CI của bản sửa cần đối chiếu đúng commit mới. Giữ lại artifact CI lỗi và lượt local riêng; kết quả run cuối được ghi tại mục 14 của [checklist hiện hành](../../../TaiLieu/KE_HOACH_VIBE_CODING_TOAN_BO_DO_AN.md) và [Actions của nhánh](https://github.com/giahan358/Seminar/actions?query=branch%3Afix%2Fadmin-unit-ui).
 
+[CI 45254807016](https://github.com/giahan358/Seminar/actions/runs/45254807016) của `a5ab74de71c5bf18760a5b446c2fc0b20f01284d` đã đạt cả bốn job sau sửa loading: manifest 42/42, complete=true, browser 20/20, coverage 96,19% dòng/89,95% nhánh. Artifact `14857308574` đã đối chiếu SHA-256 `fee24e9038e42bb8cf9a9ced48f0a6c787decbf50a4120b645ba69ce471d6804`. Run lỗi `6e2209b` giữ nguyên để đối chiếu.
+
+### Kiểm lại ảnh responsive và các DB local
+
+Ảnh sau API có thể vẫn chụp lúc React đang loading; công cụ kiểm restore đã được sửa để chờ dashboard có “Tổng hồ sơ kỳ”, UNIT có kết quả 75 điểm và nhãn lịch hiện hành trước khi chụp/đo mobile. Ảnh có dữ liệu phát hiện vùng tài khoản UNIT bị Space xuống hàng dưới header; CSS mobile ADMIN/UNIT giữ tiêu đề một dòng, vùng thao tác không co/xuống hàng và thu gọn tên cạnh avatar. Script kiểm thêm bounding box của nút tài khoản phải nằm trong header và viewport.
+
+Đã dựng lại frontend Docker và chạy phép kiểm tăng cường trên HTTPS source `18443` và restore `18444`: hai vai trò/login/me, 75/GOOD, hash minh chứng và ba báo cáo, nhãn hai mốc hiện hành, dữ liệu desktop/mobile 390 px, không tràn ngang và nút tài khoản không bị khuất đều đạt. Đây là smoke local sau cập nhật UI, không thay hai lần diễn tập bảo vệ. Lint/syntax script và build frontend đạt; CI của commit chứa CSS/công cụ kiểm cuối cùng được đối chiếu riêng trong kế hoạch.
+
+Kiểm credential thêm qua PostgreSQL source/restore Docker, chỉ so bcrypt trong bộ nhớ và xuất tổng số: mỗi DB có 35/35 ALREADY_CHANGED, applied=false. Cùng DB `localhost:5433/kpi_db`, cả ba DB local đã kiểm đều không còn mật khẩu lịch sử khớp; không suy ra môi trường chưa được chỉ định.
+
 ## Checklist theo yêu cầu
 
 | Mục | Kết quả đã kiểm | Trạng thái còn lại |
 |---|---|---|
-| 1. Credential lịch sử | Đối chiếu 35 tài khoản bằng bcrypt trên DB local đang cấu hình: cả 35 mật khẩu lịch sử đều đã đổi; không ghi secret vào báo cáo, không viết lại Git | Chủ các môi trường khác nếu có cần kiểm riêng; không thể suy ra từ DB local |
+| 1. Credential lịch sử | Đối chiếu bcrypt trên DB local đang cấu hình và hai DB Docker source/restore: từng DB đều 35/35 ALREADY_CHANGED; không ghi secret, không đổi thêm hoặc viết lại Git | Chủ các môi trường khác nếu có cần kiểm riêng; không thể suy ra từ ba DB local |
 | 2. Dependency | BE và FE đều 0 cảnh báo khi audit toàn bộ dependency, gồm dev; SMTP Mailpit/import/report/auth/coverage đã hồi quy | Chạy lại audit khi làm release mới vì advisory có thể thay đổi |
 | 3. CI | SC2034 đã sửa; [CI 45248745539](https://github.com/giahan358/Seminar/actions/runs/45248745539) của `ab8c047` xanh Gitleaks/BE/FE/VC17; artifact khớp checksum, 42/42 bước đạt | Đã xác nhận commit sản phẩm; các release sau phải đối chiếu SHA/run riêng |
 | 4. Lịch bổ sung | BE/FE nhận đủ hai mốc, mọi ngày giờ; snapshot UTC, một vòng, retry so cả deadline, nhắc trong cửa sổ, giữ policy/trigger/seed/report | Đã đạt local HTTP/PG/browser và HTTPS demo; rollout môi trường đích cần kiểm kê yêu cầu đang mở |
