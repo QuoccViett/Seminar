@@ -13,6 +13,7 @@ be/storage/report-exports/
 .env
 .env.local
 .env.*.local
+.vercel/
 
 # Build & Output
 dist/
