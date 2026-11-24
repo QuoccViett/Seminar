@@ -30,6 +30,7 @@ const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@seminar.local";
 // Seed dùng phiên UTC giống PrismaService để timestamp lịch sử và trigger có cùng hệ quy chiếu
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString, options: "-c timezone=UTC" }) });
 const now = new Date();
+const statusLabels: Record<string, string> = { DRAFT: "Đang tự chấm", SUBMITTED: "Đã nộp hồ sơ", IN_REVIEW: "Đang thẩm định", PENDING_REVIEW: "Chờ duyệt", NEEDS_SUPPLEMENT: "Được yêu cầu bổ sung", SUPPLEMENT_REQUESTED: "Được yêu cầu bổ sung", SUPPLEMENT_SUBMITTED: "Đã nộp bổ sung", SUPPLEMENT_EXPIRED: "Đã hết hạn bổ sung", FINALIZED: "Đã chốt" };
 
 const uuid = (number: number): string =>
   `00000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
@@ -350,7 +351,7 @@ async function main(): Promise<void> {
 
         for (const [historyIndex, toStatus] of statusChain(status).entries()) {
           // status_histories là bảng chỉ-thêm (trigger chặn UPDATE/DELETE): chạy lại seed thì bỏ qua dòng đã có
-          await tx.statusHistory.createMany({ data: [{ id: uuid(8000 + (periodSeed.year - 2025) * 1000 + index * 10 + historyIndex), evaluationId: evaluation.id, actorId: historyIndex === 0 ? unitUser.userId : admin.id, fromStatus: historyIndex === 0 ? null : databaseStatus(statusChain(status)[historyIndex - 1]), toStatus: databaseStatus(toStatus), comment: `Chuyển trạng thái mẫu sang ${toStatus}.`, createdAt: new Date(periodSeed.year, 1, 5 + historyIndex + index) }], skipDuplicates: true });
+          await tx.statusHistory.createMany({ data: [{ id: uuid(8000 + (periodSeed.year - 2025) * 1000 + index * 10 + historyIndex), evaluationId: evaluation.id, actorId: historyIndex === 0 ? unitUser.userId : admin.id, fromStatus: historyIndex === 0 ? null : databaseStatus(statusChain(status)[historyIndex - 1]), toStatus: databaseStatus(toStatus), comment: `Chuyển trạng thái mẫu sang ${statusLabels[toStatus] ?? "chưa xác định"}.`, createdAt: new Date(periodSeed.year, 1, 5 + historyIndex + index) }], skipDuplicates: true });
         }
 
         if (status === "IN_REVIEW" || status === "NEEDS_SUPPLEMENT" || status === "FINALIZED") {
@@ -363,8 +364,8 @@ async function main(): Promise<void> {
 
         await tx.notification.upsert({
           where: { id: uuid(10000 + (periodSeed.year - 2025) * 100 + index) },
-          update: { title: `Cập nhật hồ sơ ${periodSeed.year}`, body: `Hồ sơ của ${unitUser.username} đang ở trạng thái ${status}.`, isRead: index % 3 === 0 },
-          create: { id: uuid(10000 + (periodSeed.year - 2025) * 100 + index), userId: unitUser.userId, channel: "SYSTEM", type: "EVALUATION_STATUS_CHANGED", title: `Cập nhật hồ sơ ${periodSeed.year}`, body: `Hồ sơ của ${unitUser.username} đang ở trạng thái ${status}.`, refType: "EVALUATION", refId: evaluation.id, isRead: index % 3 === 0, scheduledAt: null, sentAt: null, createdAt: now },
+          update: { title: `Cập nhật hồ sơ ${periodSeed.year}`, body: `Hồ sơ của ${unitUser.username} đang ở trạng thái ${statusLabels[status] ?? "chưa xác định"}.`, isRead: index % 3 === 0 },
+          create: { id: uuid(10000 + (periodSeed.year - 2025) * 100 + index), userId: unitUser.userId, channel: "SYSTEM", type: "EVALUATION_STATUS_CHANGED", title: `Cập nhật hồ sơ ${periodSeed.year}`, body: `Hồ sơ của ${unitUser.username} đang ở trạng thái ${statusLabels[status] ?? "chưa xác định"}.`, refType: "EVALUATION", refId: evaluation.id, isRead: index % 3 === 0, scheduledAt: null, sentAt: null, createdAt: now },
         });
 
         // audit_logs là bảng chỉ-thêm (trigger chặn UPDATE/DELETE): chạy lại seed thì bỏ qua dòng đã có

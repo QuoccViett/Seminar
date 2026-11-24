@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { systemMessage, ratingLabel } from "../../services/displayLabels";
 import { useSearchParams } from "react-router-dom";
 import { Alert, Button, ConfigProvider, Empty, Modal, Popconfirm, Select, Space, Table, Typography } from "antd";
 import viVN from "antd/locale/vi_VN";
@@ -145,21 +146,21 @@ export default function AdminRecords() {
   return <ConfigProvider locale={viVN}><Space orientation="vertical" size="large" style={{ width: "100%" }}>
     <Typography.Title level={2}>Thẩm định hồ sơ đơn vị</Typography.Title>
     <Space wrap><Select aria-label="Lọc kỳ đánh giá" allowClear disabled={busy} placeholder="Tất cả kỳ" style={{ width: 300 }} value={periodId} options={periods.map((period) => ({ value: period.id, label: period.name }))} onChange={(value) => { setPeriodId(value); setPage(1); setSelected([]); activeId.current = null; setDetail(null); }} /><Button aria-label="Làm mới" loading={listLoading} disabled={busy} onClick={() => { setRefresh((value) => value + 1); if (activeId.current) void reloadDetail(activeId.current).catch(() => {}); }}>Làm mới</Button><Button disabled={busy || !selected.length} onClick={() => openFinalize(selected)}>Xem trước và chốt đã chọn ({selected.length})</Button></Space>
-    {phaseOptions && <Space wrap><Typography.Text>Giai đoạn: {phaseLabels[phaseOptions.phase] || phaseOptions.phase}</Typography.Text><Select aria-label="Giai đoạn muốn chuyển" placeholder="Chọn giai đoạn" disabled={busy} style={{ width: 280 }} value={phaseTarget} options={phaseOptions.options.map((item) => ({ value: item.phase, label: phaseLabels[item.phase], disabled: !item.allowed, title: item.message }))} onChange={setPhaseTarget} /><Popconfirm title="Chuyển giai đoạn kỳ?" description="Máy chủ sẽ kiểm lại trạng thái toàn bộ hồ sơ" okText="Chuyển giai đoạn" cancelText="Quay lại" onConfirm={transition}><Button disabled={busy || !phaseTarget}>Chuyển giai đoạn</Button></Popconfirm></Space>}
+    {phaseOptions && <Space wrap><Typography.Text>Giai đoạn: {phaseLabels[phaseOptions.phase] || "Chưa xác định"}</Typography.Text><Select aria-label="Giai đoạn muốn chuyển" placeholder="Chọn giai đoạn" disabled={busy} style={{ width: 280 }} value={phaseTarget} options={phaseOptions.options.map((item) => ({ value: item.phase, label: phaseLabels[item.phase], disabled: !item.allowed, title: item.message }))} onChange={setPhaseTarget} /><Popconfirm title="Chuyển giai đoạn kỳ?" description="Máy chủ sẽ kiểm lại trạng thái toàn bộ hồ sơ" okText="Chuyển giai đoạn" cancelText="Quay lại" onConfirm={transition}><Button disabled={busy || !phaseTarget}>Chuyển giai đoạn</Button></Popconfirm></Space>}
     {error && <Alert type="error" showIcon title={error} />}
     <Table rowKey="id" loading={listLoading} dataSource={rows.items} rowSelection={{ selectedRowKeys: selected, preserveSelectedRowKeys: true, onChange: setSelected, getCheckboxProps: () => ({ disabled: busy }) }} locale={{ emptyText: <Empty description="Chưa có hồ sơ" /> }} pagination={{ current: page, pageSize: 20, total: rows.total, onChange: setPage, showSizeChanger: false, disabled: busy }} columns={[
       { title: "Đơn vị", render: (_, row) => row.unit.name }, { title: "Kỳ", render: (_, row) => row.period.name },
       { title: "Trạng thái", render: (_, row) => <EvaluationStatusTag status={row.status}>{statusLabels[row.status] || "Chưa xác định"}</EvaluationStatusTag> },
       { title: "Chi tiết", render: (_, row) => <Button disabled={busy} onClick={() => inspect(row.id)}>Thẩm định {row.unit.code}</Button> },
     ]} />
-    {detail && <ReviewCard key={detail.record.id} record={detail.record} summary={detail.summary} disconnected={detailError || actionBusy} onReload={afterWrite} onBusyChange={(value) => { sending.current = value; setRecordBusy(value); }} onFinalize={openFinalize} />}
+    {detail && <ReviewCard key={detail.record.id} record={detail.record} summary={detail.summary} ratingThresholds={periods.find((period) => period.id === detail.record.period.id)?.ratingThresholds} disconnected={detailError || actionBusy} onReload={afterWrite} onBusyChange={(value) => { sending.current = value; setRecordBusy(value); }} onFinalize={openFinalize} />}
     {detail && <FeedbackPanel key={`feedback-${detail.record.id}`} evaluationId={detail.record.id} status={detail.record.status} />}
     <Modal title={finalize?.done ? "Kết quả chốt từng hồ sơ" : "Xem trước kết quả chốt"} open={Boolean(finalize)} width={900} onCancel={() => { if (!actionBusy) setFinalize(null); }} footer={<Space><Button disabled={actionBusy} onClick={() => setFinalize(null)}>{finalize?.done ? "Đóng" : "Quay lại"}</Button>{!finalize?.done && <Button danger type="primary" loading={actionBusy} disabled={!finalize?.results.some((item) => item.ok && item.data.canFinalize)} onClick={confirmFinalize}>Xác nhận chốt ({finalize?.ids.length})</Button>}</Space>}>
       <Typography.Paragraph>Mỗi hồ sơ có kết quả riêng; máy chủ kiểm lại điều kiện tại lúc chốt</Typography.Paragraph>
       <Table rowKey="evaluationId" pagination={false} dataSource={finalize?.results ?? []} columns={[
         { title: "Đơn vị", render: (_, row) => row.data?.unitName ?? row.unitName ?? "Hồ sơ không có thông tin đơn vị" }, { title: "Điểm", render: (_, row) => row.ok ? row.data.score ?? row.data.finalScore : "—" },
-        { title: "Xếp loại", render: (_, row) => row.ok ? row.data.finalRatingLabel ?? row.data.ratingLabel ?? "Chưa có xếp loại" : "—" },
-        { title: "Kết quả", render: (_, row) => row.ok ? finalize.done ? "Đã chốt thành công" : row.data.message : row.error.message },
+        { title: "Xếp loại", render: (_, row) => row.ok ? ratingLabel(row.data.finalRating ?? row.data.rating, row.data.finalRatingLabel ?? row.data.ratingLabel) : "—" },
+        { title: "Kết quả", render: (_, row) => row.ok ? finalize.done ? "Đã chốt thành công" : systemMessage(row.data.message, "Vui lòng kiểm tra điều kiện chốt hồ sơ") : systemMessage(row.error.message, "Không thể chốt hồ sơ") },
       ]} />
     </Modal>
   </Space></ConfigProvider>;

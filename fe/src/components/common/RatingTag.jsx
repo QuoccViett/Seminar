@@ -1,6 +1,13 @@
 import { Tag } from "antd";
 
-/** Giữ kiểu màu Tag gốc theo cấu hình kỳ, đồng bộ nền nhạt và viền với UNIT */
+/** Tô toàn bộ nền theo màu kỳ; chọn chữ có tương phản cao hơn, thiếu màu dùng tag trung tính. */
 export default function RatingTag({ color, children }) {
-  return <Tag color={color ?? "default"} style={{ border: "1px solid", borderColor: "color-mix(in srgb, currentColor 55%, white)" }}>{children}</Tag>;
+  if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) return <Tag>{children}</Tag>;
+  const channels = [1, 3, 5].map((offset) => {
+    const value = parseInt(color.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  const text = (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? "#000000" : "#FFFFFF";
+  return <Tag style={{ backgroundColor: color, borderColor: color, color: text }}>{children}</Tag>;
 }

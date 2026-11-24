@@ -26,22 +26,6 @@
   flex: 0 0 auto;
 }
 
-.importButton:global(.ant-btn) {
-  color: #217346;
-  border-color: #217346;
-}
-
-.importButton:global(.ant-btn):not(:disabled):not(:global(.ant-btn-disabled)):hover,
-.importButton:global(.ant-btn):not(:disabled):not(:global(.ant-btn-disabled)):active {
-  color: #185c37;
-  border-color: #185c37;
-  background-color: var(--app-success-bg);
-}
-
-.importButton:global(.ant-btn):focus-visible {
-  outline-color: #217346;
-}
-
 /* Làm đẹp bảng dữ liệu */
 .tableContainer {
   background-color: #fff;
