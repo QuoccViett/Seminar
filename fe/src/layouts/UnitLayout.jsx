@@ -72,7 +72,7 @@ export default function UnitLayout() {
         <Typography.Title level={4} style={{ margin: 0 }}>{currentTitle}</Typography.Title>
         <Space className={styles.headerActions}>
           <Badge count={unreadCount} size="small">
-            <Button type="text" aria-label={`Mở hộp thư thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ""}`} onClick={() => navigate("/unit/notifications")} icon={<BellOutlined style={{ fontSize: 18, color: "#555" }} />} />
+            <Button type="text" aria-label={`Mở hộp thư thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ""}`} onClick={() => navigate("/unit/notifications")} icon={<BellOutlined style={{ fontSize: 18, color: "var(--app-muted)" }} />} />
           </Badge>
           <Dropdown menu={userMenu} placement="bottomRight" trigger={["click"]}>
             <button className={styles.userInfo} aria-label="Mở tùy chọn tài khoản">

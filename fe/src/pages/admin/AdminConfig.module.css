@@ -2,20 +2,32 @@
   animation: fadeIn 0.4s ease-in-out;
 }
 
+.periodActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.periodActions > :global(.ant-btn) {
+  flex: 0 0 auto;
+}
+
 .cardContainer {
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); 
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   min-height: 75vh;
-  border: 1px solid #f0f0f0; 
+  border: 1px solid var(--app-border);
 }
 
 /* Custom lại thanh Tabs */
 .cardContainer :global(.ant-tabs-nav) {
-  margin-bottom: 32px; 
+  margin-bottom: 32px;
 }
 
 .cardContainer :global(.ant-tabs-tab) {
-  font-size: 16px; 
+  font-size: 17px;
   padding: 12px 0;
 }
 
@@ -23,7 +35,7 @@
 .formContainer :global(.ant-input),
 .formContainer :global(.ant-input-number),
 .formContainer :global(.ant-picker) {
-  border-radius: 8px; 
+  border-radius: 8px;
 }
 
 /* Nút Lưu */
@@ -32,7 +44,7 @@
   padding: 0 32px;
   font-weight: 600;
   height: 44px;
-  box-shadow: 0 4px 10px rgba(22, 119, 255, 0.3); 
+  box-shadow: 0 4px 10px rgba(53, 99, 169, 0.2);
   margin-top: 16px;
 }
 
@@ -40,15 +52,15 @@
 
 /* Làm đẹp phần Header của Bảng */
 .tableContainer :global(.ant-table-thead > tr > th) {
-  background-color: #f8f9fa !important; 
-  color: #333;
+  background-color: var(--app-table-header) !important;
+  color: var(--app-text);
   font-weight: 600;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid var(--app-border);
 }
 
 /* Hiệu ứng hover vào dòng trong bảng */
 .tableContainer :global(.ant-table-tbody > tr:hover > td) {
-  background-color: #f0f7ff !important; 
+  background-color: var(--app-section) !important;
 }
 
 /* Tùy chỉnh khoảng cách trong Modal */

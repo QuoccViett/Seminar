@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
 import { getEvaluation, getScoreSummary, listEvaluations } from "../../services/evaluationService";
 import { allPages } from "../../services/pagination";
+import EvaluationStatusTag from "../../components/common/EvaluationStatusTag";
 
 const STATUS_LABELS = {
   DRAFT: "Đang tự chấm",
@@ -102,7 +103,7 @@ export default function UnitDashboard() {
       </Space>
     </Card>}
     {!loading && record && <>
-      <Card title={<Space wrap>{record.period.name} ({period?.year})<Tag color={record.status === "FINALIZED" ? "green" : "blue"}>{STATUS_LABELS[record.status] ?? record.status}</Tag></Space>}>
+      <Card title={<Space wrap>{record.period.name} ({period?.year})<EvaluationStatusTag status={record.status}>{STATUS_LABELS[record.status] ?? record.status}</EvaluationStatusTag></Space>}>
         <Row gutter={[20, 20]}>
           <Col xs={24} sm={12} lg={8}><Statistic title="Tiến độ đã nhập" value={summary ? `${summary.scoredCount}/${summary.leafCount}` : record.criteriaVisible ? "Chưa có điểm" : "Chưa mở tiêu chí"} /></Col>
           <Col xs={24} sm={12} lg={8}><Statistic title="Tổng điểm tự chấm" value={summary ? summary.selfTotal : "—"} suffix={summary ? `/ ${summary.maxTotalScore}` : undefined} /></Col>
@@ -122,7 +123,7 @@ export default function UnitDashboard() {
             : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Hiện không có thao tác nào cần xử lý" />}
       </Card>
       {snapshot.thresholds?.length > 0 && <Card title="Ngưỡng xếp loại của đợt">
-        <Space wrap size="large">{snapshot.thresholds.map((item) => <Tag key={item.rating} color={item.color ?? "default"}>{item.label}: {item.minExclusive ? "> " : "≥ "}{item.minPercent}%</Tag>)}</Space>
+        <Space wrap size="large">{snapshot.thresholds.map((item) => <Tag key={item.rating} color={item.color ?? "default"} style={{ border: "1px solid", borderColor: "color-mix(in srgb, currentColor 55%, white)" }}>{item.label}: {item.minExclusive ? "> " : "≥ "}{item.minPercent}%</Tag>)}</Space>
       </Card>}
     </>}
   </Space>;

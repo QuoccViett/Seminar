@@ -21,7 +21,7 @@
 }
 
 .logoText {
-  color: #111;
+  color: var(--app-text);
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.3px;
@@ -34,7 +34,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1d4ed8;
+  color: var(--app-primary);
   background: var(--app-border);
   border: 0;
   border-radius: 8px;
@@ -42,8 +42,8 @@
 }
 
 .collapseBtn:hover {
-  color: #133091;
-  background: #a1bfe5;
+  color: var(--app-primary-hover);
+  background: var(--app-selected);
 }
 
 .sider :global(.ant-menu-light) {
@@ -56,8 +56,8 @@
   width: calc(100% - 24px);
   height: 48px !important;
   margin: 4px 12px;
-  color: #333;
-  font-size: 15px;
+  color: var(--app-text);
+  font-size: 16px;
   font-weight: 500;
   line-height: 48px !important;
   border-radius: 8px;
@@ -69,9 +69,9 @@
 }
 
 .sider :global(.ant-menu-item-selected) {
-  color: #1625a8 !important;
+  color: var(--app-primary) !important;
   font-weight: 600;
-  background: #dbeafe !important;
+  background: var(--app-selected) !important;
 }
 
 .mainLayout {
@@ -87,7 +87,7 @@
   align-items: center;
   justify-content: space-between;
   background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--app-border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
@@ -96,7 +96,7 @@
   align-items: center;
   gap: 10px;
   padding: 4px 0;
-  color: #333;
+  color: var(--app-text);
   font: inherit;
   background: transparent;
   border: 0;

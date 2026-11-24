@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
-import { Alert, Button, Card, Checkbox, DatePicker, Input, InputNumber, Modal, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Checkbox, DatePicker, Input, InputNumber, Modal, Space, Table, Typography } from "antd";
 import { acceptAllScores, completeFirstReview, requestSupplement, reviewScores } from "../../services/evaluationService";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
 import { statusLabels, tableRows, vietnamTime } from "./SelfEvaluationCard";
 import EvidencePanel from "./EvidencePanel";
 import { useRecordDrafts } from "../../contexts/WorkspaceContext";
+import EvaluationStatusTag from "../common/EvaluationStatusTag";
 
 const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_REVIEW: "Thẩm định lần đầu", SUPPLEMENT: "Bổ sung", FINAL_REVIEW: "Thẩm định cuối", CLOSED: "Đã đóng" };
 
@@ -107,7 +108,7 @@ export default function ReviewCard({ record, summary, disconnected, onReload, on
     { title: "Chọn bổ sung", width: 230, render: (_, row) => row.children?.length ? null : <Space orientation="vertical"><Checkbox aria-label={`Chọn bổ sung ${row.code}`} checked={selected.includes(row.criterionId)} disabled={disabled || !permissions.canRequestSupplement || dirty} onChange={(event) => setSelected((current) => event.target.checked ? [...current, row.criterionId] : current.filter((id) => id !== row.criterionId))}>Yêu cầu bổ sung</Checkbox><Input.TextArea aria-label={`Yêu cầu bổ sung ${row.code}`} disabled={disabled || !permissions.canRequestSupplement || !selected.includes(row.criterionId)} maxLength={5000} value={notes[row.criterionId] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [row.criterionId]: event.target.value }))} /></Space> },
   ];
 
-  return <Card title={`${record.unit.name} · ${record.period.name}`} extra={<Tag>{statusLabels[record.status]}</Tag>}>
+  return <Card title={`${record.unit.name} · ${record.period.name}`} extra={<EvaluationStatusTag status={record.status}>{statusLabels[record.status]}</EvaluationStatusTag>}>
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
       <Typography.Text>Tổng tự chấm: {summary.selfTotal}/{summary.maxTotalScore} · {summary.ratingLabel}</Typography.Text>
       <Typography.Text>Lượt đầu: {vietnamTime(record.firstReviewedAt)} · Giai đoạn: {phaseLabels[record.period.phase] ?? "Chưa xác định"}</Typography.Text>

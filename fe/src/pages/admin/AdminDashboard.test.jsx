@@ -15,13 +15,15 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 test("dashboard dùng số liệu API và đánh dấu thứ hạng chưa chốt", async () => {
   evaluationPeriodService.getEvaluationPeriods.mockResolvedValue({ items: [{ id: "period-uuid", name: "Kỳ kiểm thử", year: 2026, publishedAt: "2026-01-01" }] });
   dashboardService.getDashboardStats.mockResolvedValue({ totalUnits: 1, submittedCount: 1, notSubmittedCount: 0, supplementPendingCount: 0, finalizedCount: 0, progressPercent: 100, statusCounts: { PENDING_REVIEW: 1 }, officialResults: { totalFinalScore: 0, averageFinalScore: 0, averageFinalPercent: 0 } });
-  dashboardService.getLeaderboard.mockResolvedValue({ totalUnits: 1, items: [{ evaluationId: "eval-uuid", rank: 1, unitName: "Đơn vị API", selfTotal: 80, currentTotal: 80, ratingLabel: "Tốt", ratingColor: null, isFinal: false, status: "PENDING_REVIEW" }] });
+  dashboardService.getLeaderboard.mockResolvedValue({ totalUnits: 1, items: [{ evaluationId: "eval-uuid", rank: 1, unitName: "Đơn vị API", selfTotal: 80, currentTotal: 80, ratingLabel: "Tốt", ratingColor: "gold", isFinal: false, status: "PENDING_REVIEW" }] });
   dashboardService.getScoreDistribution.mockResolvedValue({ finalizedCount: 0, items: [], buckets: [{ key: "0-50", label: "Dưới 50%", count: 0, percent: 0 }] });
   dashboardService.getCriteriaDeductions.mockResolvedValue({ items: [] });
   render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
   await screen.findByText("Đơn vị API");
   expect(screen.getByText("Tạm tính")).toBeInTheDocument();
   expect(screen.getByText("Tốt")).toBeInTheDocument();
+  expect(screen.getByText("Tốt")).not.toHaveClass("ant-tag");
+  expect(screen.getByText("Tốt").style.backgroundColor).toBe("");
   await waitFor(() => expect(dashboardService.getLeaderboard).toHaveBeenCalledWith("period-uuid", 20));
 });
 

@@ -24,7 +24,7 @@
 .logoText {
   font-size: 22px;
   font-weight: 700;
-  color: #111;
+  color: var(--app-text);
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
@@ -32,7 +32,7 @@
 /* Nút thu gọn */
 .collapseBtn {
   background-color: var(--app-border);
-  color: #1d4ed8;
+  color: var(--app-primary);
   border: none;
   border-radius: 8px;
   width: 32px;
@@ -45,8 +45,8 @@
 }
 
 .collapseBtn:hover {
-  background-color: #a1bfe5;
-  color: #133091;
+  background-color: var(--app-selected);
+  color: var(--app-primary-hover);
 }
 
 /* Custom Menu Antd */
@@ -60,10 +60,10 @@
   border-radius: 8px;
   margin: 4px 12px;
   width: calc(100% - 24px);
-  color: #333;
+  color: var(--app-text);
   height: 48px !important;
   line-height: 48px !important;
-  font-size: 15px !important;
+  font-size: 16px !important;
   font-weight: 500;
 }
 
@@ -73,7 +73,7 @@
 }
 
 .sider :global(.ant-menu-item-selected) {
-  background-color: #dbeafe !important;
+  background-color: var(--app-selected) !important;
   color: var(--app-primary) !important;
   font-weight: 600 !important;
 }
@@ -86,7 +86,7 @@
   justify-content: space-between;
   align-items: center;
   height: 64px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--app-border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
@@ -104,7 +104,7 @@
   align-items: center;
   gap: 10px;
   cursor: pointer;
-  color: #333;
+  color: var(--app-text);
 }
 
 .content {

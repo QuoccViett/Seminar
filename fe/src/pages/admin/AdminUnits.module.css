@@ -22,14 +22,14 @@
 }
 
 .tableContainer :global(.ant-table-thead > tr > th) {
-  background-color: #f8f9fa !important;
-  color: #333;
+  background-color: var(--app-table-header) !important;
+  color: var(--app-text);
   font-weight: 600;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid var(--app-border);
 }
 
 .tableContainer :global(.ant-table-tbody > tr:hover > td) {
-  background-color: #f0f7ff !important;
+  background-color: var(--app-section) !important;
 }
 
 @keyframes fadeIn {

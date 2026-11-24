@@ -365,10 +365,10 @@ export default function AdminConfig() {
     {
       title: "Hành động",
       key: "action",
-      width: 360,
+      width: 420,
       align: "center",
       render: (_, record) => (
-        <Space wrap size="small">
+        <div className={styles.periodActions}>
           <Button type="primary" ghost icon={<EditOutlined />} onClick={() => handleEditPeriod(record)}>Cấu hình</Button>
           {record.publishedAt && <Button onClick={() => showPhaseOptions(record)}>Giai đoạn</Button>}
           {!record.publishedAt && (
@@ -388,7 +388,7 @@ export default function AdminConfig() {
               </Popconfirm>
             </>
           )}
-        </Space>
+        </div>
       ),
     },
   ];
@@ -442,7 +442,7 @@ export default function AdminConfig() {
         style={{ maxWidth: 1000 }}
       >
         <Space align="center" style={{ marginBottom: 16 }}>
-          <SettingOutlined style={{ color: "#1677ff", fontSize: 18 }} />
+          <SettingOutlined style={{ color: "var(--app-primary)", fontSize: 18 }} />
           <Title level={5} style={{ margin: 0 }}>Thông tin cơ bản</Title>
         </Space>
         
@@ -462,7 +462,7 @@ export default function AdminConfig() {
         <Divider style={{ margin: "12px 0 24px 0" }} />
 
         <Space align="center" style={{ marginBottom: 16 }}>
-          <SettingOutlined style={{ color: "#1677ff", fontSize: 18 }} />
+          <SettingOutlined style={{ color: "var(--app-primary)", fontSize: 18 }} />
           <Title level={5} style={{ margin: 0 }}>Cấu hình thời gian & Điểm số</Title>
         </Space>
 
@@ -495,7 +495,7 @@ export default function AdminConfig() {
       {/* Bộ ngưỡng cố định theo quy ước được lưu nguyên bộ trước công bố */}
       <Form disabled={!!periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} name="vc08-thresholds" form={formThresholds} layout="vertical" initialValues={{ thresholds: defaultThresholdValues() }} onFinish={onFinishThresholds}>
         <Space align="center" style={{ marginBottom: 16 }}>
-          <SettingOutlined style={{ color: "#1677ff", fontSize: 18 }} />
+          <SettingOutlined style={{ color: "var(--app-primary)", fontSize: 18 }} />
           <Title level={5} style={{ margin: 0 }}>Ngưỡng xếp loại</Title>
         </Space>
         <Row gutter={16}>
@@ -535,7 +535,7 @@ export default function AdminConfig() {
       title: "Hành động", key: "action", align: "center", width: 120,
       render: (_, record) => (
         <Space size="small">
-          <Button type="text" disabled={periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} icon={<EditOutlined style={{ color: "#1677ff" }} />} onClick={() => { setSelectedCriterion(record); formCriteria.setFieldsValue(record); setIsCriteriaModalOpen(true); }} />
+          <Button type="text" disabled={periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} icon={<EditOutlined style={{ color: "var(--app-primary)" }} />} onClick={() => { setSelectedCriterion(record); formCriteria.setFieldsValue(record); setIsCriteriaModalOpen(true); }} />
           <Popconfirm title="Xóa tiêu chí này?" onConfirm={() => handleDeleteCriterion(record)} okText="Xóa" cancelText="Hủy">
             <Button type="text" danger disabled={periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} icon={<DeleteOutlined />} />
           </Popconfirm>

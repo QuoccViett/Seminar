@@ -128,15 +128,17 @@ export default function EvidencePanel({ evaluationId, row, onReload = () => {}, 
   }
 
   return <Space orientation="vertical" style={{ width: "100%" }}>
-    {(row.evidences || []).map((item) => <Space key={item.id} wrap>
+    {(row.evidences || []).map((item) => <div key={item.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, minWidth: 0 }}>
       <Tag>{item.round === "SUPPLEMENT" ? "Bổ sung" : "Tự chấm"}</Tag>
       {item.kind === "LINK" ? <Typography.Link href={safeLink(item.externalUrl)} target="_blank" rel="noopener noreferrer">{item.description || item.externalUrl}</Typography.Link> : <>
-        <Typography.Text>{item.fileName}</Typography.Text>
-        {["image/jpeg", "image/png", "application/pdf"].includes(item.mimeType) && <Button size="small" disabled={busy} onClick={() => open(item, true)}>Xem trước</Button>}
-        <Button size="small" disabled={busy} onClick={() => open(item, false)}>Tải xuống</Button>
+        <Typography.Text style={{ maxWidth: "100%", overflowWrap: "anywhere" }}>{item.fileName}</Typography.Text>
+        <span style={{ display: "inline-flex", flexWrap: "nowrap", gap: 8, flexShrink: 0 }}>
+          {["image/jpeg", "image/png", "application/pdf"].includes(item.mimeType) && <Button size="small" disabled={busy} onClick={() => open(item, true)}>Xem trước</Button>}
+          <Button size="small" disabled={busy} onClick={() => open(item, false)}>Tải xuống</Button>
+        </span>
       </>}
       {item.canDelete && <Popconfirm title="Xóa minh chứng này?" okText="Xóa" cancelText="Giữ lại" onConfirm={() => remove(item)}><Button danger size="small" disabled={!canEdit}>Xóa</Button></Popconfirm>}
-    </Space>)}
+    </div>)}
     {row.allowFile && row.canEditSelf && <Upload.Dragger multiple accept=".jpg,.jpeg,.png,.pdf,.doc,.docx" disabled={!canEdit} showUploadList={false} beforeUpload={(file, files) => { if (files[0] === file) void upload(files); return false; }}>
       <Typography.Text>Kéo thả hoặc chọn nhiều tệp minh chứng</Typography.Text><br /><Typography.Text type="secondary">JPG, PNG, PDF, Word · Tối đa 10 MiB/tệp, 10 tệp/tiêu chí</Typography.Text>
     </Upload.Dragger>}
