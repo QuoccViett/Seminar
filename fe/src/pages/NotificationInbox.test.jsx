@@ -1,15 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Modal } from "antd";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, expect, test, vi } from "vitest";
 import NotificationInbox from "./NotificationInbox";
 import * as service from "../services/notificationService";
 
 vi.mock("../services/notificationService", () => ({
   listNotifications: vi.fn(), getNotificationPreferences: vi.fn(), markNotificationRead: vi.fn(),
-  markAllNotificationsRead: vi.fn(), updateNotificationPreferences: vi.fn(), createTestNotification: vi.fn(), getNotificationDeliveries: vi.fn(),
+  markAllNotificationsRead: vi.fn(), updateNotificationPreferences: vi.fn(), createTestNotification: vi.fn(),
 }));
-
-afterEach(() => { Modal.destroyAll(); cleanup(); });
 
 /** Dùng phản hồi có cùng shape API để kiểm giao diện xử lý dữ liệu thật và trạng thái ZNS tắt
  * Phép thử không thay bằng backend giả khi đánh giá tích hợp; HTTP PostgreSQL được kiểm ở test BE riêng
@@ -22,16 +19,6 @@ beforeEach(() => {
   service.markAllNotificationsRead.mockResolvedValue({ updated: 1 });
   service.updateNotificationPreferences.mockResolvedValue({ SYSTEM: true, WEB_PUSH: true, EMAIL: false, ZALO_ZNS: false, zaloZnsAvailable: false });
   service.createTestNotification.mockResolvedValue({ notificationId: "test-1", queuedChannels: [] });
-});
-
-/** Trạng thái kênh và lý do thất bại không được lộ enum hoặc lỗi SMTP thô trong modal */
-test("hộp thư hiển thị tên kênh và lý do gửi bằng tiếng Việt", async () => {
-  service.getNotificationDeliveries.mockResolvedValue({ channels: [{ channel: "WEB_PUSH", status: "SKIPPED", reasonCode: "RECIPIENT_MISSING" }, { channel: "EMAIL", status: "FAILED", reasonCode: "PROVIDER_ERROR", lastError: "SMTP stack trace" }] });
-  render(<NotificationInbox />);
-  fireEvent.click(await screen.findByRole("button", { name: "Trạng thái gửi" }));
-  await screen.findByText("Thông báo trình duyệt: Đã bỏ qua · Người nhận chưa có địa chỉ hoặc thiết bị phù hợp");
-  expect(screen.getByText("Email: Gửi thất bại · Không thể gửi qua kênh này")).toBeInTheDocument();
-  expect(screen.queryByText(/WEB_PUSH|RECIPIENT_MISSING|PROVIDER_ERROR|SMTP stack trace/u)).toBeNull();
 });
 
 /** Một bản ghi chưa đọc phải hiển thị nội dung, thao tác đọc gửi đúng ID và ZNS không có nút gửi */

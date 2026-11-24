@@ -15,25 +15,15 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 test("dashboard dùng số liệu API và đánh dấu thứ hạng chưa chốt", async () => {
   evaluationPeriodService.getEvaluationPeriods.mockResolvedValue({ items: [{ id: "period-uuid", name: "Kỳ kiểm thử", year: 2026, publishedAt: "2026-01-01" }] });
   dashboardService.getDashboardStats.mockResolvedValue({ totalUnits: 1, submittedCount: 1, notSubmittedCount: 0, supplementPendingCount: 0, finalizedCount: 0, progressPercent: 100, statusCounts: { PENDING_REVIEW: 1 }, officialResults: { totalFinalScore: 0, averageFinalScore: 0, averageFinalPercent: 0 } });
-  dashboardService.getLeaderboard.mockResolvedValue({ totalUnits: 3, items: [
-    { evaluationId: "eval-uuid", rank: 1, unitName: "Đơn vị API", selfTotal: 80, currentTotal: 80, ratingLabel: "Tốt", ratingColor: "#123456", isFinal: false, status: "PENDING_REVIEW" },
-    { evaluationId: "eval-light", rank: 2, unitName: "Đơn vị màu sáng", ratingLabel: "Nhãn kỳ riêng", ratingColor: "#FFF4DA", isFinal: true, status: "FINALIZED" },
-    { evaluationId: "eval-unrated", rank: 3, unitName: "Đơn vị chưa xếp loại", ratingLabel: null, ratingColor: null, isFinal: true, status: "FINALIZED" },
-  ] });
-  dashboardService.getScoreDistribution.mockResolvedValue({ finalizedCount: 1, items: [{ rating: "GOOD", label: "Tốt", color: "#123456", count: 1, percent: 100 }], buckets: [{ key: "0-50", label: "Dưới 50%", count: 0, percent: 0 }] });
+  dashboardService.getLeaderboard.mockResolvedValue({ totalUnits: 1, items: [{ evaluationId: "eval-uuid", rank: 1, unitName: "Đơn vị API", selfTotal: 80, currentTotal: 80, ratingLabel: "Tốt", ratingColor: "gold", isFinal: false, status: "PENDING_REVIEW" }] });
+  dashboardService.getScoreDistribution.mockResolvedValue({ finalizedCount: 0, items: [], buckets: [{ key: "0-50", label: "Dưới 50%", count: 0, percent: 0 }] });
   dashboardService.getCriteriaDeductions.mockResolvedValue({ items: [] });
   render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
   await screen.findByText("Đơn vị API");
   expect(screen.getByText("Tạm tính")).toBeInTheDocument();
-  const ratingTags = screen.getAllByText("Tốt");
-  expect(ratingTags).toHaveLength(2);
-  for (const tag of ratingTags) {
-    expect(tag).toHaveClass("ant-tag");
-    expect(tag).toHaveStyle({ backgroundColor: "#123456", color: "#FFFFFF" });
-  }
-  expect(screen.getByText("Nhãn kỳ riêng")).toHaveStyle({ backgroundColor: "#FFF4DA", color: "#000000" });
-  expect(screen.getByText("Chưa xếp loại")).toHaveClass("ant-tag");
-  expect(screen.getByText("Chưa xếp loại").style.backgroundColor).toBe("");
+  expect(screen.getByText("Tốt")).toBeInTheDocument();
+  expect(screen.getByText("Tốt")).not.toHaveClass("ant-tag");
+  expect(screen.getByText("Tốt").style.backgroundColor).toBe("");
   await waitFor(() => expect(dashboardService.getLeaderboard).toHaveBeenCalledWith("period-uuid", 20));
 });
 

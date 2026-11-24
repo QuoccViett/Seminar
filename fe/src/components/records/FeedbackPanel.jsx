@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EVALUATION_STATUS_LABELS, FEEDBACK_TYPE_LABELS, displayLabel } from "../../services/displayLabels";
 import { Alert, Button, Card, Empty, Input, Pagination, Select, Space, Timeline, Typography } from "antd";
 import apiClient from "../../services/apiClient";
 import { useRecordDrafts } from "../../contexts/WorkspaceContext";
 
-const typeLabels = FEEDBACK_TYPE_LABELS;
-const statusLabels = { ...EVALUATION_STATUS_LABELS, PENDING_REVIEW: "Chờ thẩm định", SUPPLEMENT_REQUESTED: "Yêu cầu bổ sung", SUPPLEMENT_EXPIRED: "Hết hạn bổ sung" };
+const typeLabels = { GENERAL: "Nhận xét chung", EXPLANATION_REQUEST: "Yêu cầu giải trình", UNIT_REPLY: "Đơn vị phản hồi", SUPPLEMENT_REQUEST: "Yêu cầu bổ sung" };
+const statusLabels = { DRAFT: "Đang tự chấm", SUBMITTED: "Đã nộp hồ sơ", PENDING_REVIEW: "Chờ thẩm định", SUPPLEMENT_REQUESTED: "Yêu cầu bổ sung", SUPPLEMENT_SUBMITTED: "Đã nộp bổ sung", SUPPLEMENT_EXPIRED: "Hết hạn bổ sung", FINALIZED: "Đã chốt" };
 
 /** Đổi ghi chú trạng thái mẫu có mã kỹ thuật thành câu dễ đọc cho người dùng */
 function historyComment(value) {
   if (!value) return "";
   const sampleTransition = value.match(/^Chuyển trạng thái mẫu sang\s+([A-Z_]+)\.?$/u);
-  if (sampleTransition) return `Hồ sơ chuyển sang trạng thái ${displayLabel(statusLabels, sampleTransition[1], "chưa xác định")}.`;
+  if (sampleTransition) return `Hồ sơ chuyển sang trạng thái ${statusLabels[sampleTransition[1]] ?? sampleTransition[1]}.`;
   return value.replace(/\b(DRAFT|SUBMITTED|PENDING_REVIEW|SUPPLEMENT_REQUESTED|SUPPLEMENT_SUBMITTED|SUPPLEMENT_EXPIRED|FINALIZED)\b/gu, (code) => statusLabels[code] ?? code);
 }
 
@@ -71,18 +70,18 @@ export default function FeedbackPanel({ evaluationId, status }) {
       {notice && <Alert type="success" title={notice} showIcon />}
       {feedback && <>
         {feedback.items.length === 0 && <Empty description="Chưa có phản hồi" />}
-        {feedback.items.map((item) => <Card key={item.id} size="small" title={`${item.authorName} · ${displayLabel(typeLabels, item.type, "Trao đổi hồ sơ")}`} extra={time(item.createdAt)}><Typography.Paragraph style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.content}</Typography.Paragraph></Card>)}
+        {feedback.items.map((item) => <Card key={item.id} size="small" title={`${item.authorName} · ${typeLabels[item.type] || item.type}`} extra={time(item.createdAt)}><Typography.Paragraph style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.content}</Typography.Paragraph></Card>)}
         <Pagination current={page} pageSize={10} total={feedback.total} showSizeChanger={false} onChange={setPage} />
         {feedback.lockedReason && <Alert type="info" title={feedback.lockedReason} />}
         {feedback.canPost && <>
-          <Select aria-label="Loại phản hồi" value={type || feedback.allowedTypes[0]} options={feedback.allowedTypes.map((value) => ({ value, label: displayLabel(typeLabels, value, "Trao đổi hồ sơ") }))} onChange={setType} disabled={sending} style={{ width: 240 }} />
+          <Select aria-label="Loại phản hồi" value={type || feedback.allowedTypes[0]} options={feedback.allowedTypes.map((value) => ({ value, label: typeLabels[value] }))} onChange={setType} disabled={sending} style={{ width: 240 }} />
           <Input.TextArea aria-label="Nội dung phản hồi" aria-invalid={Boolean(sendError)} aria-describedby={sendError ? `feedback-error-${evaluationId}` : undefined} status={sendError ? "error" : undefined} value={content} onChange={(event) => setContent(event.target.value)} maxLength={4000} showCount disabled={sending} />
           <Typography.Text type="secondary">Văn bản thuần, tối đa 4000 ký tự · Mỗi lần cách 30 giây, tối đa 20 phản hồi mỗi giờ</Typography.Text>
           <Button type="primary" loading={sending} disabled={!content.trim() || sending} onClick={send}>Gửi phản hồi</Button>
         </>}
       </>}
       <Typography.Title level={5}>Lịch sử trạng thái</Typography.Title>
-      {history && (history.items.length ? <Timeline items={history.items.map((item) => ({ key: item.id, content: <Space orientation="vertical"><Typography.Text>{item.fromStatus ? displayLabel(statusLabels, item.fromStatus, "Trạng thái trước đó") : "Khởi tạo"} → {displayLabel(statusLabels, item.toStatus, "Trạng thái chưa xác định")}</Typography.Text><Typography.Text>{item.actorName} · {time(item.createdAt)}</Typography.Text>{item.comment && <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{historyComment(item.comment)}</Typography.Text>}</Space> }))} /> : <Empty description="Chưa có thay đổi trạng thái" />)}
+      {history && (history.items.length ? <Timeline items={history.items.map((item) => ({ key: item.id, content: <Space orientation="vertical"><Typography.Text>{statusLabels[item.fromStatus] || "Khởi tạo"} → {statusLabels[item.toStatus] || item.toStatus}</Typography.Text><Typography.Text>{item.actorName} · {time(item.createdAt)}</Typography.Text>{item.comment && <Typography.Text style={{ whiteSpace: "pre-wrap" }}>{historyComment(item.comment)}</Typography.Text>}</Space> }))} /> : <Empty description="Chưa có thay đổi trạng thái" />)}
       {history && <Pagination current={historyPage} pageSize={10} total={history.total} showSizeChanger={false} onChange={setHistoryPage} />}
     </Space>
   </Card>;

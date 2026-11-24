@@ -1,5 +1,4 @@
 import axios from "axios";
-import { systemMessage } from "./displayLabels";
 import { getAccessToken, getRefreshToken, setSession, clearSession } from "./session";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -53,8 +52,8 @@ export function normalizeError(error) {
   const payload = error.response?.data;
   const safe = (message) => typeof message === "string" && /[À-ỹ]/u.test(message) && !/Prisma|SQLSTATE|SELECT\s|INSERT\s|passwordHash|stack\s*trace/i.test(message);
   const fallback = error.code === "ECONNABORTED" ? "Kết nối quá thời gian. Vui lòng thử lại." : status === 403 ? "Bạn không có quyền thực hiện thao tác này." : status === 404 ? "Không tìm thấy dữ liệu được yêu cầu." : status ? "Không thể xử lý yêu cầu. Vui lòng thử lại." : "Không thể kết nối máy chủ. Vui lòng thử lại.";
-  const fieldErrors = Array.isArray(payload?.details) ? payload.details.filter((item) => typeof item?.field === "string" && Array.isArray(item.messages)).map((item) => ({ field: item.field, messages: item.messages.map((message) => safe(message) ? systemMessage(message, "Dữ liệu trường này không hợp lệ.") : "Dữ liệu trường này không hợp lệ.") })) : [];
-  return { status, code: typeof payload?.code === "string" ? payload.code : null, message: typeof payload?.code === "string" && safe(payload?.message) ? systemMessage(payload.message, fallback) : fallback, fieldErrors };
+  const fieldErrors = Array.isArray(payload?.details) ? payload.details.filter((item) => typeof item?.field === "string" && Array.isArray(item.messages)).map((item) => ({ field: item.field, messages: item.messages.map((message) => safe(message) ? message : "Dữ liệu trường này không hợp lệ.") })) : [];
+  return { status, code: typeof payload?.code === "string" ? payload.code : null, message: typeof payload?.code === "string" && safe(payload?.message) ? payload.message : fallback, fieldErrors };
 }
 
 /** Giữ metadata khi giải envelope, danh sách hiện hành được trả nguyên shape

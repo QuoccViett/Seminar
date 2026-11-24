@@ -96,7 +96,7 @@ export default function UnitProfile() {
       {unit ? <Descriptions column={{ xs: 1, sm: 2 }} bordered>
         <Descriptions.Item label="Mã đơn vị">{unit.code}</Descriptions.Item>
         <Descriptions.Item label="Tên đơn vị">{unit.name}</Descriptions.Item>
-        <Descriptions.Item label="Loại đơn vị">{UNIT_TYPE_LABELS[unit.unitType] ?? "Chưa phân loại"}</Descriptions.Item>
+        <Descriptions.Item label="Loại đơn vị">{UNIT_TYPE_LABELS[unit.unitType] ?? unit.unitType ?? "Chưa phân loại"}</Descriptions.Item>
         <Descriptions.Item label="Trạng thái"><Tag color={unit.isActive ? "green" : "default"}>{unit.isActive ? "Đang hoạt động" : "Đã khóa"}</Tag></Descriptions.Item>
       </Descriptions> : <Typography.Text type="secondary">Tài khoản chưa được gắn với đơn vị.</Typography.Text>}
     </Card>

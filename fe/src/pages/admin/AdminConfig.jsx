@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { RATING_LABELS, displayLabel } from "../../services/displayLabels";
 import { applyFormError } from "../../services/formErrors";
 import { allPages } from "../../services/pagination";
 import { 
@@ -502,7 +501,7 @@ export default function AdminConfig() {
         <Row gutter={16}>
           {["EXCELLENT", "GOOD", "PASS", "FAIL"].map((rating) => (
             <Col xs={24} sm={12} lg={6} key={rating}>
-              <Text strong>{displayLabel(RATING_LABELS, rating, "Mức xếp loại")}</Text>
+              <Text strong>{rating}</Text>
               <Form.Item name={["thresholds", rating, "label"]} label="Nhãn" rules={[{ required: true, message: "Vui lòng nhập nhãn" }]}>
                 <Input />
               </Form.Item>
@@ -510,7 +509,7 @@ export default function AdminConfig() {
                   const t = getFieldValue("thresholds");
                   return t && t.FAIL.minPercent === 0 && t.PASS.minPercent > 0 && t.PASS.minPercent < t.GOOD.minPercent && t.GOOD.minPercent < t.EXCELLENT.minPercent && t.EXCELLENT.minPercent < 100 ? Promise.resolve() : Promise.reject(new Error("Cần 0 < Đạt < Tốt < Xuất sắc < 100"));
                 } })]}>
-                <InputNumber aria-label={`Ngưỡng ${displayLabel(RATING_LABELS, rating, "xếp loại")}`} min={0} max={rating === "EXCELLENT" ? 99.99 : 100} precision={2} style={{ width: "100%" }} disabled={rating === "FAIL" || !currentPeriodId || !!periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} />
+                <InputNumber aria-label={`Ngưỡng ${rating}`} min={0} max={rating === "EXCELLENT" ? 99.99 : 100} precision={2} style={{ width: "100%" }} disabled={rating === "FAIL" || !currentPeriodId || !!periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} />
               </Form.Item>
               <Form.Item name={["thresholds", rating, "color"]} label="Màu">
                 <Input />
@@ -520,7 +519,7 @@ export default function AdminConfig() {
         </Row>
         <Space>
           <Button htmlType="submit" disabled={!currentPeriodId || periodsList.find((period) => period.id === currentPeriodId)?.publishedAt}>Lưu ngưỡng</Button>
-          <Text type="secondary">Mặc định 85/65/50/0. Cần 0 &lt; Đạt &lt; Tốt &lt; Xuất sắc &lt; 100; Xuất sắc dùng &gt;, các mức còn lại dùng ≥. Khóa sau công bố.</Text>
+          <Text type="secondary">Mặc định 85/65/50/0. Cần 0 &lt; PASS &lt; GOOD &lt; EXCELLENT &lt; 100; Xuất sắc dùng &gt;, các mức còn lại dùng ≥. Khóa sau công bố.</Text>
         </Space>
       </Form>
     </div>

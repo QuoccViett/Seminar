@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Card, ConfigProvider, Descriptions, Empty, Form, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, ConfigProvider, Descriptions, Empty, Form, Input, Modal, Space, Table, Tag, Typography } from "antd";
 import viVN from "antd/locale/vi_VN";
 import { auditLogService } from "../../services/auditLogService";
-import { CHANNEL_LABELS, DELIVERY_REASON_LABELS, DELIVERY_STATUS_LABELS, FIELD_LABELS as COMMON_FIELD_LABELS, systemMessage } from "../../services/displayLabels";
 
 const FIELD_LABELS = {
-  ...COMMON_FIELD_LABELS,
   id: "Mã bản ghi", userId: "Mã tài khoản", actorId: "Mã người thực hiện", unitId: "Mã đơn vị", periodId: "Mã đợt đánh giá",
   evaluationId: "Mã hồ sơ", criterionId: "Mã tiêu chí", entityId: "Mã đối tượng", refId: "Mã liên quan", refType: "Loại liên quan",
   username: "Tên đăng nhập", fullName: "Họ và tên", email: "Email", phone: "Số điện thoại", role: "Vai trò", unit: "Đơn vị",
@@ -21,14 +19,6 @@ const FIELD_LABELS = {
   before: "Trước thay đổi", after: "Sau thay đổi", ip: "Địa chỉ IP", count: "Số lượng", items: "Danh sách", results: "Kết quả",
   thresholds: "Các ngưỡng xếp loại", ratingThresholds: "Các ngưỡng xếp loại", criteria: "Các tiêu chí", evidences: "Minh chứng",
   enabled: "Đang bật", queuedChannels: "Kênh đang chờ gửi", deliveryStatus: "Trạng thái gửi",
-  attemptCount: "Số lần thử gửi", autoLockedAt: "Thời gian tự khóa", contentLength: "Độ dài nội dung", finalPercent: "Tỷ lệ điểm chốt",
-  finalRating: "Xếp loại chính thức", finalScore: "Điểm chốt", firstReviewedAt: "Hoàn tất thẩm định lần đầu", format: "Định dạng",
-  importSessionId: "Mã phiên nhập", kind: "Loại minh chứng", nullable: "Cho phép bỏ trống", supplementSubmittedAt: "Thời gian nộp bổ sung",
-  errorCode: "Lý do gửi chưa thành công", reasonCode: "Lý do xử lý", fromStatus: "Trạng thái trước", toStatus: "Trạng thái sau",
-  requestedAt: "Thời gian yêu cầu", expiresAt: "Thời gian hết hạn", nextAttemptAt: "Lần thử tiếp theo", sentAt: "Thời gian gửi",
-  published: "Đã công bố", eligibleUnits: "Đơn vị đủ điều kiện", createdEvaluations: "Hồ sơ đã tạo", canceledAt: "Thời gian hủy",
-  credentialsSentAt: "Thời gian gửi thông tin đăng nhập", criterionIds: "Các mã tiêu chí", evaluationIds: "Các mã hồ sơ",
-  sourceRevision: "Phiên bản nguồn", sessionsRevoked: "Đã thu hồi phiên", extra: "Thông tin bổ sung", metadata: "Thông tin bổ sung",
 };
 
 const ENTITY_LABELS = {
@@ -36,12 +26,9 @@ const ENTITY_LABELS = {
   CriterionScore: "Điểm tiêu chí", Evaluation: "Hồ sơ đánh giá", EvaluationFeedback: "Trao đổi hồ sơ", EvaluationPeriod: "Đợt đánh giá",
   Evidence: "Minh chứng", ImportSession: "Phiên nhập tài khoản", Notification: "Thông báo", NotificationDelivery: "Lần gửi thông báo",
   ReportExport: "Lần xuất báo cáo", Unit: "Đơn vị", User: "Tài khoản",
-  EvidenceUpload: "Phiên tải minh chứng", RatingThreshold: "Ngưỡng xếp loại", NotificationPreference: "Tùy chọn thông báo",
-  WebPushSubscription: "Thiết bị nhận thông báo", OnboardingToken: "Lời mời đăng ký thiết bị", StatusHistory: "Lịch sử trạng thái",
 };
 
 const VALUE_LABELS = {
-  ...CHANNEL_LABELS, ...DELIVERY_STATUS_LABELS, ...DELIVERY_REASON_LABELS,
   ADMIN: "Quản trị viên", UNIT: "Đơn vị", SYSTEM: "Hệ thống",
   CREATE: "Tạo mới", UPDATE: "Cập nhật", DELETE: "Xóa", PUBLISH: "Công bố", FINALIZE: "Chốt kết quả",
   AUTO_STATUS: "Tự động cập nhật trạng thái", CREDENTIAL_DELIVERY_RETRIED: "Thử gửi lại thông tin đăng nhập",
@@ -63,20 +50,11 @@ const VALUE_LABELS = {
   INITIAL: "Tự chấm", FILE: "Tệp", LINK: "Liên kết", QUEUED: "Đang chờ gửi", SENT: "Đã gửi", FAILED: "Gửi thất bại",
   CONG_AN_QUAN_HUYEN: "Công an quận/huyện", PHONG_NGHIEP_VU: "Phòng nghiệp vụ", DON_VI_TRUC_THUOC: "Đơn vị trực thuộc",
   "[ĐÃ CHE]": "Thông tin đã được ẩn",
-  EXPOSED_PASSWORD_ROTATED: "Đổi mật khẩu đã lộ và thu hồi phiên", SUBMITTED: "Đã nộp hồ sơ", IN_REVIEW: "Đang thẩm định",
-  SUMMARY_ALL_UNITS: "Tổng hợp các đơn vị", UNIT_APPRAISAL_MINUTES: "Biên bản thẩm định đơn vị", READY: "Sẵn sàng",
-  XLSX: "Excel", DOCX: "Word", PDF: "PDF",
-  CREDENTIAL: "Thông tin đăng nhập", EVALUATION: "Hồ sơ đánh giá", EVALUATION_PERIOD: "Kỳ đánh giá",
-  EVALUATION_FEEDBACK: "Có trao đổi mới", EVALUATION_FINALIZED: "Kết quả đã chốt", EVALUATION_STATUS_CHANGED: "Hồ sơ đổi trạng thái",
-  PERIOD_PHASE_CHANGED: "Kỳ đổi giai đoạn", PERIOD_PUBLISHED: "Kỳ đã công bố", PERIOD_SCHEDULE_UPDATED: "Lịch kỳ đã thay đổi",
-  SELF_EVAL_REMINDER: "Nhắc hạn tự chấm", SUPPLEMENT_REMINDER: "Nhắc hạn bổ sung",
 };
 
 function fieldLabel(key) {
-  return Object.hasOwn(FIELD_LABELS, key) ? FIELD_LABELS[key] : "Thông tin bổ sung";
+  return FIELD_LABELS[key] ?? key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (char) => char.toUpperCase());
 }
-
-const ENUM_FIELDS = new Set(["role", "phase", "status", "fromStatus", "toStatus", "rating", "finalRating", "type", "kind", "round", "channel", "channels", "queuedChannels", "errorCode", "reasonCode", "deliveryStatus", "refType", "unitType", "format", "reportType", "action", "entity"]);
 
 function displayValue(value, field) {
   if (value === null || value === undefined || value === "") return <Typography.Text type="secondary">Không có</Typography.Text>;
@@ -91,8 +69,8 @@ function displayValue(value, field) {
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/u.test(value) && Number.isFinite(Date.parse(value))) {
       return new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
     }
-    if (ENUM_FIELDS.has(field)) return Object.hasOwn(VALUE_LABELS, value) ? VALUE_LABELS[value] : Object.hasOwn(ENTITY_LABELS, value) ? ENTITY_LABELS[value] : "Chưa xác định";
-    if (field === "lastError") return systemMessage(value, "Cần kiểm tra lại thao tác");
+    if (VALUE_LABELS[value]) return VALUE_LABELS[value];
+    if (/^[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+$/u.test(value)) return value.split("_").map((part) => part.toLowerCase()).join(" ");
     return value;
   }
   return null;
@@ -114,16 +92,14 @@ function SnapshotValue({ value, field }) {
   return displayValue(value, field);
 }
 
-function actionLabel(value) { return Object.hasOwn(VALUE_LABELS, value) ? VALUE_LABELS[value] : value ? "Hoạt động khác" : "Không có"; }
-function entityLabel(value) { return Object.hasOwn(ENTITY_LABELS, value) ? ENTITY_LABELS[value] : value ? "Đối tượng khác" : "Không có"; }
-
-const ACTION_CODES = ["CREATE", "UPDATE", "DELETE", "PUBLISH", "FINALIZE", "AUTO_STATUS", "CREDENTIAL_DELIVERY_RETRIED", "CREDENTIAL_EMAIL_CONFIRMED", "EXPOSED_PASSWORD_ROTATED", "FEEDBACK_CREATED", "FIRST_REVIEW_COMPLETE", "LOGIN_FAILED", "LOGIN_SUCCESS", "NOTIFICATION_DELIVERY", "NOTIFICATION_QUEUED", "PASSWORD_CHANGED", "REPORT_DOWNLOADED", "REPORT_EXPORTED", "REVIEW_INVALIDATED", "REVIEW_SCORE", "SELF_SCORE", "SUBMIT", "SUPPLEMENT_REQUEST", "SUPPLEMENT_SUBMIT", "TRANSITION_PHASE", "UPSERT_THRESHOLDS", "UNITS_IMPORTED", "UNIT_CREATED", "UNIT_UPDATED", "USER_ACTIVATED", "USER_CREATED", "USER_DEACTIVATED", "USER_IMPORTED", "USER_PASSWORD_RESET", "USER_UPDATED"];
+function actionLabel(value) { return VALUE_LABELS[value] ?? value ?? "Không có"; }
+function entityLabel(value) { return ENTITY_LABELS[value] ?? value ?? "Không có"; }
 
 /** Đổi bộ lọc giờ Việt Nam sang ISO có offset để server kiểm khoảng thời gian rõ ràng
  * Input datetime-local không có timezone nên gắn +07:00, không phụ thuộc múi giờ máy
  */
 function filters(values) {
-  return Object.fromEntries(Object.entries(values).filter(([, value]) => value?.trim()).map(([key, value]) => [key, ["from", "to"].includes(key) ? `${value}:00+07:00` : key === "actorId" && value.trim().toLocaleLowerCase("vi") === "hệ thống" ? "SYSTEM" : value.trim()]));
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value?.trim()).map(([key, value]) => [key, ["from", "to"].includes(key) ? `${value}:00+07:00` : value.trim()]));
 }
 
 /** Truy vấn audit thật theo trang, lọc người/đối tượng/hành động/thời gian và xem snapshot
@@ -159,9 +135,7 @@ export default function AdminAuditLog() {
     <Typography.Title level={2}>Nhật ký hoạt động</Typography.Title>
     <Card title="Tìm và lọc nhật ký">
       <Form layout="inline" onFinish={(values) => { setQuery(filters(values)); setPage(1); }}>
-        {[['actorId', 'Mã người thực hiện hoặc Hệ thống'], ['entityId', 'Mã đối tượng']].map(([name, label]) => <Form.Item key={name} name={name}><Input aria-label={label} placeholder={label} allowClear /></Form.Item>)}
-        <Form.Item name="entity"><Select aria-label="Loại đối tượng" placeholder="Loại đối tượng" allowClear showSearch optionFilterProp="label" style={{ width: 220 }} options={Object.entries(ENTITY_LABELS).map(([value, label]) => ({ value, label }))} /></Form.Item>
-        <Form.Item name="action"><Select aria-label="Hành động" placeholder="Hành động" allowClear showSearch optionFilterProp="label" style={{ width: 260 }} options={ACTION_CODES.map((value) => ({ value, label: actionLabel(value) }))} /></Form.Item>
+        {[['actorId', 'Mã người thực hiện hoặc SYSTEM'], ['entity', 'Loại đối tượng'], ['entityId', 'Mã đối tượng'], ['action', 'Hành động']].map(([name, label]) => <Form.Item key={name} name={name}><Input aria-label={label} placeholder={label} allowClear /></Form.Item>)}
         <Form.Item name="from" label="Từ giờ Việt Nam"><Input aria-label="Từ giờ Việt Nam" type="datetime-local" /></Form.Item>
         <Form.Item name="to" label="Đến giờ Việt Nam"><Input aria-label="Đến giờ Việt Nam" type="datetime-local" /></Form.Item>
         <Button htmlType="submit" type="primary">Lọc nhật ký</Button>

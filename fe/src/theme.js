@@ -1,7 +1,7 @@
 /** Màu giao diện dùng chung; màu xếp loại vẫn lấy từ cấu hình từng kỳ */
 export const palette = {
   primary: "#3563A9", primaryHover: "#2C528E", background: "#F3F5F7", surface: "#FFFFFF",
-  section: "#EAF0F7", selected: "#D8E5F5", tableHeader: "#E4E9EE", border: "#D5DCE5",
+  section: "#EAF0F7", selected: "#D8E5F5", tableHeader: "#C3D4EE", border: "#D5DCE5",
   text: "#253247", muted: "#64748B", neutral: "#F1F3F5",
   success: "#2F7D50", successBg: "#EAF5EE", warning: "#9A6700", warningBg: "#FFF4DA",
   error: "#B33D3D", errorBg: "#FCEDEC",

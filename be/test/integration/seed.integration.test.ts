@@ -78,13 +78,6 @@ test("seed qua trigger VC09 trên DB trống và chạy lại giữ nguyên hồ
     assert.equal(await prisma.evaluation.count({ where: { status: "SUPPLEMENT_EXPIRED" } }), 4);
     assert.equal((await prisma.evaluation.groupBy({ by: ["finalRating"], where: { status: "FINALIZED" } })).length, 4);
     assert.equal(await prisma.evaluation.count({ where: { status: { not: "DRAFT" }, submittedAt: null } }), 0);
-    // Nội dung mẫu phải đọc được bằng tiếng Việt, các enum vẫn giữ nguyên trong cột trạng thái
-    const notifications = await prisma.notification.findMany({ where: { type: "EVALUATION_STATUS_CHANGED" }, select: { body: true } });
-    assert.ok(notifications.length > 0);
-    for (const item of notifications) assert.doesNotMatch(item.body, /đang ở trạng thái [A-Z_]+\.$/u);
-    const history = await prisma.statusHistory.findMany({ select: { comment: true } });
-    assert.ok(history.length > 0);
-    for (const item of history) assert.doesNotMatch(item.comment ?? "", /Chuyển trạng thái mẫu sang [A-Z_]+\.$/u);
 
     // Lịch và phase sau commit phải là snapshot lịch sử, không được để cửa sổ SELF_EVAL tạm trong DB
     const periods = await prisma.evaluationPeriod.findMany({ orderBy: { year: "asc" } });

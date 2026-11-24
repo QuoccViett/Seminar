@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { ratingLabel, systemMessage } from "../../services/displayLabels";
 import { Alert, Button, Card, Checkbox, DatePicker, Input, InputNumber, Modal, Space, Table, Typography } from "antd";
 import { acceptAllScores, completeFirstReview, requestSupplement, reviewScores } from "../../services/evaluationService";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
@@ -14,7 +13,7 @@ const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_RE
  * Các quyền do server cấp, busyRef ngăn gửi lặp trước render và không dùng giờ máy để mở quyền
  * Parent tải lại sau ghi nhưng không remount cùng hồ sơ nên nháp ô lỗi hoặc chưa lưu vẫn được giữ
  */
-export default function ReviewCard({ record, summary, ratingThresholds = [], disconnected, onReload, onBusyChange, onFinalize }) {
+export default function ReviewCard({ record, summary, disconnected, onReload, onBusyChange, onFinalize }) {
   const [drafts, setDrafts] = useRecordDrafts(`review:${record.id}`); const [states, setStates] = useState({});
   const [selected, setSelected] = useState([]); const [notes, setNotes] = useState({});
   const [start, setStart] = useState(null); const [end, setEnd] = useState(null); const [schedule, setSchedule] = useState(null);
@@ -57,7 +56,7 @@ export default function ReviewCard({ record, summary, ratingThresholds = [], dis
       const result = await reviewScores(record.id, entries.map(([criterionId, body]) => ({ criterionId, ...body })));
       const saved = result.results.filter((item) => item.ok).map((item) => item.criterionId);
       setDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !saved.includes(id))));
-      setStates((current) => ({ ...current, ...Object.fromEntries(result.results.map((item) => [item.criterionId, item.ok ? "Đã lưu" : systemMessage(item.error.message, "Không thể lưu tiêu chí")])) }));
+      setStates((current) => ({ ...current, ...Object.fromEntries(result.results.map((item) => [item.criterionId, item.ok ? "Đã lưu" : item.error.message])) }));
       setNotice({ type: result.results.some((item) => !item.ok) ? "error" : "success", text: result.results.some((item) => !item.ok) ? "Có tiêu chí chưa lưu được, vui lòng xem lỗi từng ô" : "Đã lưu thẩm định" });
       await onReload();
     } catch (failure) { setNotice({ type: "error", text: failure.message || "Không thể lưu điểm thẩm định" }); }
@@ -102,7 +101,7 @@ export default function ReviewCard({ record, summary, ratingThresholds = [], dis
     { title: "Thẩm định", width: 270, render: (_, row) => row.children?.length ? null : <Space orientation="vertical" style={{ width: "100%" }}>
       <InputNumber aria-label={`Điểm thẩm định ${row.code}`} controls={false} min={0} max={row.maxScore} precision={2} value={drafts[row.criterionId] ? drafts[row.criterionId].adminScore : row.adminScore ?? row.selfScore} disabled={disabled || !permissions.canReview} onChange={(value) => change(row, "adminScore", value)} />
       <Input.TextArea aria-label={`Lý do thẩm định ${row.code}`} maxLength={5000} placeholder="Lý do khi khác điểm tự chấm" value={drafts[row.criterionId] ? drafts[row.criterionId].adminComment : row.adminComment ?? ""} disabled={disabled || !permissions.canReview} onChange={(event) => change(row, "adminComment", event.target.value)} />
-      <Typography.Text type="secondary">{row.reviewedAt ? `Đã duyệt: ${row.reviewedByName ?? "Quản trị viên"} · ${vietnamTime(row.reviewedAt)}` : "Chưa thẩm định"}</Typography.Text>
+      <Typography.Text type="secondary">{row.reviewedAt ? `Đã duyệt: ${row.reviewedByName ?? row.reviewedById} · ${vietnamTime(row.reviewedAt)}` : "Chưa thẩm định"}</Typography.Text>
       {row.supplementBaseline?.review && <Typography.Text type="secondary">Điểm duyệt trước bổ sung: {row.supplementBaseline.review.adminScore ?? "Chưa duyệt"} · {row.supplementBaseline.review.adminComment || "Không có lý do"}</Typography.Text>}
       <Button disabled={disabled || !permissions.canReview} onClick={() => save(row)}>Lưu tiêu chí {row.code}</Button><Typography.Text role="status">{states[row.criterionId]}</Typography.Text>
     </Space> },
@@ -114,7 +113,7 @@ export default function ReviewCard({ record, summary, ratingThresholds = [], dis
       <Typography.Text>Tổng tự chấm: {summary.selfTotal}/{summary.maxTotalScore} · {summary.ratingLabel}</Typography.Text>
       <Typography.Text>Lượt đầu: {vietnamTime(record.firstReviewedAt)} · Giai đoạn: {phaseLabels[record.period.phase] ?? "Chưa xác định"}</Typography.Text>
       {record.supplementStartAt && <Alert type="info" showIcon title={`Lịch bổ sung: ${vietnamTime(record.supplementStartAt)} đến trước ${vietnamTime(record.supplementDeadline)} theo giờ Việt Nam`} />}
-      {record.finalResult && <Alert type="success" title={`Đã chốt: ${record.finalResult.score} điểm · ${record.finalResult.percent}% · ${ratingLabel(record.finalResult.rating, record.finalResult.ratingLabel, ratingThresholds)}`} />}
+      {record.finalResult && <Alert type="success" title={`Đã chốt: ${record.finalResult.score} điểm · ${record.finalResult.percent}% · ${record.finalResult.rating}`} />}
       {disconnected && <Alert type="warning" title="Chưa tải lại được quyền từ máy chủ, vui lòng làm mới" />}
       <Table rowKey="criterionId" dataSource={tableRows(record.criteria)} columns={columns} pagination={false} defaultExpandAllRows scroll={{ x: 1500 }} />
       <Space wrap><Button type="primary" loading={busy} disabled={disabled || !dirty || !permissions.canReview} onClick={() => save()}>Lưu tất cả thẩm định</Button><Button disabled={disabled || dirty || !permissions.canReview} onClick={() => confirm(() => execute(() => acceptAllScores(record.id), "Đã chấp nhận các ô chưa duyệt"), "Chấp nhận toàn bộ ô chưa duyệt?")}>Chấp nhận các ô chưa duyệt</Button><Button disabled={disabled || dirty || !permissions.canCompleteFirstReview} onClick={() => confirm(() => execute(() => completeFirstReview(record.id), "Đã hoàn tất thẩm định lần đầu"), "Hoàn tất thẩm định lần đầu?")}>Hoàn tất thẩm định lần đầu</Button><Button disabled={disabled || dirty} onClick={() => onFinalize([record.id])}>Xem trước và chốt hồ sơ</Button></Space>
