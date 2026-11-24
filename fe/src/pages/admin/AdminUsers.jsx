@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CHANNEL_LABELS, ROLE_LABELS, FIELD_LABELS, displayLabel, deliveryDescription, systemMessage } from "../../services/displayLabels";
 import { Alert, Button, Form, Input, Modal, Select, Space, Table, Tag, Upload, message } from "antd";
 import { EditOutlined, LockOutlined, UnlockOutlined, KeyOutlined, UploadOutlined } from "@ant-design/icons";
 import { userService } from "../../services/userService";
@@ -181,10 +182,9 @@ export default function AdminUsers() {
   async function showDeliveryStatus(user) {
     try {
       const result = await userService.getCredentialStatus(user.id);
-      const labels = { SENT: "Đã được kênh tiếp nhận", PENDING: "Đang chờ", FAILED: "Gửi thất bại", SKIPPED: "Đã bỏ qua" };
       Modal.info({ title: `Trạng thái gửi: ${user.username}`, content: <Space orientation="vertical">
         <span>{result.status === "NOT_CONFIGURED" ? "Chưa cấu hình khóa mã hóa để cấp tự động. Cần đặt lại mật khẩu sau khi cấu hình." : result.allRequiredChannelsSent ? "Các kênh được yêu cầu đã tiếp nhận." : "Còn kênh chưa tiếp nhận thông tin đăng nhập."}</span>
-        {result.channels.map((item) => <span key={item.channel}>{item.channel}: {labels[item.status] ?? item.status}{item.errorCode ? ` (${item.errorCode})` : ""}</span>)}
+        {result.channels.map((item) => <span key={item.channel}>{displayLabel(CHANNEL_LABELS, item.channel, "Kênh khác")}: {deliveryDescription(item)}</span>)}
         <span>Zalo ZNS: Chưa kích hoạt</span>
       </Space>, okText: "Đóng" });
     } catch (error) { message.error(error.message || "Không thể tải trạng thái gửi thông tin đăng nhập."); }
@@ -247,7 +247,7 @@ export default function AdminUsers() {
     try {
       const result = await userService.confirmImport(importPreview.importId);
       setImportResult(result);
-      message.success(`Đã tạo ${result.createdCount} tài khoản UNIT.`);
+      message.success(`Đã tạo ${result.createdCount} tài khoản đơn vị.`);
       await load(1, pageSize, q);
       setPage(1);
     } catch (error) {
@@ -309,7 +309,7 @@ export default function AdminUsers() {
     try {
       await userService.retryCredentialDelivery(account.userId, channel);
       await refreshImportedStatus(account);
-      message.success(`Đã xếp lại kênh ${channel} cho ${account.username}.`);
+      message.success(`Đã xếp lại kênh ${displayLabel(CHANNEL_LABELS, channel, "đã chọn")} cho ${account.username}.`);
     } catch (error) {
       message.error(error.message || "Không thể thử lại kênh gửi thông tin đăng nhập.");
     }
@@ -326,7 +326,7 @@ export default function AdminUsers() {
   const columns = [
     { title: "Tên đăng nhập", dataIndex: "username", key: "username" },
     { title: "Họ và tên", dataIndex: "fullName", key: "fullName" },
-    { title: "Quyền", dataIndex: "role", key: "role" },
+    { title: "Quyền", dataIndex: "role", key: "role", render: (value) => displayLabel(ROLE_LABELS, value, "Vai trò chưa xác định") },
     { title: "Đơn vị", key: "unit", render: (_, user) => user.unit?.name ?? "Toàn hệ thống" },
     { title: "Trạng thái", key: "status", render: (_, user) => <Space orientation="vertical"><Tag color={user.isActive ? "green" : "red"}>{user.isActive ? "Đang hoạt động" : "Đã khóa"}</Tag>{user.mustChangePassword && <Tag color="orange">Phải đổi mật khẩu</Tag>}{!user.credentialsSentAt && <Tag>Chưa gửi thông tin đăng nhập</Tag>}</Space> },
     { title: "Hành động", key: "action", render: (_, user) => <Space wrap><Button icon={<EditOutlined />} onClick={() => openForm(user)}>Sửa</Button><Button icon={user.isActive ? <LockOutlined /> : <UnlockOutlined />} onClick={() => toggleStatus(user)}>{user.isActive ? "Khóa" : "Mở"}</Button><Button icon={<KeyOutlined />} onClick={() => resetPassword(user)}>Đặt lại mật khẩu</Button><Button onClick={() => showDeliveryStatus(user)}>Trạng thái gửi</Button><Button disabled={!user.email || !user.mustChangePassword} onClick={() => confirmEmail(user)}>Xác nhận email</Button></Space> },
@@ -349,7 +349,7 @@ export default function AdminUsers() {
       </Form>
     </Modal>
     {/* Khu vực này chỉ chọn file và gọi backend preview; sự kiện thả không tự ghi tài khoản */}
-    <Modal title="Import Excel tài khoản UNIT" open={importOpen} width={1000} confirmLoading={importConfirming} okText="Xác nhận tạo tài khoản" cancelText="Đóng" onOk={confirmImport} onCancel={closeImport} okButtonProps={{ disabled: !importPreview || importPreview.validRows === 0 || importPreview.invalidRows > 0 || !!importResult }}>
+    <Modal title="Nhập tài khoản đơn vị từ Excel" open={importOpen} width={1000} confirmLoading={importConfirming} okText="Xác nhận tạo tài khoản" cancelText="Đóng" onOk={confirmImport} onCancel={closeImport} okButtonProps={{ disabled: !importPreview || importPreview.validRows === 0 || importPreview.invalidRows > 0 || !!importResult }}>
       <Space orientation="vertical" style={{ width: "100%" }} size="middle">
         <Space wrap><ImportWorkbookGenerator onUse={selectImportFile} /><Button onClick={downloadImportTemplate}>Tải tệp mẫu</Button><span>Tệp XLSX tối đa 5 MiB và 100 dòng; email bắt buộc để gửi thông tin đăng nhập</span></Space>
         <Upload.Dragger accept=".xlsx" maxCount={1} fileList={importFile ? [{ uid: "import-file", name: importFile.name, status: "done" }] : []} beforeUpload={(file) => { selectImportFile(file); return false; }} onRemove={() => { selectImportFile(null); return true; }} showUploadList>
@@ -360,15 +360,15 @@ export default function AdminUsers() {
           <div>{`Phiên xem trước đến ${new Date(importPreview.expiresAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}: ${importPreview.totalRows} dòng, ${importPreview.validRows} hợp lệ, ${importPreview.invalidRows} có lỗi`}</div>
           <Table size="small" rowKey="rowNumber" dataSource={importPreview.rows} pagination={{ pageSize: 10 }} scroll={{ x: 900 }} columns={[
             { title: "Dòng", dataIndex: "rowNumber", width: 70 }, { title: "Mã đơn vị", dataIndex: "unitCode" }, { title: "Tên đơn vị", dataIndex: "unitName" }, { title: "Tên đăng nhập", dataIndex: "username" }, { title: "Họ và tên", dataIndex: "fullName" }, { title: "Email", dataIndex: "email" }, { title: "Điện thoại", dataIndex: "phone" },
-            { title: "Lỗi", key: "errors", render: (_, row) => row.errors.map((item, index) => <div key={`${item.code}-${index}`}><Tag color="red">{item.code}</Tag>{item.field}: {item.message}</div>) },
+            { title: "Lỗi", key: "errors", render: (_, row) => row.errors.map((item, index) => <div key={`${item.code}-${index}`}><Tag color="red">Cần sửa</Tag>{displayLabel(FIELD_LABELS, item.field, "Dữ liệu dòng")}: {systemMessage(item.message, "Dữ liệu không hợp lệ, vui lòng kiểm tra lại")}</div>) },
           ]} />
         </>}
         {importResult && <>
           <div>{`Đã tạo ${importResult.createdCount} tài khoản và ${importResult.unitsCreated} đơn vị mới. Tiến độ: ${importResult.accounts.length}/${importPreview?.totalRows ?? importResult.accounts.length} tài khoản đã xử lý.`}</div>
           <Table size="small" rowKey="userId" dataSource={importResult.accounts} pagination={{ pageSize: 10 }} scroll={{ x: 1000 }} columns={[
-            { title: "Dòng", dataIndex: "rowNumber" }, { title: "Đơn vị", dataIndex: "unitCode" }, { title: "Tên đăng nhập", dataIndex: "username" }, { title: "Tình trạng credential", dataIndex: "credentialStatus", render: (status) => status === "QUEUED" ? "Đã xếp hàng" : "Chưa cấu hình" },
-            { title: "Email", key: "email", render: (_, row) => { const delivery = row.channels.find((item) => item.channel === "EMAIL"); return <Space direction="vertical"><span>{delivery?.status ?? "Chưa xếp hàng"}{delivery?.errorCode ? ` · ${delivery.errorCode}` : ""}</span>{delivery?.errorCode === "EMAIL_UNCONFIRMED" && <Button size="small" onClick={() => confirmEmail(row, (result) => applyImportedDeliveryStatus(row.userId, result))}>Xác nhận email đã kiểm tra</Button>}{delivery?.status === "FAILED" && <Button size="small" onClick={() => retryImportedChannel(row, "EMAIL")}>Thử lại Email</Button>}</Space>; } },
-            { title: "Web Push", key: "push", render: (_, row) => { const delivery = row.channels.find((item) => item.channel === "WEB_PUSH"); return <Space direction="vertical"><span>{delivery?.errorCode === "NO_SUBSCRIPTION" ? "Chờ đăng ký thiết bị" : delivery?.status ?? "Chưa xếp hàng"}{delivery?.errorCode && delivery.errorCode !== "NO_SUBSCRIPTION" ? ` · ${delivery.errorCode}` : ""}</span>{delivery?.status === "FAILED" && <Button size="small" onClick={() => retryImportedChannel(row, "WEB_PUSH")}>Thử lại Web Push</Button>}</Space>; } }, { title: "Zalo ZNS", render: () => "Chưa kích hoạt" }, { title: "Tiến độ", render: (_, row) => <Button size="small" onClick={() => refreshImportedStatus(row)}>Cập nhật trạng thái</Button> },
+            { title: "Dòng", dataIndex: "rowNumber" }, { title: "Đơn vị", dataIndex: "unitCode" }, { title: "Tên đăng nhập", dataIndex: "username" }, { title: "Thông tin đăng nhập", dataIndex: "credentialStatus", render: (status) => status === "QUEUED" ? "Đã xếp hàng" : "Chưa cấu hình" },
+            { title: "Email", key: "email", render: (_, row) => { const delivery = row.channels.find((item) => item.channel === "EMAIL"); return <Space direction="vertical"><span>{deliveryDescription(delivery)}</span>{delivery?.errorCode === "EMAIL_UNCONFIRMED" && <Button size="small" onClick={() => confirmEmail(row, (result) => applyImportedDeliveryStatus(row.userId, result))}>Xác nhận email đã kiểm tra</Button>}{delivery?.status === "FAILED" && <Button size="small" onClick={() => retryImportedChannel(row, "EMAIL")}>Thử lại Email</Button>}</Space>; } },
+            { title: "Web Push", key: "push", render: (_, row) => { const delivery = row.channels.find((item) => item.channel === "WEB_PUSH"); return <Space direction="vertical"><span>{deliveryDescription(delivery)}</span>{delivery?.status === "FAILED" && <Button size="small" onClick={() => retryImportedChannel(row, "WEB_PUSH")}>Thử lại Web Push</Button>}</Space>; } }, { title: "Zalo ZNS", render: () => "Chưa kích hoạt" }, { title: "Tiến độ", render: (_, row) => <Button size="small" onClick={() => refreshImportedStatus(row)}>Cập nhật trạng thái</Button> },
           ]} />
         </>}
       </Space>

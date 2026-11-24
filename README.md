@@ -68,6 +68,10 @@ Bộ [VC17](./docs/VC17_KIEM_THU.md) cần PostgreSQL local mới tên `vc17_con
 
 Kiểm Supabase thật: chỉ định project/service key trong môi trường BE và `VC10_SUPABASE_BUCKET` là bucket private dành kiểm thử, build BE rồi chạy `npm run test:supabase --prefix be`. Script kiểm ACL, upload/download bytes và dọn đúng object UUID của lượt kiểm; báo cáo local không chứa secret. Đây là kiểm provider, cần kết hợp ma trận quyền HTTP/browser để nghiệm thu tích hợp đầy đủ.
 
+## Vercel FE và Render BE
+
+Xem [hướng dẫn cấu hình Vercel/Render](./docs/DEPLOY_VERCEL_RENDER.md): DB/migration/role runtime, bucket Supabase private, biến môi trường, seed Admin, SMTP và kiểm sau deploy. [Cấu hình Vercel](./fe/vercel.json) dùng Root Directory `fe`; [Blueprint Render](./render.yaml) dùng Root Directory `be`, dịch vụ Starter và disk có tính phí. Chỉ tạo tài nguyên sau khi bạn chọn trên nhà cung cấp; push file chưa phải đã deploy.
+
 ## Docker và HTTPS
 
 [Compose triển khai](./deploy/compose.yml) gồm PostgreSQL, migration riêng, cấp quyền DB app, BE, FE Nginx và Caddy. DB không mở port ra host; chỉ proxy mở HTTP/HTTPS. Runtime chạy user node và role `seminar_app` không superuser, không UPDATE/DELETE/TRUNCATE audit/history. Migration dùng role owner riêng và hoàn tất trước BE nhận request.

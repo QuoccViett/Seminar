@@ -77,7 +77,7 @@ export default function AdminDashboard() {
     { title: "Đơn vị", dataIndex: "unitName" },
     { title: "Tự chấm", dataIndex: "selfTotal", render: formatNumber },
     { title: "Điểm hiệu lực", dataIndex: "currentTotal", render: formatNumber },
-    { title: "Xếp loại", render: (_, row) => <Space><span>{row.ratingLabel ?? "Chưa xếp loại"}</span>{!row.isFinal && <Tag>Tạm tính</Tag>}</Space> },
+    { title: "Xếp loại", render: (_, row) => <Space><RatingTag color={row.ratingLabel ? row.ratingColor : null}>{row.ratingLabel ?? "Chưa xếp loại"}</RatingTag>{!row.isFinal && <Tag>Tạm tính</Tag>}</Space> },
     { title: "Trạng thái", dataIndex: "status", render: (value) => <EvaluationStatusTag status={value}>{statusLabels[value] ?? "Chưa xác định"}</EvaluationStatusTag> },
     { title: "Hồ sơ", render: (_, row) => <Button type="link" onClick={() => navigate(`/admin/records?periodId=${periodId}&evaluationId=${row.evaluationId}`)}>Xem chi tiết</Button> },
   ];
@@ -113,7 +113,7 @@ export default function AdminDashboard() {
       </Row>
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={8}><Card title="Tiến độ"><Progress type="dashboard" percent={overview.progressPercent} /><p>Đã chốt: {overview.finalizedCount} / {overview.totalUnits}</p></Card></Col>
-        <Col xs={24} lg={16}><Card title="Nhóm trạng thái"><Space wrap>{Object.entries(overview.statusCounts).map(([status, count]) => <EvaluationStatusTag key={status} status={status} count={count}>{statusLabels[status] ?? status}: {count}</EvaluationStatusTag>)}</Space></Card></Col>
+        <Col xs={24} lg={16}><Card title="Nhóm trạng thái"><Space wrap>{Object.entries(overview.statusCounts).map(([status, count]) => <EvaluationStatusTag key={status} status={status} count={count}>{statusLabels[status] ?? "Trạng thái khác"}: {count}</EvaluationStatusTag>)}</Space></Card></Col>
       </Row>
       <Card title="Kết quả chính thức từ hồ sơ đã chốt" style={{ marginTop: 16 }}><Space wrap size="large"><Statistic title="Tổng điểm đã chốt" value={overview.officialResults.totalFinalScore} formatter={formatNumber} /><Statistic title="Điểm trung bình" value={overview.officialResults.averageFinalScore} formatter={formatNumber} /><Statistic title="Tỷ lệ trung bình" value={overview.officialResults.averageFinalPercent} suffix="%" formatter={formatNumber} /></Space></Card>
       <Card title="Bảng xếp hạng theo điểm hiệu lực" style={{ marginTop: 16 }}><Typography.Paragraph type="secondary">Kết quả chưa chốt chỉ là tạm tính; đồng hạng điểm có cùng hạng điểm</Typography.Paragraph><Table rowKey="evaluationId" dataSource={snapshot.leaderboard.items} columns={rankingColumns} pagination={false} scroll={{ x: 900 }} locale={{ emptyText: "Chưa có hồ sơ để xếp hạng" }} /></Card>

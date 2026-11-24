@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { EVALUATION_STATUS_LABELS, ratingLabel, systemMessage } from "../../services/displayLabels";
 import FeedbackPanel from "./FeedbackPanel";
 import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Table, Typography } from "antd";
 import { saveSelfScores, submitEvaluation, submitSupplement } from "../../services/evaluationService";
@@ -12,7 +13,7 @@ export function vietnamTime(value) {
 }
 
 /** Ánh xạ trạng thái ổn định sang nhãn tiếng Việt cho luồng người dùng */
-export const statusLabels = { DRAFT: "Đang tự chấm", PENDING_REVIEW: "Chờ duyệt", SUPPLEMENT_REQUESTED: "Được yêu cầu bổ sung", SUPPLEMENT_SUBMITTED: "Đã nộp bổ sung", SUPPLEMENT_EXPIRED: "Đã hết hạn bổ sung", FINALIZED: "Đã chốt" };
+export const statusLabels = EVALUATION_STATUS_LABELS;
 
 /** Bỏ children rỗng chỉ ở dữ liệu trình bày để Ant Table không vẽ nút mở rộng trên lá
  * Giữ nguyên snapshot API và các field quyền, nhóm có con được chuyển đổi đệ quy theo cùng quy tắc
@@ -40,7 +41,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
   const canSaveDrafts = Object.keys(drafts).every((id) => allowed.includes(id));
   // Nhãn chính thức phải đi theo mã xếp loại đã chốt và bộ nhãn của kỳ do server trả
   // Không lấy nhãn tự chấm tạm tính thay kết quả Admin khi hai tổng điểm khác nhau
-  const finalRatingLabel = period.ratingThresholds?.find((item) => item.rating === record.finalResult?.rating)?.label || "Chưa có xếp loại";
+  const finalRatingLabel = ratingLabel(record.finalResult?.rating, record.finalResult?.ratingLabel, period.ratingThresholds);
 
   /** Hiển thị thời gian còn lại từ snapshot server và thời gian đã trôi đơn điệu
    * Đồng hồ trình duyệt chỉ cập nhật nhãn, không quyết định quyền lưu hoặc nộp
@@ -89,7 +90,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
       const result = await saveSelfScores(record.id, entries.map(([id, values]) => ({ criterionId: id, ...values })));
       const saved = result.results.filter((item) => item.ok).map((item) => item.criterionId);
       setDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !saved.includes(id))));
-      setStates((current) => ({ ...current, ...Object.fromEntries(result.results.map((item) => [item.criterionId, item.ok ? "Đã lưu" : item.error?.message || "Không thể lưu tiêu chí"])) }));
+      setStates((current) => ({ ...current, ...Object.fromEntries(result.results.map((item) => [item.criterionId, item.ok ? "Đã lưu" : systemMessage(item.error?.message, "Không thể lưu tiêu chí")])) }));
       setNotice(result.results.some((item) => !item.ok) ? { type: "error", text: "Có tiêu chí chưa lưu được, vui lòng kiểm tra thông báo từng ô" } : { type: "success", text: "Đã lưu điểm và diễn giải" });
       await onReload();
     } catch (error) {

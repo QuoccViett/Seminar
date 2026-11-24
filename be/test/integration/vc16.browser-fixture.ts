@@ -11,6 +11,10 @@ async function startFixture() {
   const h = await createVc12Harness({ url: process.env.VC16_TEST_DATABASE_URL, name: "vc16_test" });
   const review = await h.scenario(2);
   await h.prisma.evaluationPeriod.update({ where: { id: review.periodId }, data: { name: "Kỳ thẩm định VC16" } });
+  // Điều kiện trước của phép kiểm màu: bảng và phân bố phải dùng màu riêng của kỳ này, không màu mặc định FE.
+  for (const [rating, color] of Object.entries({ EXCELLENT: "#EEE8C3", GOOD: "#123456", PASS: "#5C7D3E", FAIL: "#AF3C55" })) {
+    await h.prisma.ratingThreshold.updateMany({ where: { periodId: review.periodId, rating }, data: { color } });
+  }
 
   /** Tạo điều kiện trước của hồ sơ DRAFT với trigger thật và một lá chưa chấm
    * start tương lai dành cho phép thử không lộ tiêu chí, mọi thời gian tính từ server fixture
@@ -30,6 +34,9 @@ async function startFixture() {
   const waiting = await draftPeriod("Kỳ chờ mở VC16", new Date(Date.now() + 86400000));
   const unit = review.records[0]!;
   await h.prisma.user.update({ where: { id: unit.userId }, data: { passwordHash: await bcrypt.hash("123456", 4), mustChangePassword: true } });
+  // Bản ghi đã bỏ qua là điều kiện trước của màn trạng thái gửi, không gọi provider hoặc giả phản hồi HTTP
+  const notificationId = randomUUID();
+  await h.prisma.notification.create({ data: { id: notificationId, userId: h.adminId, channel: "SYSTEM", type: "TEST", title: "Kiểm nhãn trạng thái gửi VC16", body: "Thông báo dùng để kiểm tên kênh và lý do chưa gửi", createdAt: new Date(), deliveries: { create: [{ id: randomUUID(), channel: "WEB_PUSH", status: "SKIPPED", reasonCode: "NO_SUBSCRIPTION", lastError: "Chưa đăng ký thiết bị nhận thông báo", createdAt: new Date(), updatedAt: new Date() }] } } });
   await mkdir(".tmp", { recursive: true });
   await writeFile(".tmp/vc16-browser-state.json", JSON.stringify({ base: h.base, username: h.username, password: h.password, review, open, waiting, unit }));
   process.stdout.write("Backend kiểm chứng VC16 đã sẵn sàng trên loopback, các kênh gửi ngoài đều tắt\n");

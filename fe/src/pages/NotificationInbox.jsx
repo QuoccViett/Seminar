@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { CHANNEL_LABELS, displayLabel, deliveryDescription, notificationBody } from "../services/displayLabels";
 import { Alert, Button, Card, List, Modal, Pagination, Space, Switch, Tag, Typography, message } from "antd";
 import { createTestNotification, getNotificationDeliveries, getNotificationPreferences, listNotifications, markAllNotificationsRead, markNotificationRead, updateNotificationPreferences } from "../services/notificationService";
 import { enableWebPush, disableWebPush } from "../services/webPush";
 import { getAccessToken } from "../services/session";
 
 const { Text, Title } = Typography;
-const CHANNEL_LABELS = { WEB_PUSH: "Thông báo trình duyệt", EMAIL: "Email", ZALO_ZNS: "Zalo ZNS" };
+const OPTIONAL_CHANNELS = ["WEB_PUSH", "EMAIL", "ZALO_ZNS"];
 
 /** Hiển thị hộp thư thật và tùy chọn kênh cho phiên đang đăng nhập
  * Tải lại khi quay về tab để giảm độ trễ; mọi kết quả quyền và trạng thái ZNS do backend quyết định
@@ -92,7 +93,7 @@ export default function NotificationInbox() {
   async function showDeliveries(id) {
     try {
       const result = await getNotificationDeliveries(id);
-      Modal.info({ title: "Trạng thái gửi thông báo", content: <Space direction="vertical">{result.channels.length ? result.channels.map((item) => <Text key={item.channel}>{item.channel}: {item.status === "SENT" ? "Nhà cung cấp đã tiếp nhận" : item.status === "PENDING" ? "Đang chờ xử lý" : item.status === "FAILED" ? "Gửi thất bại" : "Đã bỏ qua"}{item.lastError ? ` — ${item.lastError}` : ""}</Text>) : <Text>Chỉ có thông báo trong hộp thư hệ thống.</Text>}</Space>, okText: "Đóng" });
+      Modal.info({ title: "Trạng thái gửi thông báo", content: <Space direction="vertical">{result.channels.length ? result.channels.map((item) => <Text key={item.channel}>{displayLabel(CHANNEL_LABELS, item.channel, "Kênh khác")}: {deliveryDescription(item)}</Text>) : <Text>Chỉ có thông báo trong hộp thư hệ thống.</Text>}</Space>, okText: "Đóng" });
     } catch (failure) { message.error(failure.message || "Không thể tải trạng thái gửi thông báo."); }
   }
 
@@ -102,9 +103,9 @@ export default function NotificationInbox() {
     <Card title="Tùy chọn nhận thông báo" extra={<Button onClick={() => testChannel("SYSTEM")} disabled={busy}>Kiểm tra hộp thư</Button>}>
       <Space direction="vertical" size="middle">
         <Text>Hộp thư hệ thống luôn bật</Text>
-        {Object.entries(CHANNEL_LABELS).map(([channel, label]) => <Space key={channel}>
-          <Switch checked={Boolean(preferences?.[channel])} disabled={busy || !preferences || (channel === "ZALO_ZNS" && !preferences.zaloZnsAvailable)} onChange={(enabled) => changeChannel(channel, enabled)} aria-label={label} />
-          <Text>{label}</Text>
+        {OPTIONAL_CHANNELS.map((channel) => <Space key={channel}>
+          <Switch checked={Boolean(preferences?.[channel])} disabled={busy || !preferences || (channel === "ZALO_ZNS" && !preferences.zaloZnsAvailable)} onChange={(enabled) => changeChannel(channel, enabled)} aria-label={CHANNEL_LABELS[channel]} />
+          <Text>{CHANNEL_LABELS[channel]}</Text>
           {channel === "WEB_PUSH" && preferences?.WEB_PUSH && <Button size="small" disabled={busy} onClick={registerCurrentDevice}>Đăng ký thiết bị này</Button>}
           {channel === "ZALO_ZNS" && !preferences?.zaloZnsAvailable ? <Tag>Chưa kích hoạt</Tag> : <Button size="small" disabled={busy || !preferences?.[channel]} onClick={() => testChannel(channel)}>Thử kênh</Button>}
         </Space>)}
@@ -115,7 +116,7 @@ export default function NotificationInbox() {
       <Button onClick={readAll}>Đánh dấu đã đọc tất cả</Button>
     </Space>}>
       <List loading={loading} locale={{ emptyText: "Chưa có thông báo." }} dataSource={data.items} renderItem={(item) => <List.Item actions={[<Button key="delivery" type="link" onClick={() => showDeliveries(item.id)}>Trạng thái gửi</Button>, ...(!item.isRead ? [<Button key="read" type="link" onClick={() => readOne(item.id)}>Đánh dấu đã đọc</Button>] : [])]}>
-        <List.Item.Meta title={<Space><Text strong={!item.isRead}>{item.title}</Text>{!item.isRead && <Tag color="blue">Mới</Tag>}</Space>} description={<Space direction="vertical"><Text>{item.body}</Text><Text type="secondary">{new Date(item.createdAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</Text></Space>} />
+        <List.Item.Meta title={<Space><Text strong={!item.isRead}>{item.title}</Text>{!item.isRead && <Tag color="blue">Mới</Tag>}</Space>} description={<Space direction="vertical"><Text>{notificationBody(item)}</Text><Text type="secondary">{new Date(item.createdAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</Text></Space>} />
       </List.Item>} />
       <Pagination current={page} pageSize={data.pageSize} total={data.total} onChange={setPage} showSizeChanger={false} />
     </Card>
