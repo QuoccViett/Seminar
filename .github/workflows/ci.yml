@@ -301,3 +301,113 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+  # Xác định thay đổi trước khi vào hàng đợi triển khai
+  frontend-changes:
+    name: Kiểm tra thay đổi frontend
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.changes.outputs.deploy }}
+    defaults:
+      run:
+        working-directory: ./fe
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # So sánh toàn bộ lượt push, kể cả merge nhiều commit và tệp bị xóa
+      - name: Kiểm tra thay đổi frontend
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          elif ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            # Nếu không có commit trước đó thì triển khai để tránh bỏ sót thay đổi
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- .; then
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then exit "$status"; fi
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  # Chỉ triển khai sau khi toàn bộ kiểm tra hiện có thành công
+  deploy-frontend:
+    name: Deploy frontend to Vercel
+    needs: [gitleaks, backend-ci, system-vc17, frontend-ci, frontend-changes]
+    if: needs.frontend-changes.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    # Tách Production và từng nhánh Preview để giới hạn các lượt triển khai đồng thời
+    concurrency:
+      group: vercel-frontend-${{ github.event_name == 'push' && 'production' || github.ref }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: ./fe
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Chỉ triển khai nếu frontend đã kiểm tra còn khớp với đầu nhánh main
+      - name: Kiểm tra phiên bản Production
+        if: github.event_name == 'push'
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          current_sha=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ -z "$current_sha" ]; then
+            echo '::error::Không thể xác định phiên bản hiện tại của nhánh main'
+            exit 1
+          fi
+          git fetch --no-tags origin "$current_sha"
+          if ! git diff --quiet "$EXPECTED_SHA" "$current_sha" -- .; then
+            echo '::error::Frontend trên nhánh main đã thay đổi sau lượt kiểm tra này'
+            exit 1
+          fi
+
+      # Chỉ nạp và kiểm tra secret khi thực sự cần triển khai
+      - name: Kiểm tra Vercel Secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          missing=0
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Thiếu GitHub Actions secret $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Vercel dùng cấu hình dự án hiện tại và tự build trong môi trường đích
+      - name: Triển khai frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            npx --yes vercel@66.6.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+          else
+            npx --yes vercel@66.6.0 deploy --yes --token "$VERCEL_TOKEN"
+          fi
