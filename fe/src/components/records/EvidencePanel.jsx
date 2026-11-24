@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { systemMessage } from "../../services/displayLabels";
 import { Alert, Button, Input, Modal, Popconfirm, Progress, Space, Tag, Typography, Upload } from "antd";
 import { cancelEvidenceUpload, confirmEvidences, deleteEvidence, readEvidenceBlob, requestEvidenceUploads, uploadEvidenceBytes } from "../../services/evidenceService";
 
@@ -63,13 +64,13 @@ export default function EvidencePanel({ evaluationId, row, onReload = () => {}, 
         try {
           jobState(item.key, { text: "Đang xin quyền tải" });
           const result = (await requestEvidenceUploads(evaluationId, [{ criterionId: row.criterionId, fileName: item.file.name, mimeType: item.file.type || mimeFromName(item.file.name), sizeBytes: item.file.size }])).results[0];
-          if (!result.ok) throw new Error(result.error.message);
+          if (!result.ok) throw new Error(systemMessage(result.error.message, "Không thể xin quyền tải minh chứng"));
           const grant = result.data; uploadId = grant.uploadId;
           jobState(item.key, { text: "Đang tải" });
           await uploadEvidenceBytes(grant, item.file, (percent) => jobState(item.key, { percent }));
           jobState(item.key, { text: "Đang kiểm tra và xác nhận" });
           const confirmation = (await confirmEvidences(evaluationId, [{ kind: "FILE", criterionId: row.criterionId, uploadId }])).results[0];
-          if (!confirmation.ok) throw new Error(confirmation.error.message);
+          if (!confirmation.ok) throw new Error(systemMessage(confirmation.error.message, "Không thể xác nhận minh chứng"));
           jobState(item.key, { percent: 100, text: "Đã gắn minh chứng" });
         } catch (failure) {
           jobState(item.key, { failed: true, text: failure.message || "Chưa tải được tệp" });
@@ -86,7 +87,7 @@ export default function EvidencePanel({ evaluationId, row, onReload = () => {}, 
     if (!canEdit || !begin()) return;
     try {
       const result = (await confirmEvidences(evaluationId, [{ kind: "LINK", criterionId: row.criterionId, externalUrl: link, description }])).results[0];
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error(systemMessage(result.error.message, "Không thể thêm liên kết minh chứng"));
       setLink(""); setDescription("");
     } catch (failure) { setError(failure.message || "Không thể thêm liên kết"); }
     finally { finish(); }

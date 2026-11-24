@@ -30,6 +30,13 @@ function record() {
 }
 
 describe("thẩm định giữ nháp và quyền từ backend", () => {
+  /** Màn chốt dùng nhãn tùy chỉnh của kỳ, không in mã GOOD hoặc lấy nhãn tự chấm */
+  it("hiển thị xếp loại chính thức theo cấu hình kỳ", () => {
+    const snapshot = { ...record(), finalResult: { score: 75, percent: 75, rating: "GOOD" } };
+    render(<ReviewCard record={snapshot} summary={{ selfTotal: 90, maxTotalScore: 100, ratingLabel: "Xuất sắc" }} ratingThresholds={[{ rating: "GOOD", label: "Hoàn thành tốt nhiệm vụ" }]} onReload={vi.fn()} onBusyChange={vi.fn()} onFinalize={vi.fn()} />);
+    expect(screen.getByText("Đã chốt: 75 điểm · 75% · Hoàn thành tốt nhiệm vụ")).toBeInTheDocument();
+    expect(screen.queryByText(/\bGOOD\b/u)).toBeNull();
+  });
   /** Một ô thành công không được xóa nháp của ô lỗi khi parent tải snapshot mới
    * Polling đổi record object nhưng cùng id phải giữ nháp cho tới khi người dùng lưu thành công
    */

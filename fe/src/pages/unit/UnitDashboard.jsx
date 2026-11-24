@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { displayLabel, ratingLabel } from "../../services/displayLabels";
 import { Alert, Button, Card, Col, Empty, Progress, Row, Select, Space, Statistic, Tag, Typography } from "antd";
 import { useNavigate } from "react-router-dom";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
@@ -103,11 +104,11 @@ export default function UnitDashboard() {
       </Space>
     </Card>}
     {!loading && record && <>
-      <Card title={<Space wrap>{record.period.name} ({period?.year})<EvaluationStatusTag status={record.status}>{STATUS_LABELS[record.status] ?? record.status}</EvaluationStatusTag></Space>}>
+      <Card title={<Space wrap>{record.period.name} ({period?.year})<EvaluationStatusTag status={record.status}>{displayLabel(STATUS_LABELS, record.status, "Trạng thái chưa xác định")}</EvaluationStatusTag></Space>}>
         <Row gutter={[20, 20]}>
           <Col xs={24} sm={12} lg={8}><Statistic title="Tiến độ đã nhập" value={summary ? `${summary.scoredCount}/${summary.leafCount}` : record.criteriaVisible ? "Chưa có điểm" : "Chưa mở tiêu chí"} /></Col>
           <Col xs={24} sm={12} lg={8}><Statistic title="Tổng điểm tự chấm" value={summary ? summary.selfTotal : "—"} suffix={summary ? `/ ${summary.maxTotalScore}` : undefined} /></Col>
-          <Col xs={24} sm={12} lg={8}><Statistic title="Xếp loại hiện tại" value={finalRatingLabel ?? summary?.ratingLabel ?? record.finalResult?.rating ?? "Chưa có"} /></Col>
+          <Col xs={24} sm={12} lg={8}><Statistic title="Xếp loại hiện tại" value={record.finalResult ? ratingLabel(record.finalResult.rating, finalRatingLabel, snapshot.thresholds) : ratingLabel(summary?.suggestedRating, summary?.ratingLabel)} /></Col>
         </Row>
         {summary && <Progress percent={progress} format={() => `${summary.scoredCount}/${summary.leafCount} tiêu chí`} style={{ marginTop: 20 }} />}
         <Row gutter={[20, 12]} style={{ marginTop: 20 }}>

@@ -112,6 +112,15 @@ async function verify() {
     }
     checks.push("adminScreens");
 
+    // Đọc trạng thái thật từ PostgreSQL, dịch tên kênh/lý do mà vẫn giữ ý nghĩa chưa gửi
+    await admin.goto(`${origin}/admin/notifications`);
+    const noticeItem = admin.locator(".ant-list-item").filter({ hasText: "Kiểm nhãn trạng thái gửi VC16" });
+    await noticeItem.getByRole("button", { name: "Trạng thái gửi", exact: true }).click();
+    await admin.getByRole("dialog").getByText("Thông báo trình duyệt: Đã bỏ qua · Chưa đăng ký thiết bị nhận thông báo", { exact: true }).waitFor();
+    assert.doesNotMatch(await admin.getByRole("dialog").innerText(), /WEB_PUSH|NO_SUBSCRIPTION|SKIPPED/u);
+    await admin.getByRole("dialog").getByRole("button", { name: "Đóng", exact: true }).click();
+    checks.push("notificationDeliveryUsesVietnameseLabels");
+
     // Lỗi tải danh sách phải còn cảnh báo sau khi toast hết, sau khi có mạng phải lấy dữ liệu mới từ BE
     await admin.goto(`${origin}/admin/users`);
     await admin.getByPlaceholder("Tìm tên đăng nhập, họ tên hoặc email").waitFor();
@@ -123,12 +132,17 @@ async function verify() {
     const [recovered] = await Promise.all([admin.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/users"), admin.getByRole("button", { name: "Thử tải lại tài khoản", exact: true }).click()]);
     assert.equal(recovered.status(), 200);
     await admin.getByRole("cell", { name: fixture.username, exact: true }).waitFor();
+    await admin.getByRole("cell", { name: "Quản trị viên", exact: true }).waitFor();
     checks.push("adminListNetworkErrorAndRealRetry");
 
     // Dữ liệu Excel chỉ có email miền thử, drop thật phải qua preview rồi confirm trước khi DB có user
     // Mọi kênh gửi đang tắt nên kết quả tạo không được suy diễn thành đã giao credential
     stage = "Import Excel kéo thả và trạng thái kênh tắt"; console.log(`VC16: ${stage}`);
     await admin.goto(`${origin}/admin/users`);
+    const importButton = admin.getByRole("button", { name: /Import Excel/u });
+    await importButton.waitFor();
+    assert.equal(await importButton.evaluate((node) => window.getComputedStyle(node).color), "rgb(37, 50, 71)");
+    assert.equal(await importButton.evaluate((node) => window.getComputedStyle(node).borderTopColor), "rgb(213, 220, 229)");
     stage = "Import: mở hộp thoại"; console.log(`VC16: ${stage}`);
     // Tên truy cập có thêm nhãn của icon upload, khớp phần chữ để vẫn thao tác bằng ngữ nghĩa nút
     await admin.getByRole("button", { name: /Import Excel/u }).click();
@@ -137,6 +151,17 @@ async function verify() {
     const suffix = randomUUID().slice(0, 8);
     sheet.addRow(["unitCode", "unitName", "unitType", "username", "fullName", "email", "phone"]);
     sheet.addRow([`VC16-${suffix}`, "Đơn vị nhập VC16", "DON_VI_TRUC_THUOC", `vc16-import-${suffix}`, "Đơn vị nhập VC16", `vc16-${suffix}@example.invalid`, "0900000001"]);
+    // Tệp thiếu tên đơn vị phải báo đúng cột tiếng Việt và khóa confirm, preview chưa tạo tài khoản
+    sheet.getCell("B2").value = "";
+    await admin.locator('.ant-modal:visible input[type="file"]').setInputFiles({ name: "Danh sách có lỗi.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from(await workbook.xlsx.writeBuffer()) });
+    await admin.getByRole("button", { name: "Xem trước và kiểm tra", exact: true }).click();
+    await admin.getByText(/1 dòng, 0 hợp lệ, 1 có lỗi/u).waitFor();
+    await admin.getByText("Tên đơn vị: Tên đơn vị là bắt buộc.", { exact: false }).waitFor();
+    assert.doesNotMatch(await admin.locator(".ant-modal:visible").innerText(), /\bREQUIRED\b|unitName là bắt buộc/u);
+    assert.equal(await admin.getByRole("button", { name: "Xác nhận tạo tài khoản", exact: true }).isDisabled(), true);
+    assert.equal(await prisma.user.count({ where: { username: `vc16-import-${suffix}` } }), 0);
+    checks.push("importPreviewErrorsUseVietnameseFields");
+    sheet.getCell("B2").value = "Đơn vị nhập VC16";
     const bytes = [...new Uint8Array(await workbook.xlsx.writeBuffer())];
     const transfer = await admin.evaluateHandle((bytes) => {
       const transfer = new DataTransfer();
@@ -231,6 +256,8 @@ async function verify() {
     stage = "cấu hình kỳ, tiêu chí và công bố bằng UI"; console.log(`VC16: ${stage}`);
     await admin.goto(`${origin}/admin/config`);
     await admin.getByRole("button", { name: /Tạo kỳ thi mới/u }).click();
+    await admin.getByRole("spinbutton", { name: "Ngưỡng Xuất sắc", exact: true }).waitFor();
+    assert.doesNotMatch(await admin.locator("body").innerText(), /\b(?:EXCELLENT|GOOD|PASS|FAIL)\b/u);
     const configuredName = `Kỳ công bố từ UI VC16 ${suffix}`;
     const nextYear = (await prisma.evaluationPeriod.aggregate({ _max: { year: true } }))._max.year + 1;
     await admin.getByLabel("Tên kỳ thi đua", { exact: true }).fill(configuredName);
@@ -474,6 +501,7 @@ async function verify() {
     await admin.getByRole("button", { name: "Xem trước và chốt hồ sơ", exact: true }).click();
     await admin.getByRole("dialog").getByRole("button", { name: /Xác nhận chốt/u }).click();
     await admin.getByText("Đã chốt thành công", { exact: true }).waitFor();
+    await admin.getByText("Đã chốt: 84 điểm · 84% · Tốt", { exact: true }).waitFor();
     await unit.evaluate(() => window.dispatchEvent(new Event("focus")));
     await reviewCard.getByText(/Kết quả đã chốt: 84 điểm/u).waitFor();
     const finalized = await prisma.evaluation.findUniqueOrThrow({ where: { id: fixture.unit.evaluationId } });
@@ -484,6 +512,25 @@ async function verify() {
     stage = "403 404 responsive và UNIT không có menu ADMIN"; console.log(`VC16: ${stage}`);
     // Modal có cả nút X và nút chân trang cùng nhãn Việt, chọn chân trang để không bị trùng tên truy cập
     await admin.locator(".ant-modal:visible .ant-modal-footer").getByRole("button", { name: "Đóng", exact: true }).click();
+    stage = "màu tiêu đề bảng và tag xếp loại theo kỳ"; console.log(`VC16: ${stage}`);
+    const [rankingResponse] = await Promise.all([
+      admin.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/leaderboard") && response.request().method() === "GET"),
+      admin.goto(`${origin}/admin/dashboard?periodId=${fixture.review.periodId}`),
+    ]);
+    assert.equal(rankingResponse.status(), 200);
+    const rankingPayload = await rankingResponse.json();
+    const ranked = (rankingPayload.data ?? rankingPayload).items.find((item) => item.evaluationId === fixture.unit.evaluationId);
+    assert.ok(ranked?.ratingLabel && /^#[0-9a-f]{6}$/i.test(ranked.ratingColor));
+    const ratingTag = admin.locator(`tr[data-row-key="${ranked.evaluationId}"]`).getByText(ranked.ratingLabel, { exact: true });
+    await ratingTag.waitFor();
+    const expectedBackground = `rgb(${[1, 3, 5].map((offset) => parseInt(ranked.ratingColor.slice(offset, offset + 2), 16)).join(", ")})`;
+    assert.equal(await ratingTag.evaluate((node) => window.getComputedStyle(node).backgroundColor), expectedBackground);
+    assert.equal(await admin.locator(".ant-table-thead th").first().evaluate((node) => window.getComputedStyle(node).backgroundColor), "rgb(228, 233, 238)");
+    const distributionTag = admin.locator(".ant-card").filter({ has: admin.getByText("Xếp loại chính thức", { exact: true }) }).getByText(ranked.ratingLabel, { exact: true });
+    assert.equal(await distributionTag.evaluate((node) => window.getComputedStyle(node).backgroundColor), expectedBackground);
+    await admin.screenshot({ path: ".tmp/vc16-artifacts/admin-style-guide-desktop.png", fullPage: true });
+    checks.push("styleGuideTableHeaderAndConfiguredRatingColors");
+    stage = "403 404 responsive và UNIT không có menu ADMIN";
     await admin.setViewportSize({ width: 390, height: 844 });
     await admin.goto(`${origin}/admin/reports?periodId=${fixture.review.periodId}`);
     await admin.getByRole("combobox", { name: "Loại báo cáo", exact: true }).click();

@@ -1,0 +1,59 @@
+# Blueprint cho BE; chưa tạo tài nguyên cho đến khi người dùng chọn New > Blueprint.
+# Starter và disk có tính phí. Chuẩn bị DB/migration trước khi tạo dịch vụ.
+services:
+  - type: web
+    name: seminar-api
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    rootDir: be
+    buildCommand: npm ci --include=dev && npm run db:generate && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: checksPass
+    disk:
+      name: seminar-reports
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: UTC
+      - key: DATABASE_URL
+        sync: false
+      - key: WEB_ORIGINS
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INITIAL_ACCOUNT_PASSWORD
+        sync: false
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: SWAGGER_ENABLED
+        value: "false"
+      - key: ENABLE_DEMO_TOOLS
+        value: "false"
+      - key: EMAIL_ENABLED
+        value: "false"
+      - key: WEB_PUSH_ENABLED
+        value: "false"
+      - key: ZALO_ZNS_ENABLED
+        value: "false"
+      - key: STORAGE_ENABLED
+        value: "true"
+      - key: STORAGE_PROVIDER
+        value: supabase
+      - key: STORAGE_BUCKET
+        value: evidences
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: REPORT_EXPORT_DIR
+        value: /var/data/report-exports
