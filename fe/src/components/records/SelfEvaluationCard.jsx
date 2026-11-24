@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import FeedbackPanel from "./FeedbackPanel";
-import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Table, Typography } from "antd";
 import { saveSelfScores, submitEvaluation, submitSupplement } from "../../services/evaluationService";
 import EvidencePanel from "./EvidencePanel";
 import { useRecordDrafts } from "../../contexts/WorkspaceContext";
+import EvaluationStatusTag from "../common/EvaluationStatusTag";
 
 /** Định dạng ISO theo giờ Việt Nam để trình bày, không dùng kết quả để cấp quyền */
 export function vietnamTime(value) {
@@ -131,7 +132,7 @@ export default function SelfEvaluationCard({ period, record, summary, onReload, 
     { title: "Lưu", width: 190, render: (_, row) => row.children?.length ? null : <Space orientation="vertical" size="middle"><Button onClick={() => save(row.criterionId)} disabled={!drafts[row.criterionId] || !row.canEditSelf || busy || disconnected}>Lưu tiêu chí {row.code}</Button><Typography.Text role="status">{states[row.criterionId] || row.lockedReason || "Đã tải từ máy chủ"}</Typography.Text></Space> },
   ];
 
-  return <Card title={period.name} extra={<Tag>{statusLabels[record.status] || "Trạng thái chưa xác định"}</Tag>}>
+  return <Card title={period.name} extra={<EvaluationStatusTag status={record.status}>{statusLabels[record.status] || "Trạng thái chưa xác định"}</EvaluationStatusTag>}>
     <Space orientation="vertical" style={{ width: "100%" }} size="middle">
       <Typography.Text>Mở: {vietnamTime(record.period.selfEvalStart)} · Kết thúc: {vietnamTime(record.period.selfEvalDeadline)} (giờ Việt Nam)</Typography.Text>
       {record.supplementStartAt && <Typography.Text>Lịch bổ sung: {vietnamTime(record.supplementStartAt)} đến trước {vietnamTime(record.supplementDeadline)} (giờ Việt Nam)</Typography.Text>}

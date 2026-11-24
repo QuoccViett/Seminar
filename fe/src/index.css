@@ -1,15 +1,23 @@
 /* Palette chung cho ADMIN và UNIT, trạng thái luôn kèm nhãn hoặc biểu tượng */
 :root {
-  --app-primary: #1d4ed8;
-  --app-background: #f1f5f9;
+  --app-primary: #3563a9;
+  --app-primary-hover: #2c528e;
+  --app-background: #f3f5f7;
   --app-surface: #ffffff;
-  --app-section: #eff6ff;
-  --app-border: #cbd5e1;
-  --app-text: #0f172a;
-  --app-muted: #475569;
-  --app-success: #15803d;
-  --app-warning: #b45309;
-  --app-error: #b91c1c;
+  --app-section: #eaf0f7;
+  --app-selected: #d8e5f5;
+  --app-table-header: #c3d4ee;
+  --app-table-border: #cbd3de;
+  --app-border: #d5dce5;
+  --app-text: #253247;
+  --app-muted: #64748b;
+  --app-neutral: #f1f3f5;
+  --app-success: #2f7d50;
+  --app-success-bg: #eaf5ee;
+  --app-warning: #9a6700;
+  --app-warning-bg: #fff4da;
+  --app-error: #b33d3d;
+  --app-error-bg: #fcedec;
 }
 /* Reset CSS cơ bản để xóa khoảng trắng mặc định của trình duyệt */
 * {
@@ -22,6 +30,8 @@ html, body, #root {
   height: 100%;
   overflow: hidden; /* Chặn thanh cuộn của toàn bộ trình duyệt */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  color: var(--app-text);
 }
 
 /* Tùy chỉnh thanh cuộn toàn cục cho đẹp (giống các trang web hiện đại) */
@@ -35,26 +45,30 @@ html, body, #root {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #ccc;
+  background-color: var(--app-table-border);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #999;
+  background-color: var(--app-muted);
 }
 
 .ant-layout { min-width: 0; }
 .ant-table-wrapper { max-width: 100%; overflow-x: auto; }
 .ant-table-wrapper .ant-table-thead > tr > th {
   text-align: center;
-  background: var(--app-section) !important;
+  background: var(--app-table-header) !important;
   color: var(--app-text);
 }
 .ant-table-wrapper .ant-table-tbody > tr > td {
   text-align: center !important;
 }
 button:focus-visible, a:focus-visible { outline: 3px solid var(--app-primary); outline-offset: 3px; }
+.ant-table-wrapper .ant-table-container { border: 1px solid var(--app-table-border); }
+.ant-tag { font-size: 13px; }
 @media (max-width: 700px) {
+  /* Giữ ô nhập dễ đọc trên mobile khi tăng cỡ chữ chung */
+  .ant-input, .ant-input-number-input, .ant-select, .ant-picker-input > input { font-size: 16px; }
   .ant-space { max-width: 100%; }
   /* Gỡ min-width cố định của bộ lọc quản trị trên điện thoại, giữ bảng rộng trong vùng cuộn riêng */
   .ant-space-item { min-width: 0; max-width: 100%; }
@@ -64,7 +78,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--app-primary); o
 }
 
 /* Giữ chữ trạng thái đủ tương phản trên nền nhạt, không dựa riêng vào màu */
-:root .ant-tag.ant-tag-green, :root .ant-tag.ant-tag-success { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
-:root .ant-tag.ant-tag-red, :root .ant-tag.ant-tag-error { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
-:root .ant-tag.ant-tag-orange, :root .ant-tag.ant-tag-gold, :root .ant-tag.ant-tag-warning { color: #92400e; background: #fffbeb; border-color: #fde68a; }
-:root .ant-tag.ant-tag-blue, :root .ant-tag.ant-tag-processing { color: #1e40af; background: #eff6ff; border-color: #bfdbfe; }
+:root .ant-tag.ant-tag-green, :root .ant-tag.ant-tag-success { color: var(--app-success); background: var(--app-success-bg); border-color: #c5dece; }
+:root .ant-tag.ant-tag-red, :root .ant-tag.ant-tag-error { color: var(--app-error); background: var(--app-error-bg); border-color: #eac8c8; }
+:root .ant-tag.ant-tag-orange, :root .ant-tag.ant-tag-gold, :root .ant-tag.ant-tag-warning { color: var(--app-warning); background: var(--app-warning-bg); border-color: #ead9aa; }
+:root .ant-tag.ant-tag-blue, :root .ant-tag.ant-tag-processing { color: var(--app-primary); background: var(--app-section); border-color: var(--app-selected); }

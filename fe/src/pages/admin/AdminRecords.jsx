@@ -9,6 +9,7 @@ import ReviewCard from "../../components/records/ReviewCard";
 import FeedbackPanel from "../../components/records/FeedbackPanel";
 import { usePeriodSelection } from "../../services/periodSelection";
 import { allPages } from "../../services/pagination";
+import EvaluationStatusTag from "../../components/common/EvaluationStatusTag";
 
 const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_REVIEW: "Thẩm định lần đầu", SUPPLEMENT: "Bổ sung", FINAL_REVIEW: "Thẩm định cuối", CLOSED: "Đã đóng" };
 
@@ -148,7 +149,7 @@ export default function AdminRecords() {
     {error && <Alert type="error" showIcon title={error} />}
     <Table rowKey="id" loading={listLoading} dataSource={rows.items} rowSelection={{ selectedRowKeys: selected, preserveSelectedRowKeys: true, onChange: setSelected, getCheckboxProps: () => ({ disabled: busy }) }} locale={{ emptyText: <Empty description="Chưa có hồ sơ" /> }} pagination={{ current: page, pageSize: 20, total: rows.total, onChange: setPage, showSizeChanger: false, disabled: busy }} columns={[
       { title: "Đơn vị", render: (_, row) => row.unit.name }, { title: "Kỳ", render: (_, row) => row.period.name },
-      { title: "Trạng thái", render: (_, row) => statusLabels[row.status] || "Chưa xác định" },
+      { title: "Trạng thái", render: (_, row) => <EvaluationStatusTag status={row.status}>{statusLabels[row.status] || "Chưa xác định"}</EvaluationStatusTag> },
       { title: "Chi tiết", render: (_, row) => <Button disabled={busy} onClick={() => inspect(row.id)}>Thẩm định {row.unit.code}</Button> },
     ]} />
     {detail && <ReviewCard key={detail.record.id} record={detail.record} summary={detail.summary} disconnected={detailError || actionBusy} onReload={afterWrite} onBusyChange={(value) => { sending.current = value; setRecordBusy(value); }} onFinalize={openFinalize} />}

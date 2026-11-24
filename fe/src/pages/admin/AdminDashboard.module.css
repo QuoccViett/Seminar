@@ -2,11 +2,53 @@
   animation: fadeIn 0.5s ease-in-out;
 }
 
+.summaryCard { height: 100%; }
+
+.summaryContent {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.summaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  font-size: 25px;
+  color: var(--app-primary);
+  background: var(--app-section);
+}
+
+.summaryIcon[data-tone="success"] {
+  color: var(--app-success);
+  background: var(--app-success-bg);
+}
+
+.summaryIcon[data-tone="warning"] {
+  color: var(--app-warning);
+  background: var(--app-warning-bg);
+}
+
+.summaryStatistic {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .summaryIcon { width: 40px; height: 40px; font-size: 23px; }
+}
+
 .pageTitle {
   font-size: 22px;
   font-weight: 700;
   margin-bottom: 24px;
-  color: #111;
+  color: var(--app-text);
 }
 
 /* Thẻ thống kê */

@@ -111,14 +111,14 @@ export default function AdminLayout() {
       <Layout>
         {/* HEADER TRẮNG */}
         <Header className={styles.header}>
-          <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 600, color: "#111" }}>
+          <h2 style={{ margin: 0, fontSize: "19px", fontWeight: 600, color: "var(--app-text)" }}>
             {currentTitle}
           </h2>
 
           {/* Bên phải*/}
           <div className={styles.headerRight}>
             <Badge count={unreadCount} size="small">
-              <Button type="text" aria-label="Mở hộp thư thông báo" onClick={() => navigate(inboxPath)} icon={<BellOutlined style={{ fontSize: 18, color: "#555" }} />} />
+              <Button type="text" aria-label="Mở hộp thư thông báo" onClick={() => navigate(inboxPath)} icon={<BellOutlined style={{ fontSize: 18, color: "var(--app-muted)" }} />} />
             </Badge>
 
             <Dropdown menu={userMenu} placement="bottomRight" trigger={["click"]}>

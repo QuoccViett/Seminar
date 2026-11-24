@@ -26,6 +26,22 @@
   flex: 0 0 auto;
 }
 
+.importButton:global(.ant-btn) {
+  color: #217346;
+  border-color: #217346;
+}
+
+.importButton:global(.ant-btn):not(:disabled):not(:global(.ant-btn-disabled)):hover,
+.importButton:global(.ant-btn):not(:disabled):not(:global(.ant-btn-disabled)):active {
+  color: #185c37;
+  border-color: #185c37;
+  background-color: var(--app-success-bg);
+}
+
+.importButton:global(.ant-btn):focus-visible {
+  outline-color: #217346;
+}
+
 /* Làm đẹp bảng dữ liệu */
 .tableContainer {
   background-color: #fff;
@@ -36,15 +52,15 @@
 
 /* Custom Header của bảng (Màu xám nhạt, chữ đậm) */
 .tableContainer :global(.ant-table-thead > tr > th) {
-  background-color: #f8f9fa !important;
-  color: #333;
+  background-color: var(--app-table-header) !important;
+  color: var(--app-text);
   font-weight: 600;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid var(--app-border);
 }
 
 /* Hiệu ứng hover vào các dòng trong bảng */
 .tableContainer :global(.ant-table-tbody > tr:hover > td) {
-  background-color: #f0f7ff !important; /* Xanh nhạt khi hover */
+  background-color: var(--app-section) !important; /* Xanh nhạt khi hover */
 }
 
 /* Hiệu ứng xuất hiện mượt mà */
