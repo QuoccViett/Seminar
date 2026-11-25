@@ -351,9 +351,6 @@ jobs:
     concurrency:
       group: vercel-frontend-${{ github.event_name == 'push' && 'production' || github.ref }}
       cancel-in-progress: true
-    defaults:
-      run:
-        working-directory: ./fe
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -372,7 +369,7 @@ jobs:
             exit 1
           fi
           git fetch --no-tags origin "$current_sha"
-          if ! git diff --quiet "$EXPECTED_SHA" "$current_sha" -- .; then
+          if ! git diff --quiet "$EXPECTED_SHA" "$current_sha" -- fe; then
             echo '::error::Frontend trên nhánh main đã thay đổi sau lượt kiểm tra này'
             exit 1
           fi

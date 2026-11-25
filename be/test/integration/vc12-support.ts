@@ -34,11 +34,11 @@ export interface Vc12Payload {
  */
 export async function createVc12Harness(database = { url: process.env.VC12_TEST_DATABASE_URL, name: "vc12_test" }) {
   const url = database.url;
-  assert.ok(["vc12_test", "vc13_test", "vc14_test", "vc15_test", "vc16_test", "vc17_test"].includes(database.name) && url && new URL(url).pathname === `/${database.name}` && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local kiểm thử VC12–VC17 riêng");
+  assert.ok(["vc12_test", "vc13_test", "vc14_test", "vc15_test", "vc16_test", "vc17_test", "vc17_accounts_test"].includes(database.name) && url && new URL(url).pathname === `/${database.name}` && ["localhost", "127.0.0.1"].includes(new URL(url).hostname), "Cần database local kiểm thử VC12–VC17 riêng");
   Object.assign(process.env, { DATABASE_URL: url, JWT_SECRET: "vc12-test-secret-only-at-least-32-characters", NODE_ENV: "test", WEB_ORIGINS: "http://127.0.0.1:5182", PUBLIC_APP_URL: "http://127.0.0.1:5182", INITIAL_ACCOUNT_PASSWORD: "123456", EMAIL_ENABLED: "false", WEB_PUSH_ENABLED: "false", ZALO_ZNS_ENABLED: "false", STORAGE_ENABLED: "true", STORAGE_PROVIDER: "local", STORAGE_LOCAL_DIR: ".tmp/vc12-private-storage" });
   // VC16 và VC17 có kho minh chứng riêng để tạo bytes mới mà không dùng thư mục của fixture chặng cũ
   // Các tên DB trước giữ đường dẫn đã được assertion hồi quy sử dụng, không di chuyển hoặc xóa tệp đã có
-  if (["vc16_test", "vc17_test"].includes(database.name)) process.env.STORAGE_LOCAL_DIR = `.tmp/${database.name.replace("_test", "")}-private-storage`;
+  if (["vc16_test", "vc17_test", "vc17_accounts_test"].includes(database.name)) process.env.STORAGE_LOCAL_DIR = `.tmp/${database.name.replace("_test", "")}-private-storage`;
   // Mỗi lần dựng harness có kho báo cáo UUID riêng vì DB mới không có metadata của tệp từ lượt kiểm trước
   // Nhờ vậy phép dọn mồ côi không đếm hoặc xóa nhầm tệp của một DB thử khác có cùng tên
   // Giữ đường dẫn fixture VC13 đang được kiểm trực tiếp, các chặng khác không tái sử dụng kho cũ

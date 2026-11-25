@@ -24,9 +24,11 @@ const suites = [
   ["vc14", "vc14_test", "VC14_TEST_DATABASE_URL", ["vc14.dashboard"]],
   ["vc15", "vc15_test", "VC15_TEST_DATABASE_URL", ["vc15.exports"]],
   ["seed", "ci_seed", "SEED_TEST_DATABASE_URL", ["seed.integration"]],
+  ["upgrade10", "vc10_upgrade_test", "VC10_UPGRADE_DATABASE_URL", ["vc10.migration"], true],
   ["upgrade12", "vc12_upgrade_test", "VC12_UPGRADE_DATABASE_URL", ["vc12.migration"], true],
   ["upgrade13", "vc13_upgrade_test", "VC13_UPGRADE_DATABASE_URL", ["vc13.migration"], true],
   ["upgrade17", "vc17_upgrade_test", "VC17_UPGRADE_DATABASE_URL", ["vc17.migration"], true],
+  ["accounts", "vc17_accounts_test", "VC17_ACCOUNTS_TEST_DATABASE_URL", ["vc17.accounts"]],
   ["system", "vc17_test", "VC17_TEST_DATABASE_URL", ["vc17.system"]],
   ["browser", "vc16_test", "VC16_TEST_DATABASE_URL", [], false],
 ];
