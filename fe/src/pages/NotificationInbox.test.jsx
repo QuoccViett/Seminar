@@ -24,6 +24,18 @@ beforeEach(() => {
   service.createTestNotification.mockResolvedValue({ notificationId: "test-1", queuedChannels: [] });
 });
 
+test("không hiển thị kênh chưa cấu hình trên máy chủ là đang bật", async () => {
+  service.getNotificationPreferences.mockResolvedValue({ SYSTEM: true, WEB_PUSH: true, EMAIL: true, ZALO_ZNS: false, zaloZnsAvailable: false, webPushAvailable: false, emailAvailable: false });
+  render(<NotificationInbox />);
+  await screen.findByText("Có việc mới");
+  expect(screen.getByRole("switch", { name: "Thông báo trình duyệt" })).toBeDisabled();
+  expect(screen.getByRole("switch", { name: "Thông báo trình duyệt" })).not.toBeChecked();
+  expect(screen.getByRole("switch", { name: "Email" })).toBeDisabled();
+  expect(screen.getAllByText("Chưa kích hoạt trên máy chủ")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: "Đăng ký thiết bị này" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Thử kênh" })).toBeNull();
+});
+
 /** Trạng thái kênh và lý do thất bại không được lộ enum hoặc lỗi SMTP thô trong modal */
 test("hộp thư hiển thị tên kênh và lý do gửi bằng tiếng Việt", async () => {
   service.getNotificationDeliveries.mockResolvedValue({ channels: [{ channel: "WEB_PUSH", status: "SKIPPED", reasonCode: "RECIPIENT_MISSING" }, { channel: "EMAIL", status: "FAILED", reasonCode: "PROVIDER_ERROR", lastError: "SMTP stack trace" }] });

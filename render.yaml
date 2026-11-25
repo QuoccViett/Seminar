@@ -35,6 +35,8 @@ services:
         sync: false
       - key: RATE_LIMIT_ENABLED
         value: "true"
+      - key: TRUST_PROXY
+        value: loopback,linklocal,uniquelocal
       - key: SWAGGER_ENABLED
         value: "false"
       - key: ENABLE_DEMO_TOOLS
@@ -43,6 +45,12 @@ services:
         value: "false"
       - key: WEB_PUSH_ENABLED
         value: "false"
+      - key: WEB_PUSH_VAPID_PUBLIC_KEY
+        sync: false
+      - key: WEB_PUSH_VAPID_PRIVATE_KEY
+        sync: false
+      - key: WEB_PUSH_SUBJECT
+        sync: false
       - key: ZALO_ZNS_ENABLED
         value: "false"
       - key: STORAGE_ENABLED
@@ -57,3 +65,5 @@ services:
         sync: false
       - key: REPORT_EXPORT_DIR
         value: /var/data/report-exports
+      - key: REPORT_EXPORT_PROVIDER
+        value: supabase

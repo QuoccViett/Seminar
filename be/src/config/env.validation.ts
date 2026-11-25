@@ -57,6 +57,8 @@ export const envValidationSchema = Joi.object({
   SUPABASE_URL: Joi.string().uri({ scheme: ["https"] }).allow("").optional(),
   SUPABASE_KEY: Joi.string().allow("").optional(),
   REPORT_EXPORT_DIR: Joi.string().allow("").optional(),
+  REPORT_EXPORT_PROVIDER: Joi.string().valid("local", "supabase").default("local"),
+  REPORT_EXPORT_BUCKET: Joi.string().pattern(/^[a-z0-9][a-z0-9-]{1,62}$/).allow("").optional(),
   REPORT_EXPORT_FONT_PATH: Joi.string().allow("").optional(),
   // Giới hạn URL tải ở server, FE luôn xin metadata mới trước khi tải thay vì tin giờ máy
   REPORT_EXPORT_DOWNLOAD_TTL_SECONDS: Joi.number().integer().min(30).max(300).default(120),
@@ -95,6 +97,7 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
   // Không kích hoạt provider ngoài khi thiếu cấu hình, không dùng kho local trong production
   // Bucket private được provider kiểm thực tế trước I/O, không tự thay ACL của môi trường
   if (normalized.STORAGE_ENABLED && normalized.STORAGE_PROVIDER === "supabase" && (!normalized.SUPABASE_URL || !normalized.SUPABASE_KEY)) throw new Error("Cần cấu hình SUPABASE_URL và SUPABASE_KEY khi bật kho Supabase");
+  if (normalized.REPORT_EXPORT_PROVIDER === "supabase" && (!normalized.SUPABASE_URL || !normalized.SUPABASE_KEY)) throw new Error("Cần cấu hình SUPABASE_URL và SUPABASE_KEY cho kho báo cáo Supabase");
   if (normalized.STORAGE_ENABLED && normalized.NODE_ENV === "production" && normalized.STORAGE_PROVIDER === "local") throw new Error("Môi trường production cần kho riêng tư Supabase, không dùng kho cục bộ");
   // Chuẩn hóa bí danh Gmail về tên canonical trước khi kiểm tra điều kiện và khởi tạo provider
   // Cho phép môi trường cũ tiếp tục chạy mà không làm thay đổi mặc định Email đang tắt

@@ -48,14 +48,16 @@ export async function enableWebPush(accessToken) {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     throw new WebPushError("Trình duyệt này không hỗ trợ thông báo đẩy.");
   }
+  const publicKeyResponse = await requestJson("/notifications/web-push/public-key");
+  if (!publicKeyResponse.enabled || !publicKeyResponse.publicKey) throw new WebPushError("Thông báo đẩy chưa được kích hoạt trên máy chủ.");
+  assertPushSession(expectedUserId);
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
     throw new WebPushError("Bạn chưa cấp quyền nhận thông báo.");
   }
 
-  const registration = await navigator.serviceWorker.register("/sw.js");
-  const publicKeyResponse = await requestJson("/notifications/web-push/public-key");
-  if (!publicKeyResponse.enabled || !publicKeyResponse.publicKey) throw new WebPushError("Thông báo đẩy chưa được kích hoạt trên máy chủ.");
+  await navigator.serviceWorker.register("/sw.js");
+  const registration = await navigator.serviceWorker.ready;
 
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
@@ -88,7 +90,8 @@ export async function enableWebPushWithInvitation(token) {
     const verified = await requestJson("/onboarding/web-push/verify", null, { method: "POST", body: JSON.stringify({ token }) });
     if (!verified.valid || !verified.publicKey) throw new WebPushError("Liên kết mời không còn hiệu lực.");
     if (await Notification.requestPermission() !== "granted") throw new WebPushError("Bạn chưa cấp quyền nhận thông báo.");
-    const registration = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.register("/sw.js");
+    const registration = await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(verified.publicKey) });
     await requestJson("/onboarding/web-push/subscriptions", null, { method: "POST", body: JSON.stringify({ token, subscription: subscription.toJSON() }) });

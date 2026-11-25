@@ -74,12 +74,37 @@ test("Apps Script ký nội dung và chỉ theo redirect Google an toàn", async
     resultCode = "RATE_LIMIT";
     assert.deepEqual(await provider.send(request), { kind: "retry", reasonCode: "RATE_LIMIT", message: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại." });
     resultCode = "UNAUTHORIZED";
-    assert.deepEqual(await provider.send(request), { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Kênh gửi tạm thời gián đoạn, hệ thống sẽ thử lại." });
+    assert.equal((await provider.send(request)).kind, "retry");
+    assert.equal((await provider.send(request) as { reasonCode: string }).reasonCode, "PROVIDER_AUTH_FAILED");
     redirectHost = "attacker.invalid";
     assert.equal((await provider.send(request)).kind, "retry");
     assert.equal(calls.at(-1)?.url, "https://script.google.com/macros/s/fixture/exec");
     const before = calls.length;
     assert.equal((await provider.send({ ...request, expiresAt: new Date(Date.now() - 1000) })).kind, "skip");
     assert.equal(calls.length, before);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("Apps Script phân biệt thiếu quyền, cấu hình sai và lỗi mạng tạm thời", async () => {
+  const originalFetch = globalThis.fetch;
+  const values: Record<string, string | boolean> = { EMAIL_ENABLED: true, EMAIL_PROVIDER: "apps_script", MAIL_FROM: "admin@example.com", APPS_SCRIPT_URL: "https://script.google.com/macros/s/fixture/exec", APPS_SCRIPT_SECRET: "ab".repeat(32) };
+  const config = { get: (name: string) => values[name], getOrThrow: (name: string) => values[name] };
+  const db = { user: { findUnique: async () => ({ email: "unit@example.com", isActive: true }) } };
+  const provider = new EmailNotificationProvider(db as never, config as never);
+  const request = { userId: "user", notificationId: "00000000-0000-4000-8000-000000000001", title: "Kiểm quyền", body: "Thử gửi", refType: null, refId: null };
+  try {
+    for (const status of [401, 403]) {
+      globalThis.fetch = (async () => new Response("provider-private-detail", { status })) as typeof fetch;
+      const result = await provider.send(request);
+      assert.equal(result.kind, "retry");
+      assert.equal((result as { reasonCode: string }).reasonCode, "PROVIDER_AUTH_FAILED");
+      assert.equal(JSON.stringify(result).includes("provider-private-detail"), false);
+    }
+    globalThis.fetch = (async () => new Response("<html>Sign in</html>")) as typeof fetch;
+    assert.equal((await provider.send(request) as { reasonCode: string }).reasonCode, "PROVIDER_NOT_READY");
+    globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
+    assert.equal((await provider.send(request)).kind, "retry");
+    globalThis.fetch = (async () => new Response(null, { status: 429 })) as typeof fetch;
+    assert.equal((await provider.send(request) as { reasonCode: string }).reasonCode, "RATE_LIMIT");
   } finally { globalThis.fetch = originalFetch; }
 });

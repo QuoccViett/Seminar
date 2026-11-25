@@ -12,6 +12,7 @@ export const DELIVERY_REASON_LABELS = {
   CREDENTIAL_CHANGED: "Thông tin đăng nhập đã thay đổi; lượt gửi cũ đã bị hủy",
   EXPIRED: "Đã hết thời hạn gửi", KEY_UNAVAILABLE: "Không thể giải mã thông tin cấp tài khoản; cần kiểm tra cấu hình",
   PROVIDER_NOT_READY: "Kênh gửi chưa được bật hoặc cấu hình đầy đủ",
+  PROVIDER_AUTH_FAILED: "Dịch vụ email chưa cấp quyền cho máy chủ; cần kiểm tra quyền triển khai và khóa xác thực",
   RECIPIENT_MISSING: "Người nhận chưa có địa chỉ hoặc thiết bị phù hợp",
   RATE_LIMIT: "Kênh gửi đang giới hạn lượt gửi",
   TEMPORARY_FAILURE: "Kênh gửi tạm thời gián đoạn",

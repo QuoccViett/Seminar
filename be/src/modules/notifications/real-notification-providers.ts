@@ -63,12 +63,25 @@ export class EmailNotificationProvider implements NotificationProvider {
       if (url.protocol !== "https:" || url.hostname !== "script.googleusercontent.com" || url.port || url.username || url.password) throw new Error("Untrusted Apps Script response redirect");
       response = await fetch(url, { method: "GET", redirect: "manual", signal: timeout });
     }
+    if (response.status === 401 || response.status === 403) return this.appsScriptAuthorizationFailure();
+    if (response.status === 429) return { kind: "retry", reasonCode: "RATE_LIMIT", message: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại." };
+    if (response.status >= 400 && response.status < 500) return { kind: "skip", reasonCode: "PROVIDER_NOT_READY", message: "Cần kiểm tra URL triển khai dịch vụ email." };
     if (!response.ok) return { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Kênh gửi tạm thời gián đoạn, hệ thống sẽ thử lại." };
-    const result = await response.json() as { ok?: unknown; code?: unknown };
+    let result: { ok?: unknown; code?: unknown };
+    try { result = await response.json() as typeof result; }
+    catch { return { kind: "skip", reasonCode: "PROVIDER_NOT_READY", message: "Dịch vụ email chưa trả phản hồi hợp lệ; cần kiểm tra bản triển khai." }; }
     if (result.ok === true) return { kind: "sent" };
+    if (result.code === "UNAUTHORIZED") return this.appsScriptAuthorizationFailure();
+    if (result.code === "NOT_CONFIGURED") return { kind: "skip", reasonCode: "PROVIDER_NOT_READY", message: "Dịch vụ email chưa được cấu hình khóa xác thực." };
+    if (result.code === "INVALID") return { kind: "skip", reasonCode: "PERMANENT_FAILURE", message: "Dịch vụ email từ chối định dạng thông báo." };
     if (result.code === "EXPIRED") return { kind: "skip", reasonCode: "EXPIRED", message: "Thông báo đã hết thời hạn gửi." };
     if (result.code === "RATE_LIMIT") return { kind: "retry", reasonCode: "RATE_LIMIT", message: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại." };
     return { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Kênh gửi tạm thời gián đoạn, hệ thống sẽ thử lại." };
+  }
+
+  /** Giữ payload để quản trị viên thử lại sau khi sửa quyền, ghi rõ lỗi cấu hình thay vì lỗi mạng. */
+  private appsScriptAuthorizationFailure(): NotificationSendResult {
+    return { kind: "retry", reasonCode: "PROVIDER_AUTH_FAILED", message: "Dịch vụ email chưa cấp quyền cho máy chủ; cần kiểm tra quyền triển khai và khóa xác thực." };
   }
 }
 

@@ -152,7 +152,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   async getPreferences(userId: string) {
     const rows = await this.prisma.notificationPreference.findMany({ where: { userId, channel: { in: CHANNELS } } });
     const values = new Map(rows.map((row) => [row.channel, row.enabled]));
-    return { SYSTEM: true, WEB_PUSH: values.get("WEB_PUSH") ?? true, EMAIL: values.get("EMAIL") ?? true, ZALO_ZNS: this.znsEnabled && (values.get("ZALO_ZNS") ?? true), zaloZnsAvailable: this.znsEnabled };
+    return {
+      SYSTEM: true, WEB_PUSH: values.get("WEB_PUSH") ?? true, EMAIL: values.get("EMAIL") ?? true,
+      ZALO_ZNS: this.znsEnabled && (values.get("ZALO_ZNS") ?? true), zaloZnsAvailable: this.znsEnabled,
+      webPushAvailable: this.config.get<boolean>("WEB_PUSH_ENABLED") === true,
+      emailAvailable: this.config.get<boolean>("EMAIL_ENABLED") === true,
+    };
   }
 
   /** Ghi từng trường có mặt bằng upsert, không cho yêu cầu bật ZNS khi doanh nghiệp chưa kích hoạt
@@ -172,6 +177,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
    */
   async test(userId: string, channel: "SYSTEM" | Channel) {
     const preferences = await this.getPreferences(userId);
+    if ((channel === "WEB_PUSH" && !preferences.webPushAvailable) || (channel === "EMAIL" && !preferences.emailAvailable)) throw invalid("channel", "Kênh thông báo này chưa được kích hoạt trên máy chủ.");
     if (channel !== "SYSTEM" && !preferences[channel]) throw invalid("channel", "Kênh thông báo này chưa được bật.");
     const notification = await this.prisma.$transaction((tx) => this.notifyUser(tx, { userId, type: "TEST", title: "Thông báo kiểm tra", body: "Đây là thông báo kiểm tra từ hệ thống.", channels: channel === "SYSTEM" ? [] : [channel] }));
     return { notificationId: notification.id, queuedChannels: notification.deliveries.map((item) => item.channel) };
@@ -205,7 +211,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (!delivery || delivery.claimToken !== claim.claim_token || delivery.status !== "PENDING") return;
     const provider = this.providers.find((item) => item.channel === delivery.channel);
     let result: NotificationSendResult;
-    if (!provider || (delivery.channel === "ZALO_ZNS" && !this.znsEnabled)) {
+    const disabled = (delivery.channel === "EMAIL" && this.config.get<boolean>("EMAIL_ENABLED") === false)
+      || (delivery.channel === "WEB_PUSH" && this.config.get<boolean>("WEB_PUSH_ENABLED") === false);
+    if (!provider || disabled || (delivery.channel === "ZALO_ZNS" && !this.znsEnabled)) {
       result = { kind: "skip", reasonCode: "PROVIDER_NOT_READY", message: "Kênh gửi chưa được cấu hình." };
     } else {
       try {
@@ -249,6 +257,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     // Chỉ lưu câu cố định theo mã đã cho phép để provider không thể đẩy raw SQL, địa chỉ hoặc token vào DB
     const safeMessages: Record<string, string> = {
       PROVIDER_NOT_READY: "Kênh gửi chưa được cấu hình.",
+      PROVIDER_AUTH_FAILED: "Dịch vụ email chưa cấp quyền cho máy chủ; cần kiểm tra quyền triển khai và khóa xác thực.",
       RECIPIENT_MISSING: "Người nhận chưa có địa chỉ hoặc thiết bị phù hợp.",
       PROVIDER_ERROR: "Không thể gửi thông báo qua kênh này.",
       RATE_LIMIT: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại.",

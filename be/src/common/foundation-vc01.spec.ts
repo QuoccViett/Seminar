@@ -41,6 +41,8 @@ test("cấu hình theo tính năng và mật khẩu demo", () => {
   // Production từ chối local để tệp demo không vô tình trở thành phương án triển khai thật
   assert.doesNotThrow(() => validateEnvironment({ ...base, STORAGE_ENABLED: true }));
   assert.throws(() => validateEnvironment({ ...base, STORAGE_ENABLED: true, STORAGE_PROVIDER: "supabase" }), /SUPABASE_/);
+  assert.throws(() => validateEnvironment({ ...base, REPORT_EXPORT_PROVIDER: "supabase" }), /SUPABASE_/);
+  assert.doesNotThrow(() => validateEnvironment({ ...base, REPORT_EXPORT_PROVIDER: "supabase", SUPABASE_URL: "https://storage.example.com", SUPABASE_KEY: "fixture-key" }));
   assert.throws(() => validateEnvironment({ ...base, NODE_ENV: "production", CORS_ORIGINS: "https://demo.example.com", PUBLIC_APP_URL: "https://demo.example.com", INITIAL_ACCOUNT_PASSWORD: "123456", STORAGE_ENABLED: true }), /Supabase/);
   assert.throws(() => validateEnvironment({ ...base, CORS_ORIGINS: "*" }), /CORS/);
   assert.throws(() => validateEnvironment({ ...base, CREDENTIALS_ENCRYPTION_KEY: Buffer.alloc(31).toString("base64") }), /32 byte/);

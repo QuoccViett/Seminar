@@ -4,6 +4,8 @@ Backend NestJS/Prisma/PostgreSQL tạo báo cáo thật và lưu bytes trong kho
 
 ## Cấu hình
 
+Trên Render không có disk bền vững, đặt `REPORT_EXPORT_PROVIDER=supabase`, `SUPABASE_URL` và `SUPABASE_KEY` ở backend. `REPORT_EXPORT_BUCKET` mặc định dùng `STORAGE_BUCKET` (hoặc `evidences`); bucket phải private. Tệp báo cáo nằm dưới prefix `reports/`, vẫn tải qua API có chữ ký và JWT ADMIN. Provider không thay quyền bucket. Khi chuyển kho, sao lưu và chép các file cũ sang cùng key `reports/<periodId>/<exportId>-<fileName>` trước khi restart; metadata không đổi. Mặc định `local` giữ hành vi cũ cho development hoặc máy có volume riêng.
+
 `REPORT_EXPORT_DIR=./storage/report-exports` là thư mục local private, không đặt trong static root, thư mục FE hoặc thư mục được web server công khai. Mount volume riêng và giữ thư mục này khi chuyển máy/khôi phục cùng PostgreSQL. Quyền tạo thư mục/tệp là 0700/0600 trên hệ thống hỗ trợ; Windows cần ACL tài khoản chạy ứng dụng tương ứng. Đây là kho local thật, không phải mock hay provider đám mây.
 
 `REPORT_EXPORT_DOWNLOAD_TTL_SECONDS=120` nhận 30–300 giây. Chữ ký ràng buộc mã báo cáo và người đọc, có audience/mục đích riêng; không dùng thay access token. Khóa hoặc buộc đổi mật khẩu tài khoản vẫn chặn tải dù chữ ký còn hạn. Không ghi URL ký vào audit, localStorage hay log.

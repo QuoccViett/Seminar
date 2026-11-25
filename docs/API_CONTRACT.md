@@ -217,7 +217,7 @@ Các route dưới đây cần Bearer access token đã đổi mật khẩu ban 
 | `GET /notifications/unread-count` | Không có | `{count}` |
 | `PATCH /notifications/:notificationId/read` | UUID trong path | `{isRead:true}`; thông báo không thuộc mình trả `404 NOT_FOUND` |
 | `POST /notifications/read-all` | Không có | `{updated}` là số bản ghi vừa chuyển sang đã đọc |
-| `GET /notifications/preferences` | Không có | `{SYSTEM:true,WEB_PUSH:boolean,EMAIL:boolean,ZALO_ZNS:boolean,zaloZnsAvailable:boolean}`; không có dòng preference nghĩa là bật với Email/Push |
+| `GET /notifications/preferences` | Không có | `{SYSTEM:true,WEB_PUSH:boolean,EMAIL:boolean,ZALO_ZNS:boolean,zaloZnsAvailable:boolean,webPushAvailable:boolean,emailAvailable:boolean}`; không có dòng preference nghĩa là bật với Email/Push; cờ Available phản ánh cấu hình máy chủ, giao diện không cho đăng ký/thử kênh chưa sẵn sàng |
 | `PATCH /notifications/preferences` | Một hoặc nhiều trường boolean `WEB_PUSH`, `EMAIL`, `ZALO_ZNS`; từ chối `SYSTEM` và trường lạ | Cùng shape GET; bật ZNS khi hệ thống tắt trả `400 VALIDATION_ERROR` |
 | `POST /notifications/test` | `{channel:"SYSTEM"\|"WEB_PUSH"\|"EMAIL"\|"ZALO_ZNS"}` | `{notificationId,queuedChannels}`; chỉ tạo hộp thư và delivery trong DB, provider xử lý sau commit; ZNS tắt hoặc kênh cá nhân tắt trả `400 VALIDATION_ERROR` |
 

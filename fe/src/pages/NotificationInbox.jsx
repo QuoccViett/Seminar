@@ -19,6 +19,8 @@ export default function NotificationInbox() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const available = (channel) => channel === "WEB_PUSH" ? preferences?.webPushAvailable !== false
+    : channel === "EMAIL" ? preferences?.emailAvailable !== false : Boolean(preferences?.zaloZnsAvailable);
 
   /** Tải danh sách và tùy chọn độc lập để lỗi một phần vẫn hiện rõ, không hiển thị dữ liệu giả */
   const load = useCallback(async () => {
@@ -104,10 +106,10 @@ export default function NotificationInbox() {
       <Space direction="vertical" size="middle">
         <Text>Hộp thư hệ thống luôn bật</Text>
         {OPTIONAL_CHANNELS.map((channel) => <Space key={channel}>
-          <Switch checked={Boolean(preferences?.[channel])} disabled={busy || !preferences || (channel === "ZALO_ZNS" && !preferences.zaloZnsAvailable)} onChange={(enabled) => changeChannel(channel, enabled)} aria-label={CHANNEL_LABELS[channel]} />
+          <Switch checked={available(channel) && Boolean(preferences?.[channel])} disabled={busy || !preferences || !available(channel)} onChange={(enabled) => changeChannel(channel, enabled)} aria-label={CHANNEL_LABELS[channel]} />
           <Text>{CHANNEL_LABELS[channel]}</Text>
-          {channel === "WEB_PUSH" && preferences?.WEB_PUSH && <Button size="small" disabled={busy} onClick={registerCurrentDevice}>Đăng ký thiết bị này</Button>}
-          {channel === "ZALO_ZNS" && !preferences?.zaloZnsAvailable ? <Tag>Chưa kích hoạt</Tag> : <Button size="small" disabled={busy || !preferences?.[channel]} onClick={() => testChannel(channel)}>Thử kênh</Button>}
+          {channel === "WEB_PUSH" && available(channel) && preferences?.WEB_PUSH && <Button size="small" disabled={busy} onClick={registerCurrentDevice}>Đăng ký thiết bị này</Button>}
+          {!available(channel) ? <Tag>{channel === "ZALO_ZNS" ? "Chưa kích hoạt" : "Chưa kích hoạt trên máy chủ"}</Tag> : <Button size="small" disabled={busy || !preferences?.[channel]} onClick={() => testChannel(channel)}>Thử kênh</Button>}
         </Space>)}
       </Space>
     </Card>
