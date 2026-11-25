@@ -30,6 +30,10 @@ test("cấu hình theo tính năng và mật khẩu demo", () => {
   const gmailAliases = validateEnvironment({ ...base, EMAIL_ENABLED: true, SMTP_HOST: "smtp.gmail.com", SMTP_PORT: 465, SMTP_AUTH_REQUIRED: true, SMTP_USER: "sender@example.com", SMTP_PASS: "secret", SMTP_FROM: "sender@example.com", CREDENTIALS_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64") });
   assert.equal(gmailAliases.MAIL_FROM, "sender@example.com");
   assert.equal(gmailAliases.SMTP_PASSWORD, "secret");
+  const appsScript = { ...base, EMAIL_ENABLED: true, EMAIL_PROVIDER: "apps_script", MAIL_FROM: "admin@example.com", APPS_SCRIPT_URL: "https://script.google.com/macros/s/abc_123/exec", APPS_SCRIPT_SECRET: "ab".repeat(32), CREDENTIALS_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64") };
+  assert.doesNotThrow(() => validateEnvironment(appsScript));
+  assert.throws(() => validateEnvironment({ ...appsScript, APPS_SCRIPT_SECRET: "" }), /APPS_SCRIPT_SECRET/);
+  assert.throws(() => validateEnvironment({ ...appsScript, APPS_SCRIPT_URL: "https://example.com/exec" }), /APPS_SCRIPT_URL/);
   assert.throws(() => validateEnvironment({ ...base, NODE_ENV: "production" }), /INITIAL_ACCOUNT_PASSWORD/);
   assert.throws(() => validateEnvironment({ ...base, WEB_PUSH_ENABLED: true }), /WEB_PUSH_VAPID/);
   assert.throws(() => validateEnvironment({ ...base, ZALO_ZNS_ENABLED: true }), /ZALO_/);

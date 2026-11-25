@@ -31,7 +31,10 @@ export const envValidationSchema = Joi.object({
   WEB_PUSH_VAPID_PRIVATE_KEY: Joi.when("WEB_PUSH_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   WEB_PUSH_SUBJECT: Joi.when("WEB_PUSH_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   EMAIL_ENABLED: Joi.boolean().default(false),
-  SMTP_HOST: Joi.when("EMAIL_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
+  EMAIL_PROVIDER: Joi.string().valid("smtp", "apps_script").default("smtp"),
+  APPS_SCRIPT_URL: Joi.string().allow("").optional(),
+  APPS_SCRIPT_SECRET: Joi.string().allow("").optional(),
+  SMTP_HOST: Joi.string().allow("").optional(),
   SMTP_PORT: Joi.number().port().default(587),
   SMTP_AUTH_REQUIRED: Joi.boolean().default(true),
   SMTP_ALLOW_INSECURE_LOCAL: Joi.boolean().default(false),
@@ -97,8 +100,15 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
   // Cho phép môi trường cũ tiếp tục chạy mà không làm thay đổi mặc định Email đang tắt
   if (!normalized.MAIL_FROM && normalized.SMTP_FROM) normalized.MAIL_FROM = normalized.SMTP_FROM;
   if (!normalized.SMTP_PASSWORD && normalized.SMTP_PASS) normalized.SMTP_PASSWORD = normalized.SMTP_PASS;
-  if (normalized.EMAIL_ENABLED && !normalized.SMTP_HOST) throw new Error("SMTP_HOST là bắt buộc khi bật xác thực Email");
+  if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "smtp" && !normalized.SMTP_HOST) throw new Error("SMTP_HOST là bắt buộc khi dùng SMTP");
   if (normalized.EMAIL_ENABLED && !normalized.MAIL_FROM) throw new Error("MAIL_FROM hoặc SMTP_FROM là bắt buộc khi bật xác thực Email");
+  if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "apps_script") {
+    try {
+      const url = new URL(String(normalized.APPS_SCRIPT_URL ?? ""));
+      if (url.protocol !== "https:" || url.hostname !== "script.google.com" || url.port || url.username || url.password || url.search || url.hash || !/^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url.pathname)) throw new Error();
+    } catch { throw new Error("APPS_SCRIPT_URL phải là URL triển khai HTTPS hợp lệ của Google Apps Script"); }
+    if (!/^[a-fA-F0-9]{64}$/.test(String(normalized.APPS_SCRIPT_SECRET ?? ""))) throw new Error("APPS_SCRIPT_SECRET phải là khóa 32 byte dạng hex");
+  }
   if (normalized.ZALO_ZNS_ENABLED) {
     try {
       const map: unknown = JSON.parse(String(result.value.ZALO_TEMPLATE_MAP));
@@ -114,9 +124,9 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
     }
   }
   // SMTP thật cần xác thực và TLS; Mailpit chỉ được miễn qua cờ riêng cùng host loopback ở môi trường không production
-  if (normalized.EMAIL_ENABLED && normalized.SMTP_AUTH_REQUIRED && (!normalized.SMTP_USER || !normalized.SMTP_PASSWORD)) throw new Error("Cấu hình SMTP_USER và SMTP_PASSWORD hoặc SMTP_PASS là bắt buộc khi bật xác thực Email");
-  if (normalized.EMAIL_ENABLED && !normalized.SMTP_AUTH_REQUIRED && !(normalized.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "::1"].includes(String(normalized.SMTP_HOST)))) throw new Error("SMTP không xác thực chỉ được dùng với Mailpit cục bộ ở môi trường thử nghiệm");
-  if (normalized.EMAIL_ENABLED && (normalized.SMTP_PORT === 25 || normalized.SMTP_PORT === 1025) && !(normalized.NODE_ENV !== "production" && normalized.SMTP_ALLOW_INSECURE_LOCAL && ["localhost", "127.0.0.1", "::1"].includes(String(normalized.SMTP_HOST)))) throw new Error("SMTP không mã hóa chỉ được phép cho Mailpit cục bộ ở môi trường thử nghiệm");
+  if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "smtp" && normalized.SMTP_AUTH_REQUIRED && (!normalized.SMTP_USER || !normalized.SMTP_PASSWORD)) throw new Error("Cấu hình SMTP_USER và SMTP_PASSWORD hoặc SMTP_PASS là bắt buộc khi bật xác thực Email");
+  if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "smtp" && !normalized.SMTP_AUTH_REQUIRED && !(normalized.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "::1"].includes(String(normalized.SMTP_HOST)))) throw new Error("SMTP không xác thực chỉ được dùng với Mailpit cục bộ ở môi trường thử nghiệm");
+  if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "smtp" && (normalized.SMTP_PORT === 25 || normalized.SMTP_PORT === 1025) && !(normalized.NODE_ENV !== "production" && normalized.SMTP_ALLOW_INSECURE_LOCAL && ["localhost", "127.0.0.1", "::1"].includes(String(normalized.SMTP_HOST)))) throw new Error("SMTP không mã hóa chỉ được phép cho Mailpit cục bộ ở môi trường thử nghiệm");
   if ((normalized.EMAIL_ENABLED || normalized.WEB_PUSH_ENABLED) && !normalized.CREDENTIALS_ENCRYPTION_KEY) throw new Error("CREDENTIALS_ENCRYPTION_KEY là bắt buộc khi bật Email hoặc Web Push để cấp thông tin đăng nhập an toàn");
   if (normalized.WEB_PUSH_ALLOWED_HOSTS && String(normalized.WEB_PUSH_ALLOWED_HOSTS).split(",").some((host) => !/^[a-z0-9.-]+$/.test(host.trim()) || host.trim().startsWith(".") || host.trim().endsWith("."))) throw new Error("WEB_PUSH_ALLOWED_HOSTS phải là danh sách tên miền hợp lệ");
   return normalized;
