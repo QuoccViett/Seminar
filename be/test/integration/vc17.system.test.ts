@@ -135,6 +135,7 @@ test("VC17 golden path Import → đổi mật khẩu → công bố → minh ch
   await h.prisma.evaluationPeriod.update({ where: { id: periodId }, data: { selfEvalDeadline: new Date(Date.now() - 1) } });
   assert.equal((await request("POST", `evaluation-periods/${periodId}/transition-phase`, h.adminToken, { phase: "FIRST_REVIEW" })).status, 200);
   const records = await h.prisma.evaluation.findMany({ where: { periodId }, orderBy: { unitId: "asc" } });
+  assert.deepEqual(records.map((record) => record.unitId).sort(), units.map((unit) => unit.id).sort(), "Kỳ golden path chỉ được có hai đơn vị đã import, cần database riêng không có fixture từ bộ tài khoản");
   for (let index = 0; index < records.length; index++) {
     const record = records[index]; const unit = units.find((item) => item.id === record.unitId)!;
     await h.firstReview(record.id);

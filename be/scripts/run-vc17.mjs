@@ -28,7 +28,8 @@ const suites = [
   ["upgrade12", "vc12_upgrade_test", "VC12_UPGRADE_DATABASE_URL", ["vc12.migration"], true],
   ["upgrade13", "vc13_upgrade_test", "VC13_UPGRADE_DATABASE_URL", ["vc13.migration"], true],
   ["upgrade17", "vc17_upgrade_test", "VC17_UPGRADE_DATABASE_URL", ["vc17.migration"], true],
-  ["system", "vc17_test", "VC17_TEST_DATABASE_URL", ["vc17.system", "vc17.accounts"]],
+  ["accounts", "vc17_accounts_test", "VC17_ACCOUNTS_TEST_DATABASE_URL", ["vc17.accounts"]],
+  ["system", "vc17_test", "VC17_TEST_DATABASE_URL", ["vc17.system"]],
   ["browser", "vc16_test", "VC16_TEST_DATABASE_URL", [], false],
 ];
 const selected = process.env.VC17_SUITES?.split(",") ?? suites.map(([name]) => name);

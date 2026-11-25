@@ -6,12 +6,13 @@ import { createVc12Harness } from "./vc12-support.js";
 /** Chỉ khai báo các trường hồ sơ công khai được assertion kiểm qua API */
 interface AccountPayload { fullName: string; email: string | null; phone: string | null; role: string; unitId: string | null }
 
-/** Kiểm sửa hồ sơ và đổi quyền bằng HTTP thật trên DB VC17 riêng
+/** Kiểm sửa hồ sơ và đổi quyền bằng HTTP thật trên DB tài khoản VC17 riêng
  * Dữ liệu đều do harness tạo, provider ngoài tắt và không sửa tài khoản đã có
+ * Không dùng DB luồng đánh giá vì công bố sẽ cấp hồ sơ cho mọi đơn vị còn hoạt động
  * Sau đổi quyền phải thu hồi cả access, refresh và thiết bị cũ trước khi cấp phiên mới
  */
 test("VC17 hồ sơ UNIT, đổi vai trò/đơn vị và thu hồi phiên cùng thiết bị", async () => {
-  const h = await createVc12Harness({ url: process.env.VC17_TEST_DATABASE_URL, name: "vc17_test" });
+  const h = await createVc12Harness({ url: process.env.VC17_ACCOUNTS_TEST_DATABASE_URL, name: "vc17_accounts_test" });
   try {
     const scenario = await h.scenario(2, 100, [50, 35], false);
     const [owner, other] = scenario.records;
