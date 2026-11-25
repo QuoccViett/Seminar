@@ -1,0 +1,6 @@
+/*
+!fe
+fe/node_modules/
+fe/dist/
+fe/.vercel/
+fe/.env*

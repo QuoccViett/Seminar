@@ -342,6 +342,29 @@ async function verify() {
     unit.off("request", observePassword); assert.equal(passwordRequests, 1);
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: fixture.unit.userId } })).mustChangePassword, false);
     checks.push("realPasswordSevenRejectedEightAccepted"); checks.push("forcedPasswordBackendAndFrontend");
+
+    // Hồ sơ cá nhân phải lưu bằng quyền UNIT, đồng bộ phiên và đọc lại đúng dữ liệu sau reload
+    // Dữ liệu liên hệ chỉ thuộc fixture local, không gửi mail hoặc thay đổi tài khoản triển khai
+    stage = "UNIT sửa hồ sơ cá nhân và validation số điện thoại"; console.log(`VC16: ${stage}`);
+    await unit.goto(`${origin}/unit/profile`);
+    await unit.getByLabel("Họ và tên", { exact: true }).waitFor();
+    assert.equal(await unit.getByLabel("Tên đăng nhập", { exact: true }).isDisabled(), true);
+    await unit.getByLabel("Họ và tên", { exact: true }).fill("Người dùng đã cập nhật hồ sơ VC16");
+    await unit.getByLabel("Số điện thoại", { exact: true }).fill("abc");
+    await unit.getByRole("button", { name: "Lưu thay đổi", exact: true }).click();
+    await unit.getByText("Số điện thoại cần 9–15 chữ số, có thể bắt đầu bằng dấu +.", { exact: true }).waitFor();
+    await unit.getByLabel("Số điện thoại", { exact: true }).fill("0900123456");
+    const [profileSaved] = await Promise.all([unit.waitForResponse((response) => new URL(response.url()).pathname === `/api/v1/users/${fixture.unit.userId}` && response.request().method() === "PATCH"), unit.getByRole("button", { name: "Lưu thay đổi", exact: true }).click()]);
+    assert.equal(profileSaved.status(), 200);
+    await unit.getByText("Đã cập nhật hồ sơ cá nhân.", { exact: true }).waitFor();
+    assert.match(await unit.getByRole("button", { name: "Mở tùy chọn tài khoản", exact: true }).innerText(), /Người dùng đã cập nhật hồ sơ VC16/u);
+    await unit.reload();
+    await unit.getByLabel("Họ và tên", { exact: true }).waitFor();
+    assert.equal(await unit.getByLabel("Họ và tên", { exact: true }).inputValue(), "Người dùng đã cập nhật hồ sơ VC16");
+    assert.equal(await unit.getByLabel("Số điện thoại", { exact: true }).inputValue(), "0900123456");
+    const profile = await prisma.user.findUniqueOrThrow({ where: { id: fixture.unit.userId } });
+    assert.equal(profile.fullName, "Người dùng đã cập nhật hồ sơ VC16"); assert.equal(profile.phone, "0900123456");
+    checks.push("realUnitProfileValidationSaveSessionAndReload");
     await unit.getByRole("menuitem", { name: /Hồ sơ tự chấm/u }).click();
 
     // Đổi Date.now của browser không được lộ tiêu chí, chỉ điều kiện mở ở DB thử mới thay quyền khi refetch

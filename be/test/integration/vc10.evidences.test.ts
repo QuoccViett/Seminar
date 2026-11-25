@@ -191,7 +191,23 @@ test("VC10 upload nhiều minh chứng, quyền, quota, bù lỗi và preview qu
       else assert.equal(result.error.code, "EVIDENCE_QUOTA_EXCEEDED");
     }
     assert.equal(largeReservations.length, 9);
+    // Dung lượng đúng 100 MiB được giữ chỗ, vượt một byte bị chặn và hủy phải trả lại quota
+    const remainingBytes = 10 * 1024 * 1024 - pdf.length - png.length - docx.length;
+    const quotaItem = { criterionId: leaf, fileName: "Đúng giới hạn.pdf", mimeType: "application/pdf", sizeBytes: remainingBytes };
+    const exact = (await request("POST", `${path}/upload-urls`, unit, { items: [quotaItem] })).body.results[0];
+    assert.equal(exact.ok, true, JSON.stringify(exact));
+    const over = (await request("POST", `${path}/upload-urls`, unit, { items: [{ ...quotaItem, criterionId: otherLeaf, sizeBytes: 1 }] })).body.results[0];
+    assert.equal(over.error.code, "EVIDENCE_QUOTA_EXCEEDED");
+    assert.equal((await request("DELETE", `${path}/uploads/${exact.data.uploadId}`, unit)).status, 200);
+    // Hai tiêu chí tranh phần dung lượng cuối chỉ được một reservation, dù cả hai còn chỗ theo số tệp
+    const lastBytesRace = await Promise.all([leaf, otherLeaf].map(async (criterionId) => (await request("POST", `${path}/upload-urls`, unit, { items: [{ ...quotaItem, criterionId }] })).body.results[0]));
+    assert.equal(lastBytesRace.filter((row) => row.ok).length, 1);
+    assert.equal(lastBytesRace.filter((row) => !row.ok && row.error.code === "EVIDENCE_QUOTA_EXCEEDED").length, 1);
+    for (const row of lastBytesRace.filter((item) => item.ok)) await request("DELETE", `${path}/uploads/${row.data.uploadId}`, unit);
     for (const uploadId of largeReservations) await request("DELETE", `${path}/uploads/${uploadId}`, unit);
+    const released = (await request("POST", `${path}/upload-urls`, unit, { items: [{ ...quotaItem, sizeBytes: 10485760 }] })).body.results[0];
+    assert.equal(released.ok, true);
+    assert.equal((await request("DELETE", `${path}/uploads/${released.data.uploadId}`, unit)).status, 200);
 
     // Lỗi provider trước commit phải giữ phiên PENDING và không tạo Evidence giả
     const storageFailure = (await reserve()).data; await put(storageFailure, pdf);
