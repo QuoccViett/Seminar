@@ -215,11 +215,11 @@ test("VC17 mật khẩu 7/8/9/10 ký tự, Unicode và 72/73 byte qua HTTP thậ
   evidence.password = { invalid: invalid.length, valid: 5, boundaries: ["7/8/9/10 ký tự", "Unicode", "72/73 byte", "username", "hash cũ", "phổ biến", "thu hồi access cũ"] };
 });
 
-/** Ép cả hai thứ tự gửi/reset bằng cổng chờ trong provider giả, DB và reset HTTP vẫn thật
- * Reset thắng làm claim cũ không gửi, gửi thắng giữ khóa user tới khi gửi xong rồi reset mới tăng version
- * Không cần provider ngoài và không biến hai thứ tự hợp lệ thành cam kết thu hồi thư đã gửi
+/** Ép cả hai thứ tự gửi/reset bằng cổng chờ trong provider giả, DB và reset HTTP vẫn thật.
+ * Reset trước gửi chặn claim cũ; reset trong lúc I/O phải hoàn tất và hủy claim đang gửi.
+ * Kết quả provider đến muộn không được khôi phục dispatch hoặc đánh dấu phiên bản mới đã gửi.
  */
-test("VC17 reset và gửi credential tuần tự theo khóa user, claim cũ không gửi sau reset", async () => {
+test("VC17 reset không chờ provider và kết quả credential cũ không ghi đè phiên bản mới", async () => {
   const config = h.app.get(ConfigService); config.set("EMAIL_ENABLED", true);
   const dist = new URL("../../dist/", import.meta.url);
   const { EmailNotificationProvider: EmailToken } = await import(new URL("modules/notifications/real-notification-providers.js", dist).href);
@@ -239,17 +239,14 @@ test("VC17 reset và gửi credential tuần tự theo khóa user, claim cũ kh�
       if (sendFirst) {
         const work = h.credentials.processClaim(claim); await sending;
         const reset = request("POST", `users/${user.body.id}/reset-password`, h.adminToken, {});
-        // Chỉ mở cổng provider sau khi PostgreSQL xác nhận reset thật sự đang chờ khóa user
-        // Điều kiện này ngăn bài kiểm vô tình chạy tuần tự do request reset chưa tới backend
+        // Giữ provider ở cổng chờ cho tới khi reset HTTP hoàn tất, chứng minh không giữ khóa qua I/O.
+        let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
-          const until = Date.now() + 10000; let waiting = false;
-          while (Date.now() < until && !waiting) {
-            const rows = await h.prisma.$queryRaw<Array<{ waiting: boolean }>>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query ILIKE '%users%') AS waiting`;
-            waiting = rows[0].waiting;
-            if (!waiting) await new Promise((resolve) => setTimeout(resolve, 25));
-          }
-          assert.equal(waiting, true, "Reset phải chờ khóa user trong lúc provider đang gửi");
-        } finally { release(); }
+          const response = await Promise.race([reset, new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error("Reset bị chặn bởi provider đang gửi")), 10000);
+          })]);
+          assert.equal(response.status, 200);
+        } finally { if (timeout) clearTimeout(timeout); release(); }
         await work; assert.equal((await reset).status, 200); assert.equal(calls, before + 1);
       } else {
         assert.equal((await request("POST", `users/${user.body.id}/reset-password`, h.adminToken, {})).status, 200);
@@ -259,6 +256,9 @@ test("VC17 reset và gửi credential tuần tự theo khóa user, claim cũ kh�
       assert.equal(saved.credentialVersion, 1);
       const canceled = await h.prisma.credentialDispatch.findUniqueOrThrow({ where: { userId_credentialVersion: { userId: saved.id, credentialVersion: 0 } } });
       assert.ok(canceled.canceledAt); assert.equal(canceled.ciphertext, null);
+      const oldDelivery = await h.prisma.credentialDelivery.findUniqueOrThrow({ where: { id: claim.id } });
+      assert.equal(oldDelivery.status, "SKIPPED"); assert.equal(oldDelivery.errorCode, "CREDENTIAL_CHANGED");
+      assert.equal(saved.credentialsSentAt, null);
       // Hủy dispatch mới của fixture trước lượt tiếp để claimOne chỉ thấy công việc do test đang điều phối
       await h.prisma.$transaction((tx) => h.credentials.cancelForUser(tx, saved.id));
     }

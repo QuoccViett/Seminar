@@ -14,6 +14,7 @@ import type { CurrentUser, UserRole } from "../decorators/current-user.js";
 import { AUTHORIZED_ROLES } from "../decorators/roles.decorator.js";
 import { ERROR_CODES } from "../constants/error-codes.js";
 import { RuntimeCache } from "../services/runtime-cache.service.js";
+import { REQUIRE_FRESH_USER } from "../decorators/require-fresh-user.decorator.js";
 
 interface AuthenticatedRequest {
   method?: string;
@@ -89,8 +90,11 @@ export class JwtAuthGuard implements CanActivate {
         unit: { select: { isActive: true } },
       },
     });
-    // Đường ghi và API kiểm phiên luôn đọc DB; cache chỉ giảm tải các GET nghiệp vụ.
-    const cacheable = request.method === "GET" && !/\/auth(?:\/|$)/.test(request.originalUrl ?? "");
+    const controller = context.getClass();
+    const freshUser = Reflect.getMetadata(REQUIRE_FRESH_USER, context.getHandler()) === true
+      || (typeof controller === "function" && Reflect.getMetadata(REQUIRE_FRESH_USER, controller) === true);
+    // Đường ghi, kiểm phiên và dữ liệu private được đánh dấu đều bỏ qua cache danh tính.
+    const cacheable = request.method === "GET" && !freshUser && !/\/auth(?:\/|$)/.test(request.originalUrl ?? "");
     const user = cacheable && this.cache
       ? await this.cache.remember(`auth:${payload.sub}:${payload.ver}`, this.cache.ttl("auth"), readUser)
       : await readUser();

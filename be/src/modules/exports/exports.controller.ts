@@ -25,6 +25,7 @@ import type { Response } from "express";
 import { GetCurrentUser } from "../../common/decorators/current-user.js";
 import type { CurrentUser } from "../../common/decorators/current-user.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
+import { RequireFreshUser } from "../../common/decorators/require-fresh-user.decorator.js";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js";
 import { CreateReportExportDto } from "./dto/create-report-export.dto.js";
 import { ReportExportQueryDto } from "./dto/report-export-query.dto.js";
@@ -43,6 +44,7 @@ import { ReportExportMetadataDto, ReportExportPageDto } from "./dto/report-expor
 @Controller("api/v1/admin/reports/exports")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN")
+@RequireFreshUser()
 export class ExportsController {
   /** Nhận service điều phối, mọi tuyến bên dưới đều dùng guard ADMIN và chặn phiên chưa đổi mật khẩu */
   constructor(

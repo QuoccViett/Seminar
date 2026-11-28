@@ -17,7 +17,7 @@ Quy trình gồm chuẩn bị DB riêng, chạy năm kịch bản độc lập, 
 
 **Sáu nhóm đã có thay đổi trong code; chưa có kết luận nghiệm thu sức tải 1000 VU.** Build và kiểm thử chức năng không thay thế kết quả chạy tải. Thư viện Excel vẫn tạo chunk lớn nhưng chỉ được tải khi cần. Email và Push đã được provider chấp nhận có thể đến sau thời điểm reset mật khẩu; mật khẩu cũ bị vô hiệu theo version.
 
-Cache danh tính có thể làm GET thấy quyền cũ tối đa 3 giây trên replica khác. Nếu yêu cầu thu hồi mọi GET ngay, dùng `AUTH_CACHE_TTL_MS=0` và giữ cấu hình đó xuyên suốt các lượt so sánh.
+Cache danh tính có thể làm GET nghiệp vụ thông thường thấy quyền cũ tối đa 3 giây trên replica khác. Các API báo cáo và cấp URL minh chứng được đánh dấu `RequireFreshUser`, luôn đọc quyền/trạng thái mới từ DB. Nếu yêu cầu thu hồi mọi GET ngay, dùng `AUTH_CACHE_TTL_MS=0` và giữ cấu hình đó xuyên suốt các lượt so sánh.
 
 ## Việc cần chuẩn bị trước khi chạy
 

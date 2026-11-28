@@ -4,6 +4,7 @@ import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { JwtAuthGuard, RolesGuard } from "./jwt-auth.guard.js";
 import { RuntimeCache } from "../services/runtime-cache.service.js";
 import { ConfigService } from "@nestjs/config";
+import { RequireFreshUser } from "../decorators/require-fresh-user.decorator.js";
 
 test("cache chỉ giảm query GET, đường ghi và auth/me thấy tài khoản bị khóa ngay", async () => {
   let reads = 0; let active = true;
@@ -21,15 +22,32 @@ test("cache chỉ giảm query GET, đường ghi và auth/me thấy tài khoả
   await assert.rejects(guard.canActivate(createContext(request)), UnauthorizedException);
 });
 
+test("GET private bỏ cache khi handler hoặc controller yêu cầu user mới từ DB", async () => {
+  let mustChangePassword = false;
+  const cache = new RuntimeCache(new ConfigService({ AUTH_CACHE_TTL_MS: 3000 }));
+  const guard = new JwtAuthGuard({ verifyAsync: async () => ({ sub: "user", ver: 0, tokenUse: "access", exp: 9999999999 }) } as never,
+    { user: { findUnique: async () => ({ id: "user", role: "ADMIN", unitId: null, isActive: true, credentialVersion: 0, mustChangePassword }) } } as never, cache);
+  const request = { headers: { authorization: "Bearer fixture" }, method: "GET", originalUrl: "/api/v1/notifications/unread-count" };
+  await guard.canActivate(createContext(request));
+  mustChangePassword = true;
+  await guard.canActivate(createContext(request));
+  class PrivateController {}
+  RequireFreshUser()(PrivateController);
+  await assert.rejects(guard.canActivate(createContext(request, undefined, PrivateController)), ForbiddenException);
+  const privateHandler = () => {};
+  RequireFreshUser()(privateHandler);
+  await assert.rejects(guard.canActivate(createContext(request, privateHandler)), ForbiddenException);
+});
+
 type FakeRequest = {
   headers: { authorization?: string };
   user?: unknown;
 };
 
-function createContext(request: unknown) {
+function createContext(request: unknown, handler = function handler() {}, controller: unknown = "controller") {
   return {
-    getHandler: () => function handler() {},
-    getClass: () => "controller",
+    getHandler: () => handler,
+    getClass: () => controller,
     switchToHttp: () => ({
       getRequest: () => request,
     }),

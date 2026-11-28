@@ -36,6 +36,7 @@ try {
     const state = new EvaluationStateService(audit, notifications);
     const scheduler = new SchedulerService(prisma, audit, state, notifications);
     await scheduler.processPeriod(process.env.VC11_PERIOD_ID);
+    await notifications.flushOutbox(100);
     process.stdout.write("Đã quét kỳ kiểm thử");
   } else throw new Error("Lệnh worker kiểm thử không hợp lệ");
 } finally { await prisma.$disconnect(); }
