@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Prisma, type Criterion, type CriterionScore, type Evaluation, type EvaluationPeriod, type RatingThreshold } from "../../generated/prisma/client.js";
 import { selfLockedReason, selfSummary } from "./evaluation-policy.js";
+import { EvaluationsService } from "./evaluations.service.js";
 
 /** Dựng snapshot chỉ cho pure policy, transaction và SQL được kiểm riêng bằng PostgreSQL thật
  * Mốc tự chấm rơi cuối tuần để bảo đảm không vô tình áp lịch ngày làm việc của bổ sung
@@ -14,6 +15,25 @@ function fixture() {
   const evaluation = { status: "DRAFT", autoLockedAt: null } as Evaluation;
   return { start, deadline, period, evaluation };
 }
+
+test("metadata UNIT dùng ngưỡng động cho cả chính thức và bổ sung, khóa/nộp không còn cảnh báo", () => {
+  const service = new EvaluationsService({} as never, {} as never, {} as never);
+  for (const supplement of [false, true]) {
+    const { start, deadline, period, evaluation } = fixture();
+    const context = { ...evaluation, id: "evaluation", periodId: "period", period, unitId: "unit", unit: { code: "DV", name: "Đơn vị" } };
+    if (supplement) {
+      period.phase = "SUPPLEMENT";
+      Object.assign(context, { status: "SUPPLEMENT_REQUESTED", supplementStartAt: start, supplementDeadline: deadline });
+    }
+    const metadata = (now: Date) => service["metadata"](context as never, now, { id: "user", role: "UNIT", unitId: "unit" });
+    assert.equal(metadata(start).deadlineWarning, null);
+    assert.equal(metadata(new Date(+deadline - 15 * 60_000 - 1)).deadlineWarning, null);
+    assert.ok(metadata(new Date(+deadline - 15 * 60_000)).deadlineWarning);
+    assert.equal(metadata(deadline).deadlineWarning, null);
+    context.status = supplement ? "SUPPLEMENT_SUBMITTED" : "PENDING_REVIEW";
+    assert.equal(metadata(new Date(+deadline - 1)).deadlineWarning, null);
+  }
+});
 
 /** Kiểm cửa sổ loại trừ deadline ở độ chính xác mili giây, không phụ thuộc phase job trễ
  * Đúng start cuối tuần được sửa, đúng deadline bị khóa, kỳ CLOSED không được mở lại

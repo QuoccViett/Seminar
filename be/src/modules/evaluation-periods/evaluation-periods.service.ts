@@ -79,10 +79,10 @@ export class EvaluationPeriodsService {
    * Ghi audit cùng transaction và trả bản ghi mới để FE cấu hình ngưỡng và tiêu chí
    */
   async create(createdById: string, dto: CreateEvaluationPeriodDto) {
-    this.assertValidSchedule(dto.selfEvalStart, dto.selfEvalDeadline);
     if (dto.maxTotalScore !== undefined && dto.maxTotalScore <= 0) throw this.businessRule("Tổng điểm tối đa phải lớn hơn 0");
-    const now = this.clock.now();
     return this.prisma.$transaction(async (transaction) => {
+    const now = this.clock.now();
+    this.assertValidSchedule(dto.selfEvalStart, dto.selfEvalDeadline, now);
     const period = await transaction.evaluationPeriod.create({
       data: {
         id: randomUUID(), year: dto.year, name: dto.name, phase: "SETUP",
@@ -111,10 +111,10 @@ export class EvaluationPeriodsService {
     if (!before) throw this.periodNotFound();
     const start = dto.selfEvalStart === undefined ? before.selfEvalStart : this.dateOrNull(dto.selfEvalStart);
     const deadline = dto.selfEvalDeadline === undefined ? before.selfEvalDeadline : this.dateOrNull(dto.selfEvalDeadline);
-    this.assertValidSchedule(start?.toISOString() ?? null, deadline?.toISOString() ?? null);
+    const now = this.clock.now();
+    this.assertValidSchedule(start?.toISOString() ?? null, deadline?.toISOString() ?? null, now);
     if (before.publishedAt && (!start || !deadline)) throw this.businessRule("Kỳ đã công bố phải giữ đủ thời gian mở và thời hạn");
     if (dto.maxTotalScore !== undefined && dto.maxTotalScore <= 0) throw this.businessRule("Tổng điểm tối đa phải lớn hơn 0");
-    const now = this.clock.now();
     const scheduleChanged = dto.selfEvalStart !== undefined || dto.selfEvalDeadline !== undefined;
     if (before.publishedAt && (before.phase !== "SETUP" || now >= (before.selfEvalStart ?? new Date(0)))) {
       throw this.businessRule("Không thể thay đổi cấu hình khi kỳ đánh giá đã đến giờ mở");
@@ -338,10 +338,11 @@ export class EvaluationPeriodsService {
 
   /** Kiểm tra cặp mốc tự chấm có thứ tự tăng dần khi cả hai cùng được cấu hình
    * start và deadline có thể để trống trong lúc Admin chuẩn bị kỳ
-   * Khi đã có cả hai mốc, bắt đầu phải sớm hơn kết thúc để cửa sổ nửa mở luôn hợp lệ
+   * Mốc bắt đầu được lưu phải ở tương lai; kiểm lại sau khóa khi cập nhật kỳ
    */
-  private assertValidSchedule(start: string | null | undefined, deadline: string | null | undefined): void {
-    if (start && deadline && new Date(start) >= new Date(deadline)) throw this.businessRule("Thời gian bắt đầu phải sớm hơn thời hạn tự đánh giá");
+  private assertValidSchedule(start: string | null | undefined, deadline: string | null | undefined, now: Date): void {
+    if (start && new Date(start) <= now) throw this.businessRule("Thời gian bắt đầu phải sau thời gian hiện tại", "selfEvalStart");
+    if (start && deadline && new Date(start) >= new Date(deadline)) throw this.businessRule("Thời gian bắt đầu phải sớm hơn thời hạn tự đánh giá", "selfEvalDeadline");
   }
 
   /** Chuyển chuỗi ngày giờ đã qua DTO thành Date hoặc giữ null có chủ đích
@@ -379,7 +380,7 @@ export class EvaluationPeriodsService {
    * message chỉ được gọi từ các nhánh kiểm tra do ứng dụng kiểm soát
    * Không chuyển nguyên lỗi của PostgreSQL hoặc Prisma ra API
    */
-  private businessRule(message: string): BadRequestException {
-    return new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message });
+  private businessRule(message: string, field?: string): BadRequestException {
+    return new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message, details: field ? [{ field, messages: [message] }] : [] });
   }
 }

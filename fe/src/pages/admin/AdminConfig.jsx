@@ -14,6 +14,7 @@ import viVN from "antd/locale/vi_VN";
 import "dayjs/locale/vi";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
 import { criteriaService } from "../../services/criteriaService";
+import { fromVietnamDatePicker, scheduleError, criterionScoreError } from "../../services/configValidation";
 import styles from "./AdminConfig.module.css";
 
 const { Title, Text } = Typography;
@@ -48,15 +49,6 @@ function toVietnamDatePicker(value) {
   if (!value) return null;
   const vietnam = new Date(new Date(value).getTime() + 7 * 60 * 60 * 1000);
   return dayjs(new Date(vietnam.getUTCFullYear(), vietnam.getUTCMonth(), vietnam.getUTCDate(), vietnam.getUTCHours(), vietnam.getUTCMinutes(), vietnam.getUTCSeconds(), vietnam.getUTCMilliseconds()));
-}
-
-/** Đổi các thành phần giờ Việt Nam đã chọn thành instant UTC gửi API
- * value là dayjs có các thành phần giờ đang hiển thị trong DatePicker
- * Dùng UTC constructor trừ bảy giờ để không phụ thuộc múi giờ máy Admin
- */
-function fromVietnamDatePicker(value) {
-  if (!value) return null;
-  return new Date(Date.UTC(value.year(), value.month(), value.date(), value.hour() - 7, value.minute(), value.second(), value.millisecond())).toISOString();
 }
 
 /** Giữ Enter trong bộ chọn lịch để xác nhận ngày giờ mà không gửi form đang chứa nó
@@ -469,7 +461,10 @@ export default function AdminConfig() {
 
         <Row gutter={32}>
           <Col span={10}>
-            <Form.Item label="Thời gian mở/đóng tự chấm (giờ Việt Nam UTC+07:00)" name="selfEvalRange">
+            <Form.Item label="Thời gian mở/đóng tự chấm (giờ Việt Nam UTC+07:00)" name="selfEvalRange" rules={[{ validator: (_, range) => {
+              const error = scheduleError(range);
+              return error ? Promise.reject(new Error(error)) : Promise.resolve();
+            } }]}>
               <DatePicker.RangePicker showTime={{ format: "HH:mm" }} format="DD/MM/YYYY HH:mm" size="large" placeholder={["Ngày giờ mở", "Ngày giờ kết thúc"]} onKeyDown={keepPickerSelection} style={{ width: "100%" }} />
             </Form.Item>
           </Col>
@@ -536,7 +531,7 @@ export default function AdminConfig() {
       title: "Hành động", key: "action", align: "center", width: 120,
       render: (_, record) => (
         <Space size="small">
-          <Button type="text" disabled={periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} icon={<EditOutlined style={{ color: "var(--app-primary)" }} />} onClick={() => { setSelectedCriterion(record); formCriteria.setFieldsValue(record); setIsCriteriaModalOpen(true); }} />
+          <Button type="text" aria-label={`Sửa tiêu chí ${record.code}`} disabled={periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} icon={<EditOutlined style={{ color: "var(--app-primary)" }} />} onClick={() => { setSelectedCriterion(record); formCriteria.setFieldsValue(record); setIsCriteriaModalOpen(true); }} />
           <Popconfirm title="Xóa tiêu chí này?" onConfirm={() => handleDeleteCriterion(record)} okText="Xóa" cancelText="Hủy">
             <Button type="text" danger disabled={periodsList.find((period) => period.id === currentPeriodId)?.publishedAt} icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -604,7 +599,10 @@ export default function AdminConfig() {
           
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="maxScore" label="Điểm tối đa" rules={[{ required: true, message: "Nhập điểm" }]}>
+              <Form.Item name="maxScore" label="Điểm tối đa" dependencies={["parentId"]} rules={[{ required: true, message: "Nhập điểm" }, ({ getFieldValue }) => ({ validator: (_, maxScore) => {
+                const error = criterionScoreError(criteriaList, { id: selectedCriterion?.id, parentId: getFieldValue("parentId"), maxScore });
+                return error ? Promise.reject(new Error(error)) : Promise.resolve();
+              } })]}>
                 <InputNumber min={0.01} precision={2} style={{ width: "100%" }} />
               </Form.Item>
             </Col>

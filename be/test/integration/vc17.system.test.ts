@@ -116,7 +116,9 @@ test("VC17 golden path Import → đổi mật khẩu → công bố → minh ch
   const hidden = await request("GET", `evaluation-periods/${periodId}`, units[0].token);
   assert.equal(hidden.body.criteriaVisible, false); assert.ok(!JSON.stringify(hidden.body).includes("bí mật"));
   assert.equal((await request("GET", `evaluation-periods/${periodId}/criteria`, units[0].token)).status, 400);
-  assert.equal((await request("PATCH", `evaluation-periods/${periodId}`, h.adminToken, { selfEvalStart: new Date(Date.now() - 1000).toISOString(), changeReason: "Mở cửa sổ kiểm chứng VC17 bằng API có audit" })).status, 200);
+  // API phải chặn lịch quá khứ; chỉ fixture DB riêng được dịch giờ để kiểm luồng đang mở.
+  assert.equal((await request("PATCH", `evaluation-periods/${periodId}`, h.adminToken, { selfEvalStart: new Date(Date.now() - 1000).toISOString(), changeReason: "Thử lịch quá khứ" })).status, 400);
+  await h.prisma.evaluationPeriod.update({ where: { id: periodId }, data: { selfEvalStart: new Date(Date.now() - 1000) } });
   for (const unit of units) {
     const evaluation = await h.prisma.evaluation.findUniqueOrThrow({ where: { periodId_unitId: { periodId, unitId: unit.id } } });
     const path = `evaluations/${evaluation.id}`;

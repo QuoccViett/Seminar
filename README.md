@@ -68,7 +68,70 @@ Bộ [VC17](./docs/VC17_KIEM_THU.md) cần PostgreSQL local mới tên `vc17_con
 
 Kiểm Supabase thật: chỉ định project/service key trong môi trường BE và `VC10_SUPABASE_BUCKET` là bucket private dành kiểm thử, build BE rồi chạy `npm run test:supabase --prefix be`. Script kiểm ACL, upload/download bytes và dọn đúng object UUID của lượt kiểm; báo cáo local không chứa secret. Đây là kiểm provider, cần kết hợp ma trận quyền HTTP/browser để nghiệm thu tích hợp đầy đủ.
 
-## Docker và HTTPS
+## Sửa validation và đo tải 1.000 người (28/11/2026)
+
+Cảnh báo sắp hết hạn của tự chấm và bổ sung dùng cùng một quy tắc ở hồ sơ và scheduler: thời gian nhắc trước hạn = `min((kết thúc - bắt đầu) / 2, 24 giờ)`. Ví dụ 10 phút → nhắc khi còn 5 phút, 30 phút → 15 phút, 2 giờ → 1 giờ, từ 48 giờ → còn 24 giờ. Không nhắc trước cửa sổ hoặc sau khi nộp/hết hạn. Hộp thư được scheduler quét mỗi phút; hồ sơ UNIT đang mở được polling mỗi 15 giây, nên thông báo có độ trễ tương ứng nhịp quét.
+
+Form lưu kỳ chặn thời gian bắt đầu không còn ở tương lai, API kiểm lại theo giờ server cả khi tạo/sửa (kể cả PATCH ghép với lịch đã lưu). Nháp vẫn được để trống lịch. Form và API tiêu chí chặn điểm con vượt cha, tổng con trực tiếp vượt cha, giảm điểm cha xuống dưới tổng con và chuyển nhánh sang cha không đủ điểm. Trong lúc cấu hình, tổng con được nhỏ hơn cha; điều kiện bằng nhau vẫn được kiểm khi công bố.
+
+Repo trước đây chỉ có bài tải nhẹ 34 người ở VC17. Bộ [fixture](./be/scripts/load-test-fixture.mjs) và [kịch bản k6](./be/test/load/workload.k6.js) bổ sung 1.000 danh tính UNIT riêng, cùng một kỳ, tăng tải 100 → 250 → 500 → 1.000 và giữ 1.000 trong ba phút. Mỗi VU nghỉ 1–3 giây giữa thao tác; 80% đọc hồ sơ/tổng điểm/chuông, 20% lưu điểm. Đây là phiên đã xác thực, gọi NestJS và PostgreSQL thật với dữ liệu giả; không dùng MSW trả 200 giả để suy ra sức chịu tải. Fixture tạo JWT test đúng issuer/audience và guard vẫn đọc tài khoản thật trong DB. Bài này chưa đo login, upload, công bố 1.000 hồ sơ, báo cáo hoặc tốc độ render trình duyệt.
+
+Chốt tiêu chí trước khi chạy: tỷ lệ lỗi <1%, p95 đọc <800 ms, p95 ghi <1.500 ms; `load:verify` phải xác nhận đủ mọi người đã lưu đúng hồ sơ/điểm. p95 là thời gian mà 95% request hoàn tất trong đó. k6 xuất RPS, p90/p95, tỷ lệ lỗi; thu thêm CPU/RAM của BE/DB, số connection và lock wait/slow query để giải thích giới hạn. 1.000 tài khoản trong DB khác với 1.000 người hoạt động đồng thời; bài ramping VU cũng không tương đương 1.000 request đến đúng một thời điểm. Với bài đo này, dữ liệu giả có ba tiêu chí; lượt nghiệm thu nên bổ sung cây và lịch sử đủ lớn như thực tế.
+
+Chạy từ thư mục repository trong **PowerShell riêng**, cần Docker đang chạy và k6 đã cài. Dùng DB/container mới, không dùng DB dev/production đang có người thao tác. Không ghi đè cấu hình hiện có; các biến dưới chỉ tồn tại trong terminal kiểm tải:
+
+```powershell
+$env:NODE_ENV = 'test'
+$env:LOAD_DB_PASSWORD = node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('hex'))"
+$env:JWT_SECRET = node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))"
+$env:JWT_ISSUER = 'seminar'
+$env:JWT_AUDIENCE = 'seminar-client'
+$env:LOAD_TEST_DATABASE_URL = "postgresql://seminar_load:$($env:LOAD_DB_PASSWORD)@127.0.0.1:5544/seminar_load_test"
+$env:DATABASE_URL = $env:LOAD_TEST_DATABASE_URL
+$env:PORT = '3001'
+$env:WEB_ORIGINS = 'http://127.0.0.1:5173'
+$env:CORS_ORIGINS = 'http://127.0.0.1:5173'
+$env:PUBLIC_APP_URL = 'http://127.0.0.1:5173'
+$env:EMAIL_ENABLED = 'false'
+$env:WEB_PUSH_ENABLED = 'false'
+$env:ZALO_ZNS_ENABLED = 'false'
+$env:STORAGE_ENABLED = 'false'
+$env:STORAGE_PROVIDER = 'local'
+$env:STORAGE_LOCAL_DIR = 'be/.tmp/load-test/storage'
+$env:REPORT_EXPORT_PROVIDER = 'local'
+$env:REPORT_EXPORT_DIR = 'be/.tmp/load-test/reports'
+$env:RATE_LIMIT_ENABLED = 'true'
+$env:LOAD_TEST_BASE_URL = 'http://127.0.0.1:3001'
+docker run --name seminar-load-postgres -e POSTGRES_USER=seminar_load -e POSTGRES_PASSWORD=$env:LOAD_DB_PASSWORD -e POSTGRES_DB=seminar_load_test -p 127.0.0.1:5544:5432 -d postgres:16
+# Chờ pg_isready báo accepting connections trước khi chạy migration
+docker exec seminar-load-postgres pg_isready -U seminar_load -d seminar_load_test
+npm run db:migrate:deploy --prefix be
+npm run build --prefix be
+npm run load:seed --prefix be
+node be/dist/main.js
+```
+
+Trong terminal khác, chạy smoke trước, rồi bài 1.000 VU. Fixture có phiên/hạn hai giờ và chỉ trỏ backend local đã chỉ định. Lưu kết quả trước/sau thay đổi với cùng cấu hình máy, commit và dữ liệu; muốn chạy lượt mới hoàn toàn thì dùng DB mới và lưu fixture/kết quả lượt cũ riêng. Script không tự reset DB hay ghi đè fixture.
+
+```powershell
+k6 run -e TARGET_VUS=5 -e RAMP_DURATION=2s -e HOLD_DURATION=15s --summary-export=be/.tmp/load-test/smoke.json be/test/load/workload.k6.js
+k6 run --out json=be/.tmp/load-test/timeseries-1000.json --summary-export=be/.tmp/load-test/summary-1000.json be/test/load/workload.k6.js
+# Ở terminal đã đặt LOAD_TEST_DATABASE_URL và NODE_ENV=test, sau lượt 1.000 VU:
+npm run load:verify --prefix be
+docker stats --no-stream seminar-load-postgres
+```
+
+`be/.tmp/load-test/users.json` chứa token private, không chia sẻ/commit. Chỉ chia sẻ summary và kết quả integrity đã bỏ credential. Kết quả smoke 5 người không đủ để chạy `load:verify` cho bộ 1.000 danh tính; phải hoàn tất lượt 1.000. Kết quả local chưa đại diện cho máy triển khai, proxy/HTTPS hay độ trễ người dùng thật. Với máy phát tải riêng, chạy một bản môi trường test tương đương và điều chỉnh quy trình cấp fixture/đích có chủ đích, không dùng token test trên production.
+
+Hướng tối ưu dựa trên source hiện tại (cần đo trước/sau, chưa phải kết luận đã chịu được 1.000 người):
+
+- Ưu tiên đo `lockPeriod`: các thao tác đọc/lưu hồ sơ đang lấy `FOR UPDATE` trên cùng kỳ rồi khóa hồ sơ, dễ tuần tự hóa cả 1.000 đơn vị. Thiết kế lại khóa đọc/chia sẻ cấu hình kỳ và khóa riêng hồ sơ, giữ khóa độc quyền cho thay lịch/giai đoạn. Phải kiểm lại race công bố, deadline và scheduler trước khi thay đổi cơ chế khóa.
+- Giảm dữ liệu và query của từng lần lưu: hiện context tải cây, mọi điểm và minh chứng; tách truy vấn/response chỉ cho lá đang lưu. UNIT đang polling hồ sơ mỗi 15 giây: 1.000 phiên riêng polling đã khoảng 67 vòng tải/giây, mỗi vòng còn có nhiều request; cân nhắc tăng nhịp, backoff khi tab ẩn hoặc cập nhật theo thay đổi.
+- Đọc `EXPLAIN (ANALYZE, BUFFERS)`, lock wait và pool queue để chọn index hoặc chỉnh pool/PgBouncer; không tăng số connection mù quáng. Giữ API phân trang; cache dữ liệu cấu hình đã công bố và aggregate có invalidation/quyền rõ ràng.
+- Khi CPU/query đã được xử lý mới cân nhắc nhiều replica, dùng store rate limit chung (hiện store nằm trong process), kiểm worker/scheduler và chuyển công việc nặng xuất báo cáo/thông báo sang hàng đợi. FE dùng bản build qua Nginx/CDN. Test upload/report/login riêng, giữ giới hạn login: 1.000 login từ cùng IP sẽ gặp 429 theo thiết kế, không coi đó là phép đo năng lực toàn hệ thống.
+- Để báo cáo cho giảng viên: ghi cấu hình máy + commit, mô hình tải, bảng từng mức VU với RPS/p95/lỗi/CPU/RAM/lock wait, biểu đồ trước/sau và kết quả kiểm dữ liệu. Nếu không đạt ở 1.000, báo mức đạt cao nhất cùng lỗi/nút nghẽn đo được và chạy lại cùng bài sau tối ưu.
+
+## Docker và HTTPS (triển khai)
 
 [Compose triển khai](./deploy/compose.yml) gồm PostgreSQL, migration riêng, cấp quyền DB app, BE, FE Nginx và Caddy. DB không mở port ra host; chỉ proxy mở HTTP/HTTPS. Runtime chạy user node và role `seminar_app` không superuser, không UPDATE/DELETE/TRUNCATE audit/history. Migration dùng role owner riêng và hoàn tất trước BE nhận request.
 

@@ -23,7 +23,9 @@
     "test:vc17": "c8 --config .c8rc.vc17.json node scripts/run-vc17.mjs",
     "db:seed:base": "tsx prisma/seed-base.ts",
     "db:seed:demo": "tsx prisma/seed.ts",
-    "test:supabase": "node scripts/verify-supabase.mjs"
+    "test:supabase": "node scripts/verify-supabase.mjs",
+    "load:seed": "node scripts/load-test-fixture.mjs",
+    "load:verify": "node scripts/load-test-fixture.mjs --verify"
   },
   "dependencies": {
     "@nestjs/common": "11.2.7",

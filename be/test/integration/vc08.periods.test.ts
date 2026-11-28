@@ -78,6 +78,10 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
     const adminToken = admin.body.accessToken as string;
     const unitToken = unit.body.accessToken as string;
     const latest = await prisma.evaluationPeriod.aggregate({ _max: { year: true } });
+    for (const offset of [-60_000, 0]) {
+      const invalid = await request("POST", "evaluation-periods", adminToken, { year: Math.max(2026, (latest._max.year ?? 2025) + 1), name: "Lịch quá khứ", selfEvalStart: new Date(+instant + offset).toISOString(), selfEvalDeadline: "2026-11-28T17:00:00Z" });
+      assert.equal(invalid.status, 400);
+    }
     // Mốc mở là thứ Bảy 23:30 giờ Việt Nam và hạn là Chủ nhật 00:00 để xác nhận lịch tự chấm không lọc ngày nghỉ
     const created = await request("POST", "evaluation-periods", adminToken, { year: Math.max(2026, (latest._max.year ?? 2025) + 1), name: "Kỳ kiểm thử", maxTotalScore: 300, selfEvalStart: "2026-11-28T16:30:00Z", selfEvalDeadline: "2026-11-28T17:00:00Z" });
     assert.equal(created.status, 201, JSON.stringify(created.body));
@@ -97,6 +101,14 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
     }
     const criterion = await request("POST", `evaluation-periods/${id}/criteria`, adminToken, { code: "1", name: "Nội dung bí mật trước giờ mở", maxScore: 300, sortOrder: 1 });
     assert.equal(criterion.status, 201, JSON.stringify(criterion.body));
+    // Chặn ngay API lưu tiêu chí, trước publish-check; giữ tiêu chí gốc cho luồng còn lại.
+    const over = await request("POST", `evaluation-periods/${id}/criteria`, adminToken, { code: "1.1", name: "Con vượt điểm", parentId: criterion.body.id, maxScore: 301, sortOrder: 1 });
+    assert.equal(over.status, 400);
+    const child = await request("POST", `evaluation-periods/${id}/criteria`, adminToken, { code: "1.1", name: "Con hợp lệ", parentId: criterion.body.id, maxScore: 100, sortOrder: 1 });
+    assert.equal(child.status, 201);
+    assert.equal((await request("PATCH", `criteria/${child.body.id}`, adminToken, { maxScore: 301 })).status, 400);
+    assert.equal((await request("PATCH", `criteria/${criterion.body.id}`, adminToken, { maxScore: 99 })).status, 400);
+    assert.equal((await request("DELETE", `criteria/${child.body.id}`, adminToken)).status, 200);
     const thresholds = [
       { rating: "EXCELLENT", label: "Xuất sắc", minPercent: 85, minExclusive: true },
       { rating: "GOOD", label: "Tốt", minPercent: 65, minExclusive: false },
@@ -204,7 +216,8 @@ test("VC08 công bố cạnh tranh và ẩn tiêu chí theo giờ server qua HTT
       assert.equal((await request("PATCH", `evaluation-periods/${secondId}`, adminToken, { selfEvalStart: "2026-11-28T16:30:00Z", selfEvalDeadline: deadline })).status, 400);
     }
     assert.equal((await request("PATCH", `evaluation-periods/${secondId}`, adminToken, { selfEvalStart: "2026-11-28T16:30:00" })).status, 400);
-    await request("PATCH", `evaluation-periods/${secondId}`, adminToken, { selfEvalStart: "2026-11-28T16:30:00Z", selfEvalDeadline: "2026-11-28T17:00:00Z" });
+    instant = new Date("2026-11-28T16:29:59.999Z");
+    assert.equal((await request("PATCH", `evaluation-periods/${secondId}`, adminToken, { selfEvalStart: "2026-11-28T16:30:00Z", selfEvalDeadline: "2026-11-28T17:00:00Z" })).status, 200);
     const wrongTotal = await request("POST", `evaluation-periods/${secondId}/criteria`, adminToken, { code: "1", name: "Tiêu chí nhánh hai", maxScore: 200, sortOrder: 1 });
     const removable = await request("POST", `evaluation-periods/${secondId}/criteria`, adminToken, { code: "TEMP", name: "Tiêu chí xóa thử", maxScore: 1, sortOrder: 2 });
     assert.equal((await request("DELETE", `criteria/${removable.body.id}`, adminToken)).status, 200);

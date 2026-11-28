@@ -53,10 +53,10 @@ test("mở đúng mốc và hết hạn bổ sung đúng snapshot", async () => 
   assert.equal(events.filter((item) => item === "history").length, 1);
 });
 
-/** Nhắc hạn chỉ xuất hiện tại mốc hợp lệ bên trong cửa sổ và không nhắc vòng ngắn
- * Ví dụ vòng ngắn do Admin chọn mở sau mốc nhắc 24 giờ nên không được nhắc
+/** Nhắc hạn chỉ xuất hiện tại mốc hợp lệ bên trong cửa sổ
+ * Không tạo thông báo cho lịch bổ sung chưa đến giờ mở
  */
-test("nhắc hạn đúng cửa sổ và bỏ mốc trước giờ mở bổ sung", async () => {
+test("nhắc hạn đúng cửa sổ và không nhắc trước giờ mở bổ sung", async () => {
   const first = fixture(new Date("2026-11-19T00:00:00Z"));
   first.period.phase = "SELF_EVAL";
   await first.service.processPeriod("period");
@@ -68,4 +68,27 @@ test("nhắc hạn đúng cửa sổ và bỏ mốc trước giờ mở bổ sun
   second.evaluation.supplementDeadline = new Date("2026-11-20T00:00:00Z");
   await second.service.processPeriod("period");
   assert.equal(second.events.includes("SUPPLEMENT_REMINDER"), false);
+});
+
+test("scheduler nhắc cả tự chấm và bổ sung ngắn tại nửa thời lượng, không nhắc khi đã nộp", async () => {
+  const start = new Date("2026-11-18T00:00:00Z");
+  for (const supplement of [false, true]) {
+    for (const [minutes, lead] of [[10, 5], [30, 15], [120, 60], [2880, 1440], [4320, 1440]]) {
+      const deadline = new Date(+start + minutes! * 60_000);
+      const due = +deadline - lead! * 60_000;
+      for (const offset of [-1, 0, 1]) {
+        const f = fixture(new Date(due + offset));
+        f.period.phase = supplement ? "SUPPLEMENT" : "SELF_EVAL";
+        f.period.selfEvalStart = start;
+        f.period.selfEvalDeadline = deadline;
+        if (supplement) Object.assign(f.evaluation, { status: "SUPPLEMENT_REQUESTED", supplementStartAt: start, supplementDeadline: deadline });
+        await f.service.processPeriod("period");
+        assert.equal(f.events.includes(supplement ? "SUPPLEMENT_REMINDER" : "SELF_EVAL_REMINDER"), offset >= 0);
+      }
+      const f = fixture(new Date(due));
+      f.evaluation.status = supplement ? "SUPPLEMENT_SUBMITTED" : "PENDING_REVIEW";
+      await f.service.processPeriod("period");
+      assert.equal(f.events.some((event) => event.endsWith("REMINDER")), false);
+    }
+  }
 });

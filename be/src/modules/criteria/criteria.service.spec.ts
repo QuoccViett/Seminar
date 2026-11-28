@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CriteriaService } from "./criteria.service.js";
+import { Prisma } from "../../generated/prisma/client.js";
 
 const periodId = "11111111-1111-4111-8111-111111111111";
 const opening = new Date("2026-11-18T03:00:00.000Z");
@@ -93,4 +94,53 @@ test("chặn di chuyển nhánh có con vượt quá tám cấp", async () => {
   (prisma.evaluationPeriod as { findUnique: () => Promise<unknown> }).findUnique = async () => ({ id: periodId, publishedAt: null });
   await assert.rejects(service.update(periodId, "moving", { parentId: "parent-0" }, "admin"), (error: unknown) => (error as { getStatus(): number }).getStatus() === 400);
   assert.equal(audits.length, 0);
+});
+
+/** Dùng số thập phân thật và cây có anh em để kiểm thao tác lưu, không chỉ kiểm công bố. */
+test("thêm/sửa chặn vượt điểm cha, tổng anh em, giảm cha và chuyển sang cha thiếu điểm", async () => {
+  const nodes = [
+    { id: "parent", parentId: null, maxScore: new Prisma.Decimal(10) },
+    { id: "child", parentId: "parent", maxScore: new Prisma.Decimal(6) },
+    { id: "sibling", parentId: "parent", maxScore: new Prisma.Decimal(4) },
+    { id: "other", parentId: null, maxScore: new Prisma.Decimal(5) },
+  ].map((node) => ({ ...node, periodId }));
+  for (const [id, dto] of [
+    [null, { parentId: "parent", maxScore: 11 }],
+    [null, { parentId: "parent", maxScore: 1 }],
+    ["child", { maxScore: 11 }],
+    ["child", { maxScore: 7 }],
+    ["parent", { maxScore: 9.99 }],
+    ["child", { parentId: "other" }],
+  ] as const) {
+    const { service, writes, audits } = makeService({
+      findMany: async () => nodes,
+      findUnique: async ({ where }: { where: { id: string } }) => nodes.find((node) => node.id === where.id) ?? null,
+      update: async (args: Record<string, unknown>) => { writes.push(args); return {}; },
+    });
+    const saving = id ? service.update(periodId, id, dto, "admin") : service.create(periodId, { code: "new", name: "Con mới", sortOrder: 1, ...dto }, "admin");
+    await assert.rejects(saving, (error: unknown) => {
+      const failure = error as { getStatus(): number; getResponse(): { details: Array<{ field: string }> } };
+      return failure.getStatus() === 400 && failure.getResponse().details[0]?.field === "maxScore";
+    });
+    assert.equal(writes.length, 0);
+    assert.equal(audits.length, 0);
+  }
+});
+
+test("cho phép lưu từng phần, bằng điểm cha, số lẻ và sửa không cộng trùng chính nó", async () => {
+  const nodes = [
+    { id: "parent", parentId: null, maxScore: new Prisma.Decimal("0.3") },
+    { id: "child", parentId: "parent", maxScore: new Prisma.Decimal("0.1") },
+  ].map((node) => ({ ...node, periodId }));
+  const { service, writes, audits } = makeService({
+    findMany: async () => nodes,
+    findUnique: async ({ where }: { where: { id: string } }) => nodes.find((node) => node.id === where.id) ?? null,
+    update: async (args: { where: { id: string }; data: object }) => { writes.push(args); return { ...nodes.find((node) => node.id === args.where.id), ...args.data }; },
+  });
+  await service.create(periodId, { code: "2", name: "Con", parentId: "parent", maxScore: 0.2, sortOrder: 2 }, "admin");
+  await service.update(periodId, "child", { maxScore: 0.3 }, "admin");
+  await service.update(periodId, "child", { name: "Đổi tên" }, "admin");
+  await service.update(periodId, "child", { parentId: null, maxScore: 1 }, "admin");
+  assert.equal(writes.length, 4);
+  assert.equal(audits.length, 4);
 });
