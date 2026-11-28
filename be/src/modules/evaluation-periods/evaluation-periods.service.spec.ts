@@ -26,6 +26,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
   };
   const prisma = {
     evaluationPeriod: {
+      create: async (args: Record<string, unknown>) => { updates.push(args); return { ...period, ...(args.data as object) }; },
       findUnique: async () => period,
       update: async (args: Record<string, unknown>) => { updates.push(args); return { ...period, ...(args.data as object) }; },
       updateMany: async (args: Record<string, unknown>) => { updates.push(args); return { count: 1 }; },
@@ -38,6 +39,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
     $transaction: async (callback: (transaction: Record<string, unknown>) => unknown) => callback({
       $queryRaw: async () => [],
       evaluationPeriod: {
+        create: async (args: Record<string, unknown>) => { updates.push(args); return { ...period, ...(args.data as object) }; },
         findUnique: async () => period,
         update: async (args: Record<string, unknown>) => { updates.push(args); return { ...period, ...(args.data as object) }; },
         updateMany: async (args: Record<string, unknown>) => { updates.push(args); return { count: 1 }; },
@@ -60,8 +62,32 @@ function makeService(overrides: Record<string, unknown> = {}) {
  * Helper không làm thay đổi lỗi hoặc che thông tin mà test cần xác nhận
  */
 function response(error: unknown) {
-  return error as { getStatus(): number; getResponse(): { message?: string } };
+  return error as { getStatus(): number; getResponse(): { message?: string; details?: Array<{ field: string }> } };
 }
+
+test("tạo và sửa kỳ chặn bắt đầu trong quá khứ hoặc đúng giờ hiện tại trước khi ghi", async () => {
+  for (const offset of [-86_400_000, -1, 0]) {
+    for (const editing of [false, true]) {
+      const { service, updates, audits } = makeService();
+      const payload = { year: 2027, name: "Kỳ mới", selfEvalStart: new Date(+now + offset).toISOString(), selfEvalDeadline: new Date(+now + 3_600_000).toISOString() };
+      const saving = editing ? service.update(periodId, payload, "admin") : service.create("admin", payload);
+      await assert.rejects(saving, (error: unknown) => response(error).getStatus() === 400 && response(error).getResponse().details?.[0]?.field === "selfEvalStart");
+      assert.equal(updates.length, 0);
+      assert.equal(audits.length, 0);
+    }
+  }
+});
+
+test("lưu lịch tương lai, nháp chưa có lịch và PATCH ghép lịch đều được kiểm", async () => {
+  const { service, period, updates } = makeService();
+  await service.create("admin", { year: 2027, name: "Nháp" });
+  await service.create("admin", { year: 2028, name: "Lịch tương lai", selfEvalStart: new Date(+now + 1).toISOString(), selfEvalDeadline: new Date(+now + 60_000).toISOString() });
+  period.selfEvalStart = new Date(+now + 60_000);
+  await service.update(periodId, { name: "Đổi tên" }, "admin");
+  period.selfEvalStart = new Date(+now - 1);
+  await assert.rejects(service.update(periodId, { selfEvalDeadline: new Date(+now + 120_000).toISOString() }, "admin"));
+  assert.equal(updates.length, 3);
+});
 
 /** Bảo đảm UNIT không đọc được kỳ nháp và chỉ thấy cấu hình từ đúng mốc mở
  * Cố định giờ máy chủ rồi thay đổi thời điểm mở và công bố trong dữ liệu đầu vào

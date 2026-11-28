@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, HttpException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { isDeadlineReminderDue } from "../../common/services/deadline-calculator.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import type { CurrentUser } from "../../common/decorators/current-user.js";
 import { AllExceptionsFilter } from "../../common/filters/all-exceptions.filter.js";
@@ -294,11 +295,12 @@ export class EvaluationsService {
 
   /** Chiếu metadata công khai và các quyền trình bày từ cùng snapshot giờ server
    * Không spread model DB, không trả finalResult trước chốt hoặc tiêu chí trước mở
-   * Cảnh báo 24 giờ lấy từ server, FE không dùng Date.now để quyết định quyền
+   * Cảnh báo dùng cùng ngưỡng động với scheduler, dựa trên giờ server
    */
   private metadata(context: Prisma.EvaluationGetPayload<{ include: { period: true; unit: true } }>, now: Date, user: CurrentUser) {
     const reason = user.role === "ADMIN" ? "Chỉ đơn vị được tự chấm hồ sơ" : selfLockedReason(context.period, context, now, true);
     const deadline = context.status === "SUPPLEMENT_REQUESTED" ? context.supplementDeadline : context.period.selfEvalDeadline;
+    const start = context.status === "SUPPLEMENT_REQUESTED" ? context.supplementStartAt : context.period.selfEvalStart;
     return {
       id: context.id, periodId: context.periodId,
       period: { id: context.periodId, name: context.period.name, phase: context.period.phase, selfEvalStart: context.period.selfEvalStart?.toISOString() ?? null, selfEvalDeadline: context.period.selfEvalDeadline?.toISOString() ?? null },
@@ -310,7 +312,7 @@ export class EvaluationsService {
       canSubmit: user.role === "UNIT" && context.status === "DRAFT" && reason === null, lockedReason: reason,
       canSubmitSupplement: user.role === "UNIT" && context.status === "SUPPLEMENT_REQUESTED" && reason === null,
       ...(user.role === "ADMIN" ? { firstReviewedAt: context.firstReviewedAt?.toISOString() ?? null, permissions: reviewPermissions(context.period, context, now) } : {}),
-      deadlineWarning: reason === null && deadline && deadline.getTime() - now.getTime() <= 86_400_000 ? "Sắp hết thời gian chỉnh sửa, vui lòng lưu và nộp hồ sơ" : null,
+      deadlineWarning: reason === null && isDeadlineReminderDue(start, deadline, now) ? "Sắp hết thời gian chỉnh sửa, vui lòng lưu và nộp hồ sơ" : null,
       ...(context.status === "FINALIZED" ? { finalResult: this.finalResult(context) } : {}),
     };
   }

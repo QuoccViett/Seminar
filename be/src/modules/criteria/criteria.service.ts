@@ -73,6 +73,7 @@ export class CriteriaService {
     await lockPeriod(tx, periodId);
     const period = await this.getEditablePeriod(tx, periodId);
     if (dto.parentId) await this.assertParentPeriod(tx, dto.parentId, period.id);
+    await this.assertScoreBounds(tx, periodId, dto.parentId ?? null, dto.maxScore);
     const now = this.clock.now();
     const created = await tx.criterion.create({
       data: {
@@ -102,6 +103,7 @@ export class CriteriaService {
     if (!before || before.periodId !== periodId) throw this.notFound("Không tìm thấy tiêu chí");
     if (dto.maxScore !== undefined) this.assertPositiveScore(dto.maxScore);
     if (dto.parentId) await this.assertParentPeriod(tx, dto.parentId, before.periodId, id);
+    await this.assertScoreBounds(tx, periodId, dto.parentId === undefined ? before.parentId : dto.parentId, dto.maxScore ?? before.maxScore, id);
     const after = await tx.criterion.update({ where: { id }, data: { ...dto, updatedAt: this.clock.now() } });
     await this.audit.record({ actorId, action: "UPDATE", entity: "Criterion", entityId: id, before: this.snapshot(before), after: this.snapshot(after) }, tx);
     return after;
@@ -171,12 +173,32 @@ export class CriteriaService {
     }
   }
 
+  /** Cho phép cấu hình dần nhưng tổng con trực tiếp không được vượt điểm cha.
+   * Khóa kỳ đã giữ nên hai lần thêm/sửa đồng thời không thể cùng dùng ngân sách cũ.
+   * Khi sửa cha hoặc chuyển nhánh, kiểm cả các con hiện có và cha mới bằng Decimal.
+   */
+  private async assertScoreBounds(tx: Prisma.TransactionClient, periodId: string, parentId: string | null, maxScore: Prisma.Decimal | number, id?: string): Promise<void> {
+    const nodes = await tx.criterion.findMany({ where: { periodId }, select: { id: true, parentId: true, maxScore: true } });
+    const score = new Prisma.Decimal(maxScore);
+    const sum = (items: typeof nodes) => items.reduce((total, item) => total.plus(item.maxScore), new Prisma.Decimal(0));
+    if (parentId) {
+      const parent = nodes.find((node) => node.id === parentId);
+      if (!parent) throw this.businessRule("Tiêu chí cha phải thuộc cùng kỳ đánh giá", "parentId");
+      if (score.gt(parent.maxScore)) throw this.businessRule("Điểm tối đa của tiêu chí con không được lớn hơn điểm tối đa của tiêu chí cha", "maxScore");
+      const siblings = nodes.filter((node) => node.parentId === parentId && node.id !== id);
+      if (sum(siblings).plus(score).gt(parent.maxScore)) throw this.businessRule("Tổng điểm tối đa các tiêu chí con không được vượt điểm tối đa của tiêu chí cha", "maxScore");
+    }
+    if (id && sum(nodes.filter((node) => node.parentId === id)).gt(score)) {
+      throw this.businessRule("Điểm tối đa của tiêu chí cha không được nhỏ hơn tổng điểm tối đa các tiêu chí con hiện có", "maxScore");
+    }
+  }
+
   /** Chỉ nhận điểm tối đa dương phù hợp ràng buộc PostgreSQL
    * score là giá trị thập phân gửi từ DTO
    * Không chấp nhận số âm, 0 hoặc giá trị không hữu hạn
    */
   private assertPositiveScore(score: number): void {
-    if (!Number.isFinite(score) || score <= 0) throw this.businessRule("Điểm tối đa phải lớn hơn 0");
+    if (!Number.isFinite(score) || score <= 0) throw this.businessRule("Điểm tối đa phải lớn hơn 0", "maxScore");
   }
 
   /** Tạo snapshot cấu hình gọn để audit mà không lưu dữ liệu quan hệ
@@ -199,7 +221,7 @@ export class CriteriaService {
    * message chỉ nhận chuỗi do service định nghĩa tại các nhánh đã kiểm tra
    * Phản hồi không chứa lỗi thô từ Prisma hoặc nhà cung cấp ngoài
    */
-  private businessRule(message: string): BadRequestException {
-    return new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message });
+  private businessRule(message: string, field?: string): BadRequestException {
+    return new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message, details: field ? [{ field, messages: [message] }] : [] });
   }
 }

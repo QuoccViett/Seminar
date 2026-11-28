@@ -17,6 +17,14 @@ export function validateSupplementSchedule(start: Date, deadline: Date): Date {
   return new Date(deadline);
 }
 
+/** Nhắc trong nửa cuối cửa sổ ngắn, tối đa 24 giờ trước hạn; deadline vẫn loại trừ. */
+export function isDeadlineReminderDue(start: Date | null, deadline: Date | null, now: Date): boolean {
+  if (!start || !deadline) return false;
+  const duration = deadline.getTime() - start.getTime();
+  return duration > 0 && now.getTime() >= deadline.getTime() - Math.min(duration / 2, 86_400_000)
+    && now.getTime() < deadline.getTime();
+}
+
 @Injectable()
 export class DeadlineCalculator {
   constructor(private readonly clock: ClockService) {}

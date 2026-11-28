@@ -1,8 +1,26 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DeadlineCalculator } from "./deadline-calculator.js";
+import { DeadlineCalculator, isDeadlineReminderDue } from "./deadline-calculator.js";
 
 const calculator = new DeadlineCalculator({ now: () => new Date("2026-11-18T00:00:00.000Z") } as never);
+
+test("nhắc tại nửa thời lượng, tối đa 24 giờ trước hạn và không nhắc ngoài cửa sổ", () => {
+  const start = new Date("2026-11-18T00:00:00Z");
+  for (const [minutes, remaining] of [[10, 5], [30, 15], [120, 60], [2879, 1439.5], [2880, 1440], [4320, 1440]]) {
+    const deadline = new Date(+start + minutes! * 60_000);
+    const due = +deadline - remaining! * 60_000;
+    assert.equal(isDeadlineReminderDue(start, deadline, start), false);
+    assert.equal(isDeadlineReminderDue(start, deadline, new Date(due - 1)), false);
+    assert.equal(isDeadlineReminderDue(start, deadline, new Date(due)), true);
+    assert.equal(isDeadlineReminderDue(start, deadline, new Date(+deadline - 1)), true);
+    assert.equal(isDeadlineReminderDue(start, deadline, deadline), false);
+    assert.equal(isDeadlineReminderDue(start, deadline, new Date(+deadline + 1)), false);
+  }
+  for (const end of [null, start, new Date(+start - 1), new Date("invalid")]) {
+    assert.equal(isDeadlineReminderDue(start, end, start), false);
+  }
+  assert.equal(isDeadlineReminderDue(null, start, start), false);
+});
 
 /** Mọi ngày trong tuần và mọi thời lượng dương giữ nguyên hai mốc Admin chọn */
 test("lịch bổ sung giữ cuối tuần, qua năm và khoảng dưới bảy ngày", () => {

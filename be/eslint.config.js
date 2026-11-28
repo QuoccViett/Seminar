@@ -9,6 +9,10 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ["test/load/*.k6.js"],
+    languageOptions: { globals: { __ENV: "readonly", open: "readonly" } },
+  },
+  {
     files: ["test/**/*.js"],
     languageOptions: {
       globals: {

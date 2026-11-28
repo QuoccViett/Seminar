@@ -4,6 +4,7 @@ import { AuditService } from "../../common/services/audit.service.js";
 import { lockPeriod } from "../../common/services/period-lock.js";
 import { EvaluationStateService } from "../evaluations/evaluation-state.service.js";
 import { NotificationsService } from "../notifications/notifications.service.js";
+import { isDeadlineReminderDue } from "../../common/services/deadline-calculator.js";
 
 /** Hiển thị snapshot thời gian UTC theo giờ Việt Nam để thông báo nêu rõ cửa sổ đã lưu
  * start và deadline là hai đầu cửa sổ loại trừ, không suy ra deadline từ số giờ legacy
@@ -106,16 +107,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
         await this.state.reconcileSupplement(tx, evaluation, period, now);
       }
 
-      // Quét bù từ mốc 24 giờ tới trước deadline, bỏ mốc nằm trước giờ mở
+      // Quét bù từ nửa thời lượng mở (tối đa 24 giờ trước hạn) tới trước deadline
       // Dedupe theo hạn và TTL delivery tránh tạo trùng hoặc bắt đầu gửi sau hạn
       for (const evaluation of evaluations) {
         const initial = evaluation.status === "DRAFT" && ["SETUP", "SELF_EVAL"].includes(period.phase);
         const supplement = evaluation.status === "SUPPLEMENT_REQUESTED";
         const start = initial ? period.selfEvalStart : supplement ? evaluation.supplementStartAt : null;
         const deadline = initial ? period.selfEvalDeadline : supplement ? evaluation.supplementDeadline : null;
-        if (!start || !deadline) continue;
-        const reminderAt = deadline.getTime() - 24 * 60 * 60 * 1000;
-        if (reminderAt < start.getTime() || now.getTime() < reminderAt || now >= deadline) continue;
+        if (!start || !deadline || !isDeadlineReminderDue(start, deadline, now)) continue;
         const recipient = users.find((item) => item.role === "UNIT" && item.unitId === evaluation.unitId);
         if (!recipient) continue;
         await this.notifications.notifyUser(tx, {
