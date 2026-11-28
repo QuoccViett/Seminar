@@ -30,6 +30,20 @@ function record() {
 }
 
 describe("thẩm định giữ nháp và quyền từ backend", () => {
+  it("chỉ cho xem trước chốt khi kỳ đến thẩm định cuối", () => {
+    const snapshot = record(); const onFinalize = vi.fn();
+    const props = { summary: {}, onReload: vi.fn(), onBusyChange: vi.fn(), onFinalize };
+    const view = render(<ReviewCard {...props} record={snapshot} />);
+    const button = screen.getByRole("button", { name: "Xem trước và chốt hồ sơ" });
+    for (const phase of ["SETUP", "SELF_EVAL", "FIRST_REVIEW", "SUPPLEMENT", "CLOSED"]) {
+      view.rerender(<ReviewCard {...props} record={{ ...snapshot, period: { ...snapshot.period, phase } }} />);
+      expect(button).toBeDisabled();
+    }
+    view.rerender(<ReviewCard {...props} record={{ ...snapshot, period: { ...snapshot.period, phase: "FINAL_REVIEW" } }} />);
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(onFinalize).toHaveBeenCalledWith([snapshot.id]);
+  });
   /** Màn chốt dùng nhãn tùy chỉnh của kỳ, không in mã GOOD hoặc lấy nhãn tự chấm */
   it("hiển thị xếp loại chính thức theo cấu hình kỳ", () => {
     const snapshot = { ...record(), finalResult: { score: 75, percent: 75, rating: "GOOD" } };

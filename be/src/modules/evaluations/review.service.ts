@@ -165,13 +165,13 @@ export class ReviewService {
       const start = new Date(dto.supplementStartAt);
       const deadline = this.deadlines.supplementDeadline(start, new Date(dto.supplementDeadline));
       if (start < now) throw new UnprocessableEntityException({ code: "BUSINESS_RULE_VIOLATION", message: "Thời gian mở bổ sung không được trước thời điểm yêu cầu" });
-      const scores = await tx.criterionScore.findMany({ where: { evaluationId: id, criterionId: { in: dto.items.map((item) => item.criterionId) }, criterion: { children: { none: {} }, periodId: ref.periodId } }, include: { evidences: true } });
+      const scores = await tx.criterionScore.findMany({ where: { evaluationId: id, criterionId: { in: dto.items.map((item) => item.criterionId) }, criterion: { children: { none: {} }, periodId: ref.periodId } }, include: { evidences: true, criterion: { select: { code: true } } } });
       if (scores.length !== dto.items.length || dto.items.some((item) => !item.note.trim())) throw new UnprocessableEntityException({ code: "BUSINESS_RULE_VIOLATION", message: "Mỗi tiêu chí lá được chọn phải thuộc hồ sơ và có yêu cầu bổ sung" });
       for (const item of dto.items) {
         const score = scores.find((row) => row.criterionId === item.criterionId)!;
         await tx.criterionScore.update({ where: { id: score.id }, data: { needsSupplement: true, supplementNote: item.note.trim(), supplementedAt: null, supplementBaseline: captureSupplementBaseline(score, now), updatedAt: now } });
       }
-      const feedback = await tx.evaluationFeedback.create({ data: { id: randomUUID(), evaluationId: id, authorId: user.id, type: "SUPPLEMENT_REQUEST", content: dto.items.map((item) => item.note.trim()).join("\n"), createdAt: now } });
+      const feedback = await tx.evaluationFeedback.create({ data: { id: randomUUID(), evaluationId: id, authorId: user.id, type: "SUPPLEMENT_REQUEST", content: dto.items.map((item) => `Mã ${scores.find((score) => score.criterionId === item.criterionId)!.criterion.code} - ${item.note.trim()}`).join("\n"), createdAt: now } });
       await tx.evaluation.update({ where: { id }, data: { status: "SUPPLEMENT_REQUESTED", supplementRequestedAt: now, supplementStartAt: start, supplementDeadline: deadline, updatedAt: now } });
       if (evaluation.period.phase === "FIRST_REVIEW") await this.workflow.transitionInTransaction(tx, ref.periodId, "SUPPLEMENT", user.id);
       await tx.statusHistory.create({ data: { id: randomUUID(), evaluationId: id, actorId: user.id, fromStatus: evaluation.status, toStatus: "SUPPLEMENT_REQUESTED", comment: "Yêu cầu đơn vị bổ sung minh chứng", createdAt: now } });

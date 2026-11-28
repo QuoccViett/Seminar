@@ -337,7 +337,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     if (this.processing) return 0;
     this.processing = true;
     try {
-      await this.flushOutbox();
+      // Một lỗi fanout không được làm tê liệt các delivery đã được xếp hàng trước đó.
+      try { await this.flushOutbox(); }
+      catch { this.logger.error("Không thể xử lý hàng đợi tạo thông báo; tiếp tục xử lý các thông báo đã xếp hàng"); }
       return await drainQueue({ concurrency: this.config.get<number>("NOTIFICATION_WORKER_CONCURRENCY") ?? 5,
         budgetMs: this.config.get<number>("WORKER_BUDGET_MS") ?? 4000, limit,
         claim: () => this.claimOne(), process: (claim) => this.processClaim(claim),

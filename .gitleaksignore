@@ -16,3 +16,41 @@ c8178d24e0fff50e2876e8d506c0757b31fe2afb:be/test/integration/vc13.feedback-audit
 # Quét lịch sử vẫn thấy literal sau khi mã mới đã sinh ngẫu nhiên, nên chỉ miễn trừ đúng commit/tệp/quy tắc/dòng này
 # Giữ nguyên mọi quy tắc và các vị trí khác để secret thật hoặc fixture mới vẫn được phát hiện
 47c572aae3a995c15c8debb620848dfe71fbd783:be/test/integration/vc17.system.test.ts:generic-api-key:95
+# Thông tin tài khoản seed trong commit cũ đã được người dùng xác nhận đổi mật khẩu.
+# Chỉ miễn trừ đúng từng phát hiện lịch sử; secret mới vẫn phải qua quét đầy đủ.
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:8
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:12
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:16
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:20
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:24
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:28
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:32
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:36
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:40
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:44
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:48
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:52
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:56
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:60
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:64
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:68
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:72
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:76
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:80
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:84
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:88
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:92
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:96
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:100
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:104
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:108
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:112
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:116
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:120
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:124
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:128
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:132
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:136
+0dc91991cedd216ba86f5a318ad4bba6b5fe2f33:be/credentials.json:generic-api-key:140
+# Chuỗi JWT giả chỉ dùng cho cấu hình kiểm thử trong commit này.
+39ac50311e883c614438566aad771339bf13ab09:be/src/common/foundation.spec.ts:generic-api-key:61
