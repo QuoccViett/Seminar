@@ -53,7 +53,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
   };
   const clock = { now: () => new Date(now) };
   const audit = { record: async (payload: Record<string, unknown>) => { audits.push(payload); } };
-  const notifications = { notifyUser: async (_transaction: unknown, input: Record<string, unknown>) => { audits.push({ action: "NOTIFY", ...input }); } };
+  const notifications = { enqueueMany: async (_transaction: unknown, inputs: Record<string, unknown>[]) => { for (const input of inputs) audits.push({ action: "NOTIFY", ...input }); } };
   return { service: new EvaluationPeriodsService(prisma as never, audit as never, clock as never, notifications as never), period, updates, audits };
 }
 

@@ -29,7 +29,7 @@ export class ReviewService {
     const result = await this.prisma.$transaction(async (tx) => {
       const ref = await tx.evaluation.findUnique({ where: { id }, select: { periodId: true } });
       if (!ref) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });
-      await lockPeriod(tx, ref.periodId);
+      await lockPeriod(tx, ref.periodId, "shared");
       await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${id}::uuid FOR UPDATE`;
       const evaluation = await tx.evaluation.findUnique({ where: { id }, include: { period: true } });
       if (!evaluation) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });
@@ -59,7 +59,7 @@ export class ReviewService {
     return this.prisma.$transaction(async (tx) => {
       const ref = await tx.evaluation.findUnique({ where: { id }, select: { periodId: true } });
       if (!ref) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });
-      await lockPeriod(tx, ref.periodId);
+      await lockPeriod(tx, ref.periodId, "shared");
       await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${id}::uuid FOR UPDATE`;
       const evaluation = await tx.evaluation.findUnique({ where: { id }, include: { period: true } });
       if (!evaluation) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });
@@ -87,7 +87,7 @@ export class ReviewService {
     return this.prisma.$transaction(async (tx) => {
       const ref = await tx.evaluation.findUnique({ where: { id }, select: { periodId: true } });
       if (!ref) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });
-      await lockPeriod(tx, ref.periodId);
+      await lockPeriod(tx, ref.periodId, "shared");
       await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${id}::uuid FOR UPDATE`;
       const evaluation = await tx.evaluation.findUnique({ where: { id }, include: { period: true } });
       if (!evaluation) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });
@@ -113,7 +113,7 @@ export class ReviewService {
     const result = await this.prisma.$transaction(async (tx) => {
       const ref = await tx.evaluation.findUnique({ where: { id }, select: { periodId: true } });
       if (!ref) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });
-      await lockPeriod(tx, ref.periodId);
+      await lockPeriod(tx, ref.periodId, "shared");
       await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${id}::uuid FOR UPDATE`;
       const evaluation = await tx.evaluation.findUnique({ where: { id }, include: { period: true } });
       if (!evaluation) throw new NotFoundException({ code: "NOT_FOUND", message: "Không tìm thấy hồ sơ" });

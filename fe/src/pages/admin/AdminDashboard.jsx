@@ -11,6 +11,7 @@ import { usePeriodSelection } from "../../services/periodSelection";
 import { allPages } from "../../services/pagination";
 import RatingTag from "../../components/common/RatingTag";
 import EvaluationStatusTag from "../../components/common/EvaluationStatusTag";
+import { startVisiblePolling } from "../../services/visiblePolling";
 
 const formatNumber = (value) => new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(value ?? 0);
 
@@ -56,18 +57,20 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!periodId || periodLoading || !periods.some((item) => item.id === periodId)) return undefined;
     let active = true;
-    setLoading(true); setError(""); setSnapshot(null);
-    Promise.all([
-      dashboardService.getDashboardStats(periodId),
-      dashboardService.getLeaderboard(periodId, 20),
-      dashboardService.getScoreDistribution(periodId),
-      dashboardService.getCriteriaDeductions(periodId),
-    ]).then(([overview, leaderboard, distribution, deductions]) => {
-      if (active) setSnapshot({ overview, leaderboard, distribution, deductions });
-    }).catch((failure) => { if (active) setError(failure.message || "Không thể tải dữ liệu tổng quan"); })
-      .finally(() => { if (active) setLoading(false); });
-    const timer = setInterval(() => setRefresh((value) => value + 1), 30000);
-    return () => { active = false; clearInterval(timer); };
+    const load = () => {
+      setLoading(true); setError(""); setSnapshot((current) => current?.overview.periodId === periodId ? current : null);
+      return Promise.all([
+        dashboardService.getDashboardStats(periodId),
+        dashboardService.getLeaderboard(periodId, 20),
+        dashboardService.getScoreDistribution(periodId),
+        dashboardService.getCriteriaDeductions(periodId),
+      ]).then(([overview, leaderboard, distribution, deductions]) => {
+        if (active) setSnapshot({ overview, leaderboard, distribution, deductions });
+      }).catch((failure) => { if (active) setError(failure.message || "Không thể tải dữ liệu tổng quan"); return false; })
+        .finally(() => { if (active) setLoading(false); });
+    };
+    const stop = startVisiblePolling(load, { intervalMs: 30000 });
+    return () => { active = false; stop(); };
   }, [periodId, refresh, periodLoading, periods]);
 
   const overview = snapshot?.overview;

@@ -67,7 +67,7 @@ export class EvidencesService implements OnModuleInit, OnModuleDestroy {
     const result = await this.prisma.$transaction(async (tx) => {
       const ref = await tx.evaluation.findFirst({ where: { id, ...this.scope(user) }, select: { periodId: true } });
       if (!ref) throw this.missing();
-      await lockPeriod(tx, ref.periodId);
+      await lockPeriod(tx, ref.periodId, "shared");
       await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${id}::uuid FOR UPDATE`;
       const context = await tx.evaluation.findFirst({ where: { id, ...this.scope(user) }, include });
       if (!context) throw this.missing();
@@ -339,7 +339,7 @@ export class EvidencesService implements OnModuleInit, OnModuleDestroy {
       const rows = await this.prisma.evidenceUpload.findMany({ where: { ...(uploadId ? { id: uploadId } : {}), OR: [{ state: "DELETING" }, { state: "PENDING", expiresAt: { lte: now } }, { state: "CONFIRMED", pendingPurged: false }] }, include: { criterionScore: { select: { evaluationId: true, evaluation: { select: { periodId: true } } } } }, take: 100, orderBy: { expiresAt: "asc" } });
       for (const row of rows) {
         try { await this.prisma.$transaction(async (tx) => {
-          await lockPeriod(tx, row.criterionScore.evaluation.periodId);
+          await lockPeriod(tx, row.criterionScore.evaluation.periodId, "shared");
           await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${row.criterionScore.evaluationId}::uuid FOR UPDATE`;
           const current = await tx.evidenceUpload.findUnique({ where: { id: row.id } });
           if (!current) return;

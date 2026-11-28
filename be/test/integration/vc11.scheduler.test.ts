@@ -52,6 +52,7 @@ test("VC11 chạy bù và cạnh tranh trên PostgreSQL cùng công cụ demo đ
 
     // Bỏ lỡ toàn bộ cửa sổ và quét song song chỉ tạo một history, không tạo tin mở muộn
     await Promise.all([scheduler.processPeriod(periodId), scheduler.processPeriod(periodId)]);
+    await app.get(NotificationsService).flushOutbox(100);
     assert.equal((await db.evaluationPeriod.findUniqueOrThrow({ where: { id: periodId } })).phase, "FIRST_REVIEW");
     const evaluation = await db.evaluation.findUniqueOrThrow({ where: { id: evaluationId } });
     assert.equal(evaluation.status, "PENDING_REVIEW"); assert.ok(evaluation.autoLockedAt);
@@ -71,6 +72,7 @@ test("VC11 chạy bù và cạnh tranh trên PostgreSQL cùng công cụ demo đ
     await db.evaluation.create({ data: { id: raceEvaluation, periodId: racePeriod, unitId, status: "SUPPLEMENT_REQUESTED", firstReviewedAt: new Date(+now - 7200000), supplementRequestedAt: new Date(+now - 3600000), supplementStartAt: new Date(+now - 3500000), supplementDeadline: new Date(+now - 1000), createdAt: now, updatedAt: now } });
     const workflow = app.get(PeriodWorkflowService) as { transition: (id: string, phase: "FINAL_REVIEW", actorId: string) => Promise<unknown> };
     await Promise.all([scheduler.processPeriod(racePeriod), workflow.transition(racePeriod, "FINAL_REVIEW", adminId)]);
+    await app.get(NotificationsService).flushOutbox(100);
     assert.equal((await db.evaluation.findUniqueOrThrow({ where: { id: raceEvaluation } })).status, "SUPPLEMENT_EXPIRED");
     assert.equal(await db.statusHistory.count({ where: { evaluationId: raceEvaluation, toStatus: "SUPPLEMENT_EXPIRED" } }), 1);
     assert.equal(await db.notification.count({ where: { userId, dedupeKey: `SUPPLEMENT_EXPIRED:${raceEvaluation}` } }), 1);
@@ -88,6 +90,7 @@ test("VC11 chạy bù và cạnh tranh trên PostgreSQL cùng công cụ demo đ
     await db.evaluationPeriod.create({ data: { id: reminderPeriodId, year: year + 1, name: "Kỳ thử nhắc", phase: "SELF_EVAL", createdById: adminId, publishedAt: now, selfEvalStart: new Date(+now - 2 * 86400000), selfEvalDeadline: reminderDeadline, createdAt: now, updatedAt: now } });
     await db.evaluation.create({ data: { id: reminderEvaluationId, periodId: reminderPeriodId, unitId, status: "DRAFT", createdAt: now, updatedAt: now } });
     await Promise.all([scheduler.processPeriod(reminderPeriodId), scheduler.processPeriod(reminderPeriodId)]);
+    await app.get(NotificationsService).flushOutbox(100);
     const reminderKey = `REMINDER:${reminderEvaluationId}:INITIAL:${reminderDeadline.toISOString()}`;
     const reminders = await db.notification.findMany({ where: { userId, dedupeKey: reminderKey }, include: { deliveries: true } });
     assert.equal(reminders.length, 1); assert.equal(reminders[0]!.expiresAt?.getTime(), reminderDeadline.getTime());

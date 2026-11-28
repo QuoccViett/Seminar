@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Query,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
@@ -18,6 +19,7 @@ import {
 } from "@nestjs/swagger";
 import { Roles } from "../../common/decorators/roles.decorator.js";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js";
+import { DashboardCacheInterceptor } from "./dashboard-cache.interceptor.js";
 import { DashboardDeductionsDto, DashboardDeductionDetailDto } from "./dto/dashboard-deductions.dto.js";
 import { DashboardLeaderboardDto } from "./dto/leaderboard.dto.js";
 import { DashboardOverviewDto } from "./dto/dashboard-overview.dto.js";
@@ -33,6 +35,7 @@ const criterionIdPipe = new ParseUUIDPipe({ exceptionFactory: () => new BadReque
 @Controller("api/v1/admin/dashboard")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN")
+@UseInterceptors(DashboardCacheInterceptor)
 export class DashboardController {
   constructor(
     @Inject(DashboardService)

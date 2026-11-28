@@ -18,6 +18,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { EvaluationsModule } from "./modules/evaluations/evaluations.module.js";
 import { EvidencesModule } from "./modules/evidences/evidences.module.js";
 import { SchedulerModule } from "./modules/scheduler/scheduler.module.js";
+import { MetricsModule } from "./health/metrics.module.js";
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SchedulerModule } from "./modules/scheduler/scheduler.module.js";
       ],
       validate: validateEnvironment,
     }),
+    MetricsModule,
     PrismaModule,
     CommonModule,
     AuthModule,

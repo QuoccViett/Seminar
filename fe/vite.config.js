@@ -4,6 +4,21 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const path = id.replaceAll("\\", "/");
+          if (!path.includes("/node_modules/")) return undefined;
+          if (path.includes("/exceljs/")) return "excel-import";
+          if (/\/(?:jspdf|jspdf-autotable)\//.test(path)) return "pdf-export";
+          if (path.includes("/pdfjs-dist/")) return "pdf-preview";
+          if (/\/(?:@antv|@ant-design\/charts)\//.test(path)) return "charts";
+          return undefined;
+        },
+      },
+    },
+  },
   test: {
     // Worker VM tái sử dụng luồng chạy nhưng mỗi tệp vẫn có ngữ cảnh JSDOM cách ly riêng
     // Chạy một worker, tái tạo khi vượt 256 MB để máy demo không tạo nhiều process nặng cùng lúc

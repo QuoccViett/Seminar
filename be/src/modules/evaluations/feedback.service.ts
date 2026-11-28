@@ -65,7 +65,7 @@ export class FeedbackService {
   async create(id: string, dto: CreateFeedbackDto, user: CurrentUser) {
     return this.prisma.$transaction(async (tx) => {
       const ref = await this.scoped(tx, id, user);
-      await lockPeriod(tx, ref.periodId);
+      await lockPeriod(tx, ref.periodId, "shared");
       await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${id}::uuid FOR UPDATE`;
       // Chỉ SELECT hằng số từ hàm khóa vì Prisma không giải mã kiểu void do PostgreSQL trả về
       await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`feedback:${user.id}`}, 0))`;

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -12,8 +13,11 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import type { CurrentUser, UserRole } from "../decorators/current-user.js";
 import { AUTHORIZED_ROLES } from "../decorators/roles.decorator.js";
 import { ERROR_CODES } from "../constants/error-codes.js";
+import { RuntimeCache } from "../services/runtime-cache.service.js";
 
 interface AuthenticatedRequest {
+  method?: string;
+  originalUrl?: string;
   headers: {
     authorization?: string;
   };
@@ -41,6 +45,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     @Inject(JwtService) private readonly jwtService: JwtService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(RuntimeCache) private readonly cache?: RuntimeCache,
   ) {}
 
   /** Xác minh chữ ký và trạng thái tài khoản trước khi kiểm tra quyền đổi mật khẩu
@@ -71,8 +76,9 @@ export class JwtAuthGuard implements CanActivate {
       throw unauthorized();
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
+    const userId = payload.sub;
+    const readUser = () => this.prisma.user.findUnique({
+      where: { id: userId },
       select: {
         id: true,
         role: true,
@@ -83,6 +89,11 @@ export class JwtAuthGuard implements CanActivate {
         unit: { select: { isActive: true } },
       },
     });
+    // Đường ghi và API kiểm phiên luôn đọc DB; cache chỉ giảm tải các GET nghiệp vụ.
+    const cacheable = request.method === "GET" && !/\/auth(?:\/|$)/.test(request.originalUrl ?? "");
+    const user = cacheable && this.cache
+      ? await this.cache.remember(`auth:${payload.sub}:${payload.ver}`, this.cache.ttl("auth"), readUser)
+      : await readUser();
 
     if (!user?.isActive || user.credentialVersion !== payload.ver) {
       throw unauthorized();

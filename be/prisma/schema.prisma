@@ -381,6 +381,18 @@ model NotificationDelivery {
   @@map("notification_deliveries")
 }
 
+/// Công việc fanout được ghi nguyên tử với nghiệp vụ; mỗi payload tối đa 100 người nhận.
+model NotificationOutbox {
+  id          String    @id @db.Uuid
+  dedupeKey   String    @unique @map("dedupe_key") @db.VarChar(255)
+  payload     Json      @db.JsonB
+  createdAt   DateTime  @map("created_at") @db.Timestamp(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamp(6)
+
+  @@index([processedAt, createdAt])
+  @@map("notification_outbox")
+}
+
 model NotificationPreference {
   userId    String   @map("user_id") @db.Uuid
   channel   String   @db.VarChar

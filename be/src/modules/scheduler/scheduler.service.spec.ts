@@ -11,15 +11,22 @@ function fixture(now: Date) {
   const evaluation = { id: "evaluation", unitId: "unit", status: "DRAFT", supplementStartAt: null as Date | null, supplementDeadline: null as Date | null };
   const events: string[] = [];
   const tx = {
-    $queryRaw: async () => [],
+    $queryRaw: async (sql: TemplateStringsArray) => {
+      if (!sql.join("").includes("FROM evaluations")) return [];
+      const due = evaluation.status === "DRAFT" && now >= period.selfEvalDeadline || evaluation.status === "SUPPLEMENT_REQUESTED" && evaluation.supplementDeadline && now >= evaluation.supplementDeadline;
+      return due ? [{ id: evaluation.id }] : [];
+    },
     evaluationPeriod: { findUnique: async () => period, update: async ({ data }: { data: { phase: string } }) => { period.phase = data.phase; } },
     evaluation: { findMany: async () => [evaluation], update: async ({ data }: { data: { status: string } }) => { evaluation.status = data.status; } },
     user: { findMany: async () => [{ id: "unit-user", role: "UNIT", unitId: "unit" }] },
     statusHistory: { create: async () => { events.push("history"); } },
   };
   const prisma = { $transaction: async (fn: (value: typeof tx) => Promise<void>) => fn(tx) };
-  const state = { databaseNow: async () => now, reconcileInitial: async () => { if (evaluation.status === "DRAFT") { evaluation.status = "PENDING_REVIEW"; events.push("lock"); } }, reconcileSupplement: async () => { evaluation.status = "SUPPLEMENT_EXPIRED"; events.push("history"); } };
-  const notifications = { notifyUser: async (_tx: unknown, item: { type: string }) => { events.push(item.type); } };
+  const state = { databaseNow: async () => now, reconcileExpiredMany: async () => {
+    if (evaluation.status === "DRAFT") { evaluation.status = "PENDING_REVIEW"; events.push("lock"); }
+    else if (evaluation.status === "SUPPLEMENT_REQUESTED") { evaluation.status = "SUPPLEMENT_EXPIRED"; events.push("history"); }
+  } };
+  const notifications = { enqueueMany: async (_tx: unknown, items: { type: string }[]) => { for (const item of items) events.push(item.type); } };
   const audit = { record: async () => { events.push("audit"); } };
   return { service: new SchedulerService(prisma as never, audit as never, state as never, notifications as never), period, evaluation, events };
 }
@@ -31,7 +38,7 @@ test("khóa kỳ bỏ lỡ cửa sổ và xử lý lặp không tạo sự kiệ
   const { service, period, events } = fixture(new Date("2026-11-20T00:00:00Z"));
   await service.processPeriod("period");
   assert.equal(period.phase, "FIRST_REVIEW");
-  assert.deepEqual(events, ["lock", "audit", "PERIOD_PHASE_CHANGED"]);
+  assert.deepEqual(events, ["audit", "PERIOD_PHASE_CHANGED", "lock"]);
   await service.processPeriod("period");
   assert.equal(events.length, 3);
 });

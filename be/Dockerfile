@@ -14,7 +14,7 @@ FROM build AS production-dependencies
 RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM node:22-bookworm-slim AS runtime
-ENV NODE_ENV=production TZ=UTC
+ENV NODE_ENV=production TZ=UTC UV_THREADPOOL_SIZE=8
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY be/package*.json ./

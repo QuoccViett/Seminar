@@ -19,6 +19,7 @@ import styles from "./AdminLayout.module.css";
 import { getUnreadCount } from "../services/notificationService";
 import { PERIOD_KEY } from "../services/periodSelection";
 import SessionNotice from "../components/common/SessionNotice";
+import { startVisiblePolling } from "../services/visiblePolling";
 
 const { Header, Sider, Content } = Layout;
 
@@ -40,14 +41,10 @@ export default function AdminLayout() {
     let active = true;
     const refresh = async () => {
       try { const result = await getUnreadCount(); if (active) setUnreadCount(result.count); }
-      catch { /* Giữ số đã xác nhận khi mạng lỗi, hộp thư hiển thị lỗi thao tác riêng */ }
+      catch { return false; }
     };
-    void refresh();
-    const timer = setInterval(refresh, 30000);
-    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("notifications:changed", refresh);
-    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("notifications:changed", refresh); };
+    const stop = startVisiblePolling(refresh, { intervalMs: 30000, events: ["notifications:changed"] });
+    return () => { active = false; stop(); };
   }, [location.pathname]);
 
   // Lấy tên trang hiện tại để hiển thị lên Header

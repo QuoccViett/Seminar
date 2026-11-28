@@ -76,14 +76,8 @@ export class PeriodWorkflowService {
       if (reason) throw new BadRequestException({ code: ERROR_CODES.BUSINESS_RULE_VIOLATION, message: reason });
 
       // Các chuyển trạng thái theo hạn chỉ chạy sau khi đích đã hợp lệ để lệnh sai không ghi dở dang
-      for (const evaluation of evaluations) {
-        if (target === "FIRST_REVIEW" && evaluation.status === "DRAFT") {
-          // Reconcile cùng use-case GET/lưu/nộp để job trễ hoặc chuyển phase chỉ tạo một bộ dấu vết
-          await this.evaluationState.reconcileInitial(tx, evaluation, period, now);
-        } else if (target === "FINAL_REVIEW" && evaluation.status === "SUPPLEMENT_REQUESTED") {
-          // Dùng chung xử lý với scheduler để chuyển phase muộn vẫn tạo đủ audit và outbox
-          await this.evaluationState.reconcileSupplement(tx, evaluation, period, now);
-        }
+      if (target === "FIRST_REVIEW" || target === "FINAL_REVIEW") {
+        await this.evaluationState.reconcileExpiredMany(tx, evaluations.filter((item) => target === "FIRST_REVIEW" ? item.status === "DRAFT" : item.status === "SUPPLEMENT_REQUESTED"), period, now);
       }
       const after = await tx.evaluationPeriod.update({
         where: { id: periodId }, data: { phase: target, updatedAt: now, ...(target === "CLOSED" ? { finalizedAt: now } : {}) },
@@ -96,13 +90,11 @@ export class PeriodWorkflowService {
         where: { isActive: true, OR: [{ role: "ADMIN" }, { role: "UNIT", unitId: { in: evaluations.map((item) => item.unitId) } }] },
         select: { id: true },
       });
-      for (const user of recipients) {
-        await this.notifications.notifyUser(tx, {
+      await this.notifications.enqueueMany(tx, recipients.map((user) => ({
           userId: user.id, type: "PERIOD_PHASE_CHANGED", title: "Kỳ đánh giá đã chuyển giai đoạn",
           body: `Kỳ ${period.name} chuyển sang ${PHASE_LABELS[target]}`,
           dedupeKey: `PERIOD_PHASE_CHANGED:${periodId}:${target}`, refType: "EVALUATION_PERIOD", refId: periodId, channels: [],
-        });
-      }
+      })));
       return after;
   }
 

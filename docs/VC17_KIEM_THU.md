@@ -135,3 +135,120 @@ Chưa có quyết định chính sách của thầy; không biến lịch tạm 
 ## Kiểm lại yêu cầu mới ngày 24/11/2026
 
 Xem [biên bản hoàn thiện](./HOAN_THIEN_2026-11-24.md): lịch hai mốc, Excel sinh, ngưỡng tùy chỉnh, browser hai vai trò 20/20, dependency đã vá, Docker/HTTPS và backup/restore trên project riêng. Giữ kết quả lượt tổng đầu có lỗi PDF.js/Form ID và các lượt kiểm lại đạt. CI mới của `ab8c047` đã xác nhận thành công cả bốn job, 42/42 bước VC17; chưa nghiệm thu môi trường Supabase/hạ tầng bảo vệ. Không sửa kết quả lịch sử ở trên thành kết quả của chính sách mới.
+
+## Chuẩn bị kiểm tải 1.000 đơn vị ngày 28/11/2026
+
+Các thay đổi này chưa phải kết quả nghiệm thu tải 1.000 người. Chạy từng kịch bản trên DB test mới, ghi lại CPU/RAM, vị trí DB, cấu hình pool/cache/concurrency và kết quả trước/sau. Không dùng fixture hoặc secret production.
+
+### Thay đổi và điều kiện triển khai
+
+- Hồ sơ dùng khóa kỳ `FOR SHARE`, vẫn khóa riêng hàng hồ sơ bằng `FOR UPDATE`. Công bố, chỉnh cấu hình, chuyển phase và yêu cầu bổ sung có thể chuyển phase giữ khóa kỳ độc quyền. Kiểm giờ DB và trigger deadline vẫn hoạt động.
+- Scheduler đổi phase trong transaction ngắn; reconcile hồ sơ quá hạn theo lô 100. Nếu restart sau khi phase đã đổi, các DRAFT quá hạn vẫn được quét tiếp. History/audit và outbox của mỗi lô commit cùng nhau.
+- Migration mới tạo `notification_outbox`. **Chạy migration trước khi khởi động backend mới**: `npm ci`, `npm run db:generate`, `npm run build`, `npm run db:migrate:deploy` trên môi trường đích đã cấu hình đúng DB. Không chạy lại migration đã áp dụng bằng cách sửa nội dung migration cũ.
+- Fanout được ghi bền vững cùng nghiệp vụ; worker đọc preference, insert notification/delivery và audit theo lô tối đa 100. Hộp thư cập nhật sau nhịp worker, không bảo đảm có thông báo ngay khi API chuyển phase trả về. Test cần gọi `flushOutbox()` hoặc chờ công việc hoàn tất trước khi kiểm hộp thư.
+- Hai worker mặc định concurrency 5, ngân sách nhận việc mới 4 giây mỗi nhịp 5 giây. Việc đang gửi được hoàn tất sau khi ngân sách hết; không claim cả hàng dài rồi để lease hết hạn trước khi gửi.
+- Credential chỉ giữ transaction ở bước kiểm/giải mã và ghi kết quả. Version, trạng thái claim và email được kiểm lại trước gửi; reset trong khi I/O đang chạy vẫn hủy claim và vô hiệu mật khẩu cũ. Thư đã được provider chấp nhận có thể đến sau reset; không thể thu hồi I/O bên ngoài bằng transaction PostgreSQL. SMTP/Web Push vẫn có khả năng giao lại sau crash; Resend dùng idempotency key ổn định.
+- Runtime dùng `bcrypt` native, cost 12, đọc được hash bcrypt cũ. `bcryptjs` chỉ còn là dependency test. Trên Linux dùng Node 22 phù hợp với image build/runtime; Docker và cấu hình PM2 đặt `UV_THREADPOOL_SIZE=8`.
+- GET nghiệp vụ cache danh tính tối đa 3 giây, theo user/version; đường ghi và `auth/me` luôn đọc DB. Mọi HTTP ghi xóa cache của tiến trình khi trả response; replica khác hết hiệu lực theo TTL. Đặt `AUTH_CACHE_TTL_MS=0` nếu cần mọi GET thu hồi quyền ngay. Dashboard cache 5 giây và gộp request cùng key, chỉ chạy sau guard ADMIN.
+- FE dừng polling khi tab ẩn, tránh chồng request và giãn nhịp khi lỗi. Hồ sơ UNIT poll mỗi 30 giây, nhận cả summary trong response chi tiết để giảm một API. Route/ExcelJS tiếp tục lazy load; cache assets được cấu hình ở cả Nginx và Vercel. Header thực tế cần kiểm lại sau deploy.
+
+Các biến cấu hình có giá trị mặc định trong [mẫu môi trường](../be/.env.example). `DB_POOL_MAX=20` áp dụng **mỗi tiến trình**; tổng pool của các replica phải phù hợp giới hạn DB. [Cấu hình PM2](../deploy/ecosystem.config.cjs) dành cho VPS nhiều core; chạy `pm2 start deploy/ecosystem.config.cjs` từ root repo sau khi build và cài PM2. Không chạy thêm PM2 trong container backend đang có. Cấu hình không mua/nâng gói Render hoặc triển khai dịch vụ thật; chọn tài nguyên CPU/RAM theo kết quả đo.
+
+### Tạo dữ liệu test riêng
+
+Ví dụ PowerShell, bắt đầu từ thư mục `be`. Các script chỉ nhận `NODE_ENV=test`, DB loopback tên `seminar_load_test` hoặc `seminar_load_test_<hậu_tố>`, và từ chối DB có sẵn dữ liệu. Dùng DB và tên fixture mới cho mỗi kịch bản.
+
+```powershell
+docker run -d --name seminar-load-browse -e POSTGRES_PASSWORD=local_load_only -e POSTGRES_DB=seminar_load_test_browse -p 127.0.0.1:55449:5432 postgres:16-alpine
+$env:NODE_ENV = 'test'
+$env:LOAD_TEST_DATABASE_URL = 'postgresql://postgres:local_load_only@127.0.0.1:55449/seminar_load_test_browse'
+$env:DATABASE_URL = $env:LOAD_TEST_DATABASE_URL
+$env:JWT_SECRET = 'load-test-only-use-a-separate-random-secret-32-characters'
+$env:LOAD_TEST_MODE = 'browse'
+$env:LOAD_TEST_USERS = '1000'
+$env:LOAD_TEST_CRITERIA = '30'
+$env:LOAD_TEST_FIXTURE_PATH = '.tmp/load-test/browse-users.json'
+$env:LOAD_TEST_BASE_URL = 'http://127.0.0.1:3001'
+npm ci
+npm run db:generate
+npm run build
+npm run db:migrate:deploy
+npm run load:seed
+```
+
+Fixture chứa 1.000 danh tính UNIT riêng, 20 ADMIN, 30 tiêu chí lá, một hash dùng chung và JWT được ký bằng `JwtService`. Mật khẩu không cần đăng nhập và `mustChangePassword=false`. Fixture có hạn hai giờ, nằm ngoài Git; không đưa file token lên artifact công khai. Để seed cho backend staging từ máy khác, dùng `LOAD_TEST_BASE_URL` đúng origin staging và `LOAD_TEST_ALLOW_REMOTE=true`; DB vẫn qua loopback hoặc SSH tunnel tới DB test riêng. Chuyển fixture sang máy chạy k6 bằng kênh riêng.
+
+Khởi động backend test trong terminal có cùng môi trường/JWT/DB (dùng terminal khác cho k6):
+
+```powershell
+$env:PORT = '3001'
+$env:WEB_ORIGINS = 'http://localhost:5173'
+$env:RATE_LIMIT_ENABLED = 'false'
+$env:EMAIL_ENABLED = 'false'
+$env:WEB_PUSH_ENABLED = 'false'
+$env:ZALO_ZNS_ENABLED = 'false'
+$env:STORAGE_ENABLED = 'false'
+$env:REPORT_EXPORT_PROVIDER = 'local'
+$env:METRICS_ENABLED = 'true'
+$env:METRICS_TOKEN = 'load-test-metrics-only-separate-token-32-characters'
+npm start
+```
+
+Production vẫn bắt buộc rate limit. Không tắt rate limit trên domain dùng chung. `BACKGROUND_JOBS_ENABLED=false` chỉ dùng khi muốn tách riêng bài đo job khỏi worker tự chạy.
+
+Kiểm hồi quy khóa/outbox/reset bằng `npm run test:performance` với `PERF_TEST_DATABASE_URL` trỏ tới DB loopback **mới, chưa seed**, tên `seminar_load_test` đã migrate. Bộ kiểm này ghi fixture riêng và từ chối DB có sẵn user; không chạy lại trên DB đang dùng cho k6.
+
+### Năm kịch bản độc lập
+
+1. **Duyệt/polling 30 phút**, fixture `LOAD_TEST_MODE=browse`:
+
+```powershell
+$env:K6_WEB_DASHBOARD = 'true'
+k6 run -e SCENARIO=browse -e TARGET_VUS=1000 -e HOLD_DURATION=30m -e FIXTURE_PATH=../../.tmp/load-test/browse-users.json --summary-export .tmp/load-test/browse-result.json test/load/scenarios.k6.js
+```
+
+2. **Lưu 30 ô và nộp trong 5 phút**, DB mới, fixture `LOAD_TEST_MODE=deadline`:
+
+```powershell
+k6 run -e SCENARIO=deadline -e TARGET_VUS=1000 -e SPREAD_SECONDS=240 -e FIXTURE_PATH=../../.tmp/load-test/deadline-users.json --summary-export .tmp/load-test/deadline-result.json test/load/scenarios.k6.js
+```
+
+Kịch bản kiểm từng `results[].ok`, chỉ nộp khi mọi ô được lưu. Cửa sổ hồ sơ fixture vẫn mở hai giờ để tách tải ghi khỏi bài đo chuyển phase; việc 1.000 đơn vị lưu/nộp được trải trong 5 phút. Đặt `LOAD_TEST_FIXTURE_PATH` đúng file deadline rồi chạy `npm run load:verify` để kiểm ghi đúng đơn vị và trạng thái đã nộp.
+
+3. **20 admin thẩm định song song với 1.000 UNIT đọc**, DB mới, fixture `LOAD_TEST_MODE=review`. Seed điền điểm tự chấm và đưa hồ sơ vào `PENDING_REVIEW`/`FIRST_REVIEW`:
+
+```powershell
+k6 run -e SCENARIO=review -e TARGET_VUS=1000 -e ADMIN_VUS=20 -e HOLD_DURATION=30m -e FIXTURE_PATH=../../.tmp/load-test/review-users.json --summary-export .tmp/load-test/review-result.json test/load/scenarios.k6.js
+```
+
+4. **Chuyển phase và fanout**, DB mới, fixture `LOAD_TEST_MODE=phase`. Dừng backend test hoặc tắt background job khi chạy phép đo trực tiếp này:
+
+```powershell
+$env:LOAD_TEST_FIXTURE_PATH = '.tmp/load-test/phase-users.json'
+npm run load:jobs -- phase
+```
+
+Script đẩy deadline test về quá khứ, gọi scheduler thật, kiểm tất cả hồ sơ thành `PENDING_REVIEW`, rồi drain outbox. Kết quả cạnh file fixture ghi riêng `processingMs`, `fanoutMs`, số notification và độ sâu delivery. Với 20 ADMIN, 1.000 thông báo auto-lock cho từng admin tạo thêm 20.000 notification ngoài thông báo đổi phase; tính cả fanout này khi đánh giá DB và queue.
+
+5. **Cấp credential**, DB mới, fixture `LOAD_TEST_MODE=credentials`:
+
+```powershell
+$env:LOAD_TEST_FIXTURE_PATH = '.tmp/load-test/credentials-users.json'
+$env:LOAD_TEST_CONCURRENCY = '5'
+$env:LOAD_TEST_PROVIDER_MS = '50'
+npm run load:jobs -- credentials
+```
+
+Script dùng mã hóa/claim/version/ghi kết quả thật và hai provider giả có độ trễ hữu hạn; **không gửi email hoặc Push ra ngoài**. Kết quả kiểm đủ 2.000 delivery và peak concurrency. Đây là phép đo worker/DB, chưa xác nhận hạn mức hoặc độ trễ của provider thật. Muốn đo email thật, dùng tập địa chỉ đã kiểm soát và tốc độ phù hợp tài khoản provider; không dùng 1.000 địa chỉ giả của fixture.
+
+Bài đo tương tác 80% đọc/20% ghi cũ vẫn ở [workload.k6.js](../be/test/load/workload.k6.js), hỗ trợ đọc file token và ngưỡng riêng cho đọc/ghi. Có thể chạy thêm bài này với thời gian nghỉ 1–3 giây để tạo tải thao tác cao hơn polling 30 giây. Các file k6 cần k6 được cài trên máy phát tải; `node --check` chỉ kiểm cú pháp, không thay thế chạy k6.
+
+### Quan sát và gửi email HTTPS
+
+`GET /metrics` chỉ mở khi `METRICS_ENABLED=true`, yêu cầu `Authorization: Bearer <METRICS_TOKEN>`. Prometheus có thể scrape với `authorization.credentials_file` trỏ tới file token private. Các metric gồm `seminar_http_duration_seconds` theo route template, `seminar_db_query_duration_seconds`, `seminar_db_connections{state="waiting"}` và `seminar_event_loop_lag_p99_seconds` trên cửa sổ 10 giây; không đưa URL/SQL/credential vào label. Dùng `histogram_quantile(0.95, sum by (le, route) (rate(seminar_http_duration_seconds_bucket[5m])))` để xem p95 API.
+
+Chạy [diagnostics.sql](../be/test/load/diagnostics.sql) trong lúc tải để đọc lock, transaction đang chờ và `pg_stat_statements` (extension cần được bật trước). Mục tiêu gợi ý: lỗi dưới 1%, p95 đọc dưới 1 giây, p95 ghi dưới 2 giây, event loop lag p99 dưới 100 ms. Chốt ngưỡng với người nghiệm thu và giữ nguyên giữa hai lượt so sánh. Chạy Lighthouse/trình duyệt thật trong lúc k6 đang tải để kiểm LCP/INP/CLS.
+
+Để chuyển email sang [Resend API HTTPS](https://resend.com/docs/api-reference/emails/send-email), đặt `EMAIL_ENABLED=true`, `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `MAIL_FROM` thuộc domain đã xác minh và `CREDENTIALS_ENCRYPTION_KEY`. Request có timeout, idempotency key, chuẩn hóa 429 thành retry và không lưu phản hồi chứa bí mật. SMTP/Apps Script vẫn được hỗ trợ. Việc thêm provider không tạo tài khoản, mua gói hoặc gửi thư thật.
+
+Kiểm header sau triển khai bằng `curl -I https://<staging>/assets/<file-co-hash>.js`: cần `public`, `max-age=31536000`, `immutable`; HTML không cache dài. [Compose](../deploy/compose.yml) hỗ trợ truyền pool/cache/concurrency/metrics và cấu hình Resend qua môi trường.

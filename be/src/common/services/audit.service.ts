@@ -32,6 +32,16 @@ export class AuditService {
   /** Tiêm DB và đồng hồ tường minh để audit dùng được khi chạy runtime ESM bằng tsx */
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService, @Inject(ClockService) private readonly clock: ClockService) {}
 
+  async recordMany(payloads: AuditPayload[], tx: Prisma.TransactionClient): Promise<void> {
+    if (!payloads.length) return;
+    await tx.auditLog.createMany({ data: payloads.map((payload) => ({
+      id: randomUUID(), actorId: payload.actorId, action: payload.action, entity: payload.entity, entityId: payload.entityId,
+      before: payload.before === undefined ? Prisma.DbNull : payload.before === null ? Prisma.JsonNull : redactAudit(payload.before),
+      after: payload.after === undefined ? Prisma.DbNull : payload.after === null ? Prisma.JsonNull : redactAudit(payload.after),
+      ip: payload.ip ?? null, createdAt: this.clock.now(),
+    })) });
+  }
+
   /** Ghi một bản audit bằng giao dịch được cung cấp hoặc kết nối mặc định
    * Snapshot được che thông tin xác thực ở mọi cấp trước khi lưu, kể cả trong mảng
    * Phân biệt trường không truyền với JSON null để giữ ý nghĩa dữ liệu ban đầu

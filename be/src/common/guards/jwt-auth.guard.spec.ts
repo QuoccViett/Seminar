@@ -2,6 +2,24 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { JwtAuthGuard, RolesGuard } from "./jwt-auth.guard.js";
+import { RuntimeCache } from "../services/runtime-cache.service.js";
+import { ConfigService } from "@nestjs/config";
+
+test("cache chỉ giảm query GET, đường ghi và auth/me thấy tài khoản bị khóa ngay", async () => {
+  let reads = 0; let active = true;
+  const cache = new RuntimeCache(new ConfigService({ AUTH_CACHE_TTL_MS: 3000 }));
+  const guard = new JwtAuthGuard({ verifyAsync: async () => ({ sub: "user", ver: 0, tokenUse: "access", exp: 9999999999 }) } as never,
+    { user: { findUnique: async () => { reads += 1; return { id: "user", role: "ADMIN", unitId: null, isActive: active, credentialVersion: 0, mustChangePassword: false }; } } } as never, cache);
+  const request = { headers: { authorization: "Bearer fixture" }, method: "GET", originalUrl: "/api/v1/notifications/unread-count" };
+  await guard.canActivate(createContext(request));
+  active = false;
+  await guard.canActivate(createContext(request));
+  assert.equal(reads, 1);
+  await assert.rejects(guard.canActivate(createContext({ ...request, method: "POST" })), UnauthorizedException);
+  await assert.rejects(guard.canActivate(createContext({ ...request, originalUrl: "/api/v1/auth/me" })), UnauthorizedException);
+  cache.invalidate();
+  await assert.rejects(guard.canActivate(createContext(request)), UnauthorizedException);
+});
 
 type FakeRequest = {
   headers: { authorization?: string };
