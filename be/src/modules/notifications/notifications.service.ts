@@ -1,12 +1,13 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { NOTIFICATION_PROVIDERS, type NotificationProvider, type NotificationSendResult } from "./notification-provider.js";
 import type { NotificationQueryDto } from "./dto/notification-query.dto.js";
 import type { NotificationPreferencesDto } from "./dto/notification-preferences.dto.js";
 import { AuditService } from "../../common/services/audit.service.js";
+import { drainQueue } from "../../common/services/queue-runner.js";
 
 type Channel = "WEB_PUSH" | "EMAIL" | "ZALO_ZNS";
 const CHANNELS: Channel[] = ["WEB_PUSH", "EMAIL", "ZALO_ZNS"];
@@ -41,6 +42,59 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private processing = false;
 
+  /** Lưu snapshot fanout trong cùng transaction nghiệp vụ, không gọi provider.
+   * Dedupe theo sự kiện + người nhận, tránh phụ thuộc thứ tự phân lô khi retry.
+   */
+  async enqueueMany(tx: Prisma.TransactionClient, inputs: NotifyUserInput[]): Promise<void> {
+    if (!inputs.length) return;
+    const unique = [...new Map(inputs.map((item) => [`${item.userId}:${item.dedupeKey ?? randomUUID()}`, item])).values()]
+      .sort((left, right) => left.userId.localeCompare(right.userId) || (left.dedupeKey ?? "").localeCompare(right.dedupeKey ?? ""));
+    await tx.notificationOutbox.createMany({ data: Array.from({ length: Math.ceil(unique.length / 100) }, (_, index) => {
+      const batch = unique.slice(index * 100, index * 100 + 100);
+      // Outbox được retry nguyên tử; dedupe cuối cùng vẫn là (user_id, dedupe_key) ở notifications.
+      const serialized = JSON.stringify(batch);
+      return { id: randomUUID(), dedupeKey: batch.every((item) => item.dedupeKey) ? createHash("sha256").update(serialized).digest("hex") : randomUUID(), payload: JSON.parse(serialized) as Prisma.InputJsonValue, createdAt: new Date() };
+    }), skipDuplicates: true });
+  }
+
+  /** Mỗi lô chỉ cần một lần đọc preference, hai bulk insert và một bulk audit.
+   * Khóa SKIP LOCKED giữ nhiều worker độc lập; rollback giữ nguyên công việc chưa xử lý.
+   */
+  async flushOutbox(limit = 20): Promise<number> {
+    let count = 0;
+    while (count < limit) {
+      const done = await this.prisma.$transaction(async (tx) => {
+        const [job] = await tx.$queryRaw<{ id: string; payload: unknown }[]>`
+          SELECT id, payload FROM notification_outbox WHERE processed_at IS NULL
+          ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+        if (!job) return false;
+        const inputs = (job.payload as (Omit<NotifyUserInput, "expiresAt"> & { expiresAt?: string })[])
+          .map((item) => ({ ...item, expiresAt: item.expiresAt ? new Date(item.expiresAt) : undefined }));
+        const preferences = await tx.notificationPreference.findMany({ where: { userId: { in: inputs.map((item) => item.userId) } } });
+        const enabled = new Map(preferences.map((item) => [`${item.userId}:${item.channel}`, item.enabled]));
+        const now = new Date();
+        const rows = inputs.map((item) => ({ id: randomUUID(), userId: item.userId, channel: "SYSTEM", type: item.type,
+          title: item.title, body: item.body, refType: item.refType ?? null, refId: item.refId ?? null,
+          dedupeKey: item.dedupeKey ?? null, expiresAt: item.expiresAt ?? null, createdAt: now }));
+        const inserted = await tx.notification.createManyAndReturn({ data: rows, skipDuplicates: true, select: { id: true } });
+        const ids = new Set(inserted.map((item) => item.id));
+        const deliveries = rows.flatMap((row, index) => ids.has(row.id)
+          ? [...new Set(inputs[index]!.channels ?? CHANNELS)]
+            .filter((channel) => CHANNELS.includes(channel) && (channel !== "ZALO_ZNS" || this.znsEnabled) && enabled.get(`${row.userId}:${channel}`) !== false)
+            .map((channel) => ({ id: randomUUID(), notificationId: row.id, channel, status: "PENDING", createdAt: now, updatedAt: now }))
+          : []);
+        if (deliveries.length) await tx.notificationDelivery.createMany({ data: deliveries });
+        await this.audit.recordMany(rows.filter((row) => ids.has(row.id)).map((row) => ({ actorId: null, action: "NOTIFICATION_QUEUED", entity: "Notification", entityId: row.id,
+          after: { userId: row.userId, type: row.type, refType: row.refType, refId: row.refId, channels: deliveries.filter((item) => item.notificationId === row.id).map((item) => item.channel) } })), tx);
+        await tx.notificationOutbox.update({ where: { id: job.id }, data: { processedAt: now } });
+        return true;
+      }, { timeout: 10_000, maxWait: 5000 });
+      if (!done) break;
+      count += 1;
+    }
+    return count;
+  }
+
   /** Tiêm audit để mọi thông báo xếp hàng và kết quả worker đều có dấu vết hệ thống
    * Provider vẫn chỉ chạy ngoài giao dịch, không ghi nội dung hay địa chỉ người nhận vào audit
    */
@@ -55,6 +109,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
    * Mỗi nhịp tự chặn chồng lấn trong một tiến trình; nhiều tiến trình được DB khóa riêng
    */
   onModuleInit(): void {
+    if (this.config.get<boolean>("BACKGROUND_JOBS_ENABLED") === false) return;
     this.timer = setInterval(() => { void this.dispatchPending().catch(() => this.logger.error("Không thể xử lý hàng đợi thông báo; hệ thống sẽ thử lại ở lượt sau")); }, 5000);
     this.timer.unref?.();
   }
@@ -278,20 +333,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   /** Rút tối đa một lô nhỏ mỗi nhịp để worker không giữ việc quá lâu trong RAM
    * processing chỉ chống lặp trong tiến trình; đồng bộ đa tiến trình do SKIP LOCKED và claimToken đảm nhận
    */
-  async dispatchPending(limit = 20): Promise<number> {
+  async dispatchPending(limit = 1000): Promise<number> {
     if (this.processing) return 0;
     this.processing = true;
-    let count = 0;
     try {
-      while (count < limit) {
-        const claim = await this.claimOne();
-        if (!claim) break;
-        // Một bản ghi hỏng giữ lease để thử lại sau và không chặn các delivery khác trong lô
-        try { await this.processClaim(claim); }
-        catch { this.logger.error("Không thể xử lý một lượt gửi thông báo, hệ thống sẽ thử lại"); }
-        count += 1;
-      }
-      return count;
+      await this.flushOutbox();
+      return await drainQueue({ concurrency: this.config.get<number>("NOTIFICATION_WORKER_CONCURRENCY") ?? 5,
+        budgetMs: this.config.get<number>("WORKER_BUDGET_MS") ?? 4000, limit,
+        claim: () => this.claimOne(), process: (claim) => this.processClaim(claim),
+        onError: () => this.logger.error("Không thể xử lý một lượt gửi thông báo, hệ thống sẽ thử lại"),
+      });
     } finally { this.processing = false; }
   }
 

@@ -6,6 +6,7 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { EmailNotificationProvider, WebPushNotificationProvider } from "./real-notification-providers.js";
 import type { NotificationSendResult } from "./notification-provider.js";
 import { AuditService } from "../../common/services/audit.service.js";
+import { drainQueue } from "../../common/services/queue-runner.js";
 
 type CredentialPayload = { username: string; password: string; email: string | null; invitationUrl: string };
 type Claim = { id: string; claim_token: string };
@@ -31,6 +32,7 @@ export class CredentialDispatchService implements OnModuleInit, OnModuleDestroy 
 
   /** Khởi động quét việc đã commit; interval nhỏ chỉ giúp lấy việc, mọi quyền gửi được kiểm lại tại DB */
   onModuleInit(): void {
+    if (this.config.get<boolean>("BACKGROUND_JOBS_ENABLED") === false) return;
     this.timer = setInterval(() => { void this.dispatchPending().catch(() => this.logger.error("Không thể xử lý hàng đợi cấp thông tin đăng nhập; hệ thống sẽ thử lại")); }, 5000);
     this.timer.unref?.();
   }
@@ -156,11 +158,11 @@ export class CredentialDispatchService implements OnModuleInit, OnModuleDestroy 
     return rows[0] ?? null;
   }
 
-  /** Xử lý một claim dưới khóa dòng user để đổi/reset mật khẩu không vượt qua việc gửi đang diễn ra
-   * Mọi nhánh kiểm version, hạn, xác nhận email và subscription ngay trước khi gọi provider
+  /** Kiểm và giải mã dưới khóa user, nhả connection trước I/O rồi hoàn tất có điều kiện.
+   * Reset có thể hủy claim trong lúc gửi; kết quả đến muộn không được ghi đè phiên bản mới.
    */
   async processClaim(claim: Claim): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    const prepared = await this.prisma.$transaction(async (tx) => {
       const initial = await tx.credentialDelivery.findUnique({ where: { id: claim.id }, select: { dispatch: { select: { userId: true } } } });
       if (!initial) return;
       await tx.$executeRaw`SELECT 1 FROM users WHERE id = ${initial.dispatch.userId}::uuid FOR UPDATE`;
@@ -179,21 +181,39 @@ export class CredentialDispatchService implements OnModuleInit, OnModuleDestroy 
       if (delivery.channel === "EMAIL" && (!dispatch.emailConfirmedAt || !dispatch.user.email || payload.email !== dispatch.user.email)) {
         await this.defer(tx, claim, "EMAIL_UNCONFIRMED"); return;
       }
-      if (delivery.channel === "WEB_PUSH" && !await this.push.resolveRecipient(dispatch.userId)) {
-        await this.defer(tx, claim, "NO_SUBSCRIPTION"); return;
-      }
       const body = `Tên đăng nhập: ${payload.username}\nMật khẩu ban đầu: ${payload.password}\nBạn phải đổi mật khẩu khi đăng nhập lần đầu.${delivery.channel === "EMAIL" ? `\nĐăng ký thiết bị nhận thông báo: ${payload.invitationUrl}` : ""}`;
-      const provider = delivery.channel === "EMAIL" ? this.email : this.push;
-      let result: NotificationSendResult;
-      try { result = await provider.send({ userId: dispatch.userId, notificationId: dispatch.id, title: "Thông tin đăng nhập hệ thống đánh giá", body, refType: "CREDENTIAL", refId: null }); }
-      catch { result = { kind: "retry", reasonCode: "PROVIDER_ERROR", message: "Không thể gửi thông tin đăng nhập, hệ thống sẽ thử lại." }; }
-      // Mọi subscription vừa bị push service thu hồi đều quay lại trạng thái chờ thiết bị mới đến TTL
+      return { delivery, dispatch, body, email: payload.email };
+    }, { timeout: 10_000 });
+    if (!prepared) return;
+    const { delivery, dispatch, body } = prepared;
+    const provider = delivery.channel === "EMAIL" ? this.email : this.push;
+    let result: NotificationSendResult;
+    try {
+      const hasRecipient = await provider.resolveRecipient(dispatch.userId);
+      // Kiểm lại sau mọi thao tác có thể chờ mạng/DB. Provider còn kiểm version/email sát lời gọi gửi.
+      const current = await this.prisma.credentialDelivery.findFirst({ where: { id: claim.id, claimToken: claim.claim_token, status: "PENDING",
+        dispatch: { canceledAt: null, expiresAt: { gt: new Date() }, credentialVersion: dispatch.credentialVersion,
+          user: { isActive: true, mustChangePassword: true, credentialVersion: dispatch.credentialVersion } } } });
+      if (!current) return;
+      result = hasRecipient
+        ? await provider.send({ userId: dispatch.userId, notificationId: dispatch.id, title: "Thông tin đăng nhập hệ thống đánh giá", body, refType: "CREDENTIAL", refId: null,
+          expiresAt: dispatch.expiresAt, credentialVersion: dispatch.credentialVersion, recipientEmail: prepared.email })
+        : { kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Chưa có địa chỉ hoặc thiết bị nhận." };
+    } catch { result = { kind: "retry", reasonCode: "PROVIDER_ERROR", message: "Không thể gửi thông tin đăng nhập, hệ thống sẽ thử lại." }; }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM users WHERE id = ${dispatch.userId}::uuid FOR UPDATE`;
+      const current = await tx.credentialDelivery.findUnique({ where: { id: claim.id }, include: { dispatch: { include: { user: true } } } });
+      if (!current || current.claimToken !== claim.claim_token || current.status !== "PENDING") return;
+      if (current.dispatch.canceledAt || current.dispatch.credentialVersion !== current.dispatch.user.credentialVersion || !current.dispatch.user.isActive || !current.dispatch.user.mustChangePassword) {
+        await this.finish(tx, claim, current.attemptCount, { kind: "skip", reasonCode: "CREDENTIAL_CHANGED", message: "Thông tin đăng nhập đã thay đổi." });
+        return;
+      }
       if (delivery.channel === "WEB_PUSH" && result.kind === "skip" && result.reasonCode === "RECIPIENT_MISSING") { await this.defer(tx, claim, "NO_SUBSCRIPTION"); return; }
-      await this.finish(tx, claim, delivery.attemptCount, result);
+      await this.finish(tx, claim, current.attemptCount, result);
       if (result.kind === "sent") await tx.user.updateMany({ where: { id: dispatch.userId, credentialVersion: dispatch.credentialVersion, credentialsSentAt: null }, data: { credentialsSentAt: new Date() } });
       const unfinished = await tx.credentialDelivery.count({ where: { dispatchId: dispatch.id, status: { in: ["PENDING", "FAILED"] } } });
       if (unfinished === 0) await tx.credentialDispatch.update({ where: { id: dispatch.id }, data: { ciphertext: null, nonce: null, authTag: null } });
-    }, { timeout: 20000 });
+    }, { timeout: 10_000 });
   }
 
   /** Hoãn việc thiếu điều kiện nhận tới lượt sau mà không tiêu hao số lần gọi provider
@@ -211,17 +231,18 @@ export class CredentialDispatchService implements OnModuleInit, OnModuleDestroy 
   }
 
   /** Dọn payload quá hạn và lấy một lô nhỏ để giới hạn thời gian worker chiếm kết nối */
-  async dispatchPending(limit = 10): Promise<number> {
+  async dispatchPending(limit = 1000): Promise<number> {
     if (this.processing) return 0;
     this.processing = true;
     try {
       const now = new Date();
       await this.prisma.credentialDispatch.updateMany({ where: { expiresAt: { lte: now }, ciphertext: { not: null } }, data: { canceledAt: now, ciphertext: null, nonce: null, authTag: null } });
       await this.prisma.credentialDelivery.updateMany({ where: { status: "PENDING", dispatch: { expiresAt: { lte: now } } }, data: { status: "SKIPPED", errorCode: "EXPIRED", claimToken: null, claimedAt: null, leaseUntil: null, nextAttemptAt: null, updatedAt: now } });
-      let count = 0;
-      // Lỗi một delivery giữ lease đến hạn và không làm mất cơ hội xử lý các bản ghi còn lại
-      while (count < limit) { const claim = await this.claimOne(); if (!claim) break; try { await this.processClaim(claim); } catch { this.logger.error("Không thể xử lý một lượt gửi thông tin đăng nhập, hệ thống sẽ thử lại"); } count += 1; }
-      return count;
+      return await drainQueue({ concurrency: this.config.get<number>("CREDENTIAL_WORKER_CONCURRENCY") ?? 5,
+        budgetMs: this.config.get<number>("WORKER_BUDGET_MS") ?? 4000, limit,
+        claim: () => this.claimOne(), process: (claim) => this.processClaim(claim),
+        onError: () => this.logger.error("Không thể xử lý một lượt gửi thông tin đăng nhập, hệ thống sẽ thử lại"),
+      });
     } finally { this.processing = false; }
   }
 }

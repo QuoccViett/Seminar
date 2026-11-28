@@ -349,7 +349,7 @@ export default function AdminUsers() {
       </Form>
     </Modal>
     {/* Khu vực này chỉ chọn file và gọi backend preview; sự kiện thả không tự ghi tài khoản */}
-    <Modal title="Nhập tài khoản đơn vị từ Excel" open={importOpen} width={1000} confirmLoading={importConfirming} okText="Xác nhận tạo tài khoản" cancelText="Đóng" onOk={confirmImport} onCancel={closeImport} okButtonProps={{ disabled: !importPreview || importPreview.validRows === 0 || importPreview.invalidRows > 0 || !!importResult }}>
+    <Modal title="Nhập tài khoản đơn vị từ Excel" open={importOpen} width={1000} confirmLoading={importConfirming} okText="Xác nhận tạo tài khoản" cancelText="Đóng" onOk={confirmImport} onCancel={closeImport} okButtonProps={{ "aria-label": "Xác nhận tạo tài khoản", "aria-busy": importConfirming, disabled: importConfirming || !importPreview || importPreview.validRows === 0 || importPreview.invalidRows > 0 || !!importResult }}>
       <Space orientation="vertical" style={{ width: "100%" }} size="middle">
         <Space wrap><ImportWorkbookGenerator onUse={selectImportFile} /><Button onClick={downloadImportTemplate}>Tải tệp mẫu</Button><span>Tệp XLSX tối đa 5 MiB và 100 dòng; email bắt buộc để gửi thông tin đăng nhập</span></Space>
         <Upload.Dragger accept=".xlsx" maxCount={1} fileList={importFile ? [{ uid: "import-file", name: importFile.name, status: "done" }] : []} beforeUpload={(file) => { selectImportFile(file); return false; }} onRemove={() => { selectImportFile(null); return true; }} showUploadList>

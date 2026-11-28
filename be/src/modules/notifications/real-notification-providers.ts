@@ -23,12 +23,15 @@ export class EmailNotificationProvider implements NotificationProvider {
   async send(request: NotificationSendRequest): Promise<NotificationSendResult> {
     if (this.config.get<boolean>("EMAIL_ENABLED") !== true) return { kind: "skip", reasonCode: "PROVIDER_NOT_READY", message: "Kênh gửi chưa được cấu hình." };
     try {
-      const user = await this.prisma.user.findUnique({ where: { id: request.userId }, select: { email: true, isActive: true } });
+      const user = await this.prisma.user.findUnique({ where: { id: request.userId }, select: { email: true, isActive: true, credentialVersion: true, mustChangePassword: true } });
       if (!user?.isActive || !user.email) return { kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Người nhận chưa có địa chỉ hoặc thiết bị phù hợp." };
+      if (request.credentialVersion !== undefined && (user.credentialVersion !== request.credentialVersion || !user.mustChangePassword || user.email !== request.recipientEmail)) return { kind: "skip", reasonCode: "CREDENTIAL_CHANGED", message: "Thông tin đăng nhập đã thay đổi." };
+      if (request.expiresAt && Date.now() >= request.expiresAt.getTime()) return { kind: "skip", reasonCode: "EXPIRED", message: "Thông báo đã hết thời hạn gửi." };
       const escape = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
       const sender = this.config.get<string>("MAIL_FROM") ?? this.config.getOrThrow<string>("SMTP_FROM");
       const message = { from: sender, to: user.email, subject: request.title, text: request.body, html: `<h1>${escape(request.title)}</h1><p>${escape(request.body).replace(/\n/g, "<br>")}</p>` };
       if (this.config.get<string>("EMAIL_PROVIDER") === "apps_script") return await this.sendAppsScript(message, request.notificationId, request.expiresAt);
+      if (this.config.get<string>("EMAIL_PROVIDER") === "resend") return await this.sendResend(message, request.notificationId);
       const host = this.config.getOrThrow<string>("SMTP_HOST");
       const port = this.config.get<number>("SMTP_PORT") ?? 587;
       const local = ["localhost", "127.0.0.1", "::1"].includes(host) && this.config.get<boolean>("SMTP_ALLOW_INSECURE_LOCAL") === true;
@@ -42,6 +45,20 @@ export class EmailNotificationProvider implements NotificationProvider {
       if (responseCode === 452) return { kind: "retry", reasonCode: "RATE_LIMIT", message: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại." };
       return responseCode >= 500 ? { kind: "skip", reasonCode: "PERMANENT_FAILURE", message: "Không thể gửi thông báo qua kênh này." } : { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Kênh gửi tạm thời gián đoạn, hệ thống sẽ thử lại." };
     }
+  }
+
+  /** HTTPS API, có idempotency key ổn định cho retry và timeout hữu hạn. */
+  private async sendResend(message: { from: string; to: string; subject: string; text: string; html: string }, id: string): Promise<NotificationSendResult> {
+    const response = await fetch("https://api.resend.com/emails", { method: "POST", redirect: "error", signal: AbortSignal.timeout(12_000),
+      headers: { Authorization: `Bearer ${this.config.getOrThrow<string>("RESEND_API_KEY")}`, "Content-Type": "application/json", "User-Agent": "seminar/1.0", "Idempotency-Key": `email-${id}` },
+      body: JSON.stringify(message) });
+    if (response.status === 429) return { kind: "retry", reasonCode: "RATE_LIMIT", message: "Kênh gửi đang giới hạn lượt gửi, hệ thống sẽ thử lại." };
+    if (response.status === 401 || response.status === 403) return { kind: "retry", reasonCode: "PROVIDER_AUTH_FAILED", message: "Dịch vụ email chưa cấp quyền cho máy chủ." };
+    if (response.status >= 500 || response.status === 408 || response.status === 409) return { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Dịch vụ email tạm thời gián đoạn." };
+    if (!response.ok) return { kind: "skip", reasonCode: "PERMANENT_FAILURE", message: "Dịch vụ email từ chối yêu cầu." };
+    const body = await response.json() as { id?: unknown };
+    if (typeof body.id !== "string") return { kind: "retry", reasonCode: "TEMPORARY_FAILURE", message: "Dịch vụ email chưa trả xác nhận hợp lệ." };
+    return { kind: "sent", providerMessageId: body.id };
   }
 
   /** Ký payload; chỉ theo redirect ContentService của Google bằng GET, không chuyển tiếp dữ liệu thư. */
@@ -104,7 +121,8 @@ export class WebPushNotificationProvider implements NotificationProvider {
       webpush.setVapidDetails(this.config.getOrThrow("WEB_PUSH_SUBJECT"), this.config.getOrThrow("WEB_PUSH_VAPID_PUBLIC_KEY"), this.config.getOrThrow("WEB_PUSH_VAPID_PRIVATE_KEY"));
       const rows = await this.prisma.webPushSubscription.findMany({ where: { userId: request.userId, revokedAt: null, user: { isActive: true } }, select: { id: true, endpoint: true, p256dh: true, auth: true } });
       if (!rows.length) return { kind: "skip", reasonCode: "RECIPIENT_MISSING", message: "Người nhận chưa có địa chỉ hoặc thiết bị phù hợp." };
-      const user = await this.prisma.user.findUnique({ where: { id: request.userId }, select: { role: true } });
+      const user = await this.prisma.user.findUnique({ where: { id: request.userId }, select: { role: true, isActive: true, credentialVersion: true, mustChangePassword: true } });
+      if (request.credentialVersion !== undefined && (!user?.isActive || user.credentialVersion !== request.credentialVersion || !user.mustChangePassword)) return { kind: "skip", reasonCode: "CREDENTIAL_CHANGED", message: "Thông tin đăng nhập đã thay đổi." };
       const url = request.refType === "CREDENTIAL" ? "/login" : user?.role === "UNIT" ? "/unit/notifications" : "/admin/notifications";
       const allowed = (this.config.get<string>("WEB_PUSH_ALLOWED_HOSTS")?.split(",").map((host) => host.trim().toLowerCase()).filter(Boolean) ?? ["fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com", "wns2-pn1p.notify.windows.com"]);
       const outcomes = await Promise.all(rows.map(async (row) => {

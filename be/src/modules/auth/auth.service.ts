@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, Optional, 
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AuditService } from "../../common/services/audit.service.js";
 import { CredentialDispatchService } from "../notifications/credential-dispatch.service.js";

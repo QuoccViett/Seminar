@@ -6,6 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import SessionNotice from "../components/common/SessionNotice";
 import { getUnreadCount } from "../services/notificationService";
 import styles from "./UnitLayout.module.css";
+import { startVisiblePolling } from "../services/visiblePolling";
 
 const { Header, Sider, Content } = Layout;
 
@@ -23,20 +24,12 @@ export default function UnitLayout() {
       try {
         const result = await getUnreadCount();
         if (active) setUnreadCount(result.count);
-      } catch { /* Giữ số đã biết nếu mạng tạm thời lỗi */ }
+      } catch { return false; }
     };
-    void refresh();
-    const timer = setInterval(refresh, 30000);
-    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    window.addEventListener("notifications:changed", refresh);
+    const stop = startVisiblePolling(refresh, { intervalMs: 30000, events: ["notifications:changed"] });
     return () => {
       active = false;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-      window.removeEventListener("notifications:changed", refresh);
+      stop();
     };
   }, [location.pathname]);
 

@@ -5,6 +5,34 @@ import nodemailer from "nodemailer";
 import { createHmac } from "node:crypto";
 import { EmailNotificationProvider, WebPushNotificationProvider } from "./real-notification-providers.js";
 
+test("Resend dùng HTTPS/idempotency, chuẩn hóa rate limit và không gửi credential đã đổi", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: RequestInit[] = [];
+  let status = 200;
+  globalThis.fetch = (async (input, init) => {
+    assert.equal(String(input), "https://api.resend.com/emails");
+    calls.push(init!);
+    return new Response(JSON.stringify({ id: "provider-message" }), { status });
+  }) as typeof fetch;
+  try {
+    const values = { EMAIL_ENABLED: true, EMAIL_PROVIDER: "resend", MAIL_FROM: "sender@example.invalid", RESEND_API_KEY: "test-key" };
+    const db = { user: { findUnique: async () => ({ email: "unit@example.invalid", isActive: true, credentialVersion: 2, mustChangePassword: true }) } };
+    const config = { get: (key: string) => values[key as keyof typeof values], getOrThrow: (key: string) => values[key as keyof typeof values] };
+    const provider = new EmailNotificationProvider(db as never, config as never);
+    const request = { userId: "user", notificationId: "notice", title: "Test", body: "<private>", refType: null, refId: null };
+    assert.deepEqual(await provider.send(request), { kind: "sent", providerMessageId: "provider-message" });
+    const headers = new Headers(calls[0]!.headers);
+    assert.equal(headers.get("Idempotency-Key"), "email-notice");
+    assert.equal(headers.get("Authorization"), "Bearer test-key");
+    assert.match(JSON.parse(String(calls[0]!.body)).html, /&lt;private&gt;/);
+    status = 429;
+    assert.equal((await provider.send(request) as { reasonCode: string }).reasonCode, "RATE_LIMIT");
+    assert.equal((await provider.send({ ...request, credentialVersion: 1, recipientEmail: "unit@example.invalid" }) as { reasonCode: string }).reasonCode, "CREDENTIAL_CHANGED");
+    assert.equal((await provider.send({ ...request, credentialVersion: 2, recipientEmail: "old@example.invalid" }) as { reasonCode: string }).reasonCode, "CREDENTIAL_CHANGED");
+    assert.equal(calls.length, 2);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 /** Kiểm TTL được truyền cho thư viện push bằng endpoint giả và không gọi mạng
  * Deadline trong tương lai giới hạn thời gian lưu, deadline hết hạn không gọi provider
  * Mọi hàm thư viện được khôi phục sau test để không ảnh hưởng các ca kiểm tra khác

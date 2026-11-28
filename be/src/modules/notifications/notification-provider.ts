@@ -10,6 +10,9 @@ export interface NotificationSendRequest {
   refId: string | null;
   /** Deadline loại trừ của thông báo nhạy thời gian, vắng mặt khi không giới hạn hạn giao */
   expiresAt?: Date | null;
+  /** Chỉ gửi credential còn đúng phiên bản và đúng email đã được xác nhận. */
+  credentialVersion?: number;
+  recipientEmail?: string | null;
 }
 
 /** Kết quả đã chuẩn hóa để worker không lưu lỗi thô từ SQL, SMTP hoặc dịch vụ ngoài

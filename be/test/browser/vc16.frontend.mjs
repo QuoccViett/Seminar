@@ -200,10 +200,13 @@ async function verify() {
     const draftBook = new ExcelJS.Workbook(); await draftBook.xlsx.load(await readFile(await draftDownload.path()));
     assert.equal(draftBook.worksheets[0].getCell("D2").value, `gen-${suffix}001`);
     await generatorDialog.getByRole("button", { name: "Dùng bản nháp để xem trước", exact: true }).click();
-    await admin.getByRole("button", { name: "Xem trước và kiểm tra", exact: true }).click();
+    // Chờ modal con trả focus/quyền truy cập về modal import trước khi gửi preview.
+    await generatorDialog.waitFor({ state: "hidden" });
+    const generatedImportDialog = admin.getByRole("dialog", { name: "Nhập tài khoản đơn vị từ Excel", exact: true });
+    await generatedImportDialog.getByRole("button", { name: "Xem trước và kiểm tra", exact: true }).click();
     await admin.getByText(/1 dòng, 1 hợp lệ, 0 có lỗi/u).waitFor();
     assert.equal(await prisma.user.count(), beforeGenerated);
-    await admin.getByRole("button", { name: "Xác nhận tạo tài khoản", exact: true }).click();
+    await generatedImportDialog.getByRole("button", { name: "Xác nhận tạo tài khoản", exact: true }).click();
     await admin.getByText(/Đã tạo 1 tài khoản và 1 đơn vị mới/u).waitFor();
     assert.equal(await prisma.user.count(), beforeGenerated + 1);
     await admin.getByRole("button", { name: "Đóng", exact: true }).last().click();

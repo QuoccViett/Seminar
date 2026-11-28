@@ -16,6 +16,35 @@ export class EvaluationStateService {
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
+  /** Caller đã khóa kỳ rồi các hồ sơ. Ghi trạng thái/history/audit/outbox theo lô,
+   * cùng quy tắc với reconcile đơn; không gọi provider hoặc fanout từng người trong transaction.
+   */
+  async reconcileExpiredMany(tx: Prisma.TransactionClient, evaluations: Evaluation[], period: EvaluationPeriod, now: Date): Promise<void> {
+    const initial = evaluations.filter((item) => item.status === "DRAFT" && period.publishedAt && period.selfEvalDeadline && now >= period.selfEvalDeadline);
+    const supplement = evaluations.filter((item) => item.status === "SUPPLEMENT_REQUESTED" && item.supplementDeadline && now >= item.supplementDeadline);
+    if (!initial.length && !supplement.length) return;
+    if (initial.length) await tx.evaluation.updateMany({ where: { id: { in: initial.map((item) => item.id) }, status: "DRAFT" }, data: { status: "PENDING_REVIEW", autoLockedAt: now, updatedAt: now } });
+    if (supplement.length) await tx.evaluation.updateMany({ where: { id: { in: supplement.map((item) => item.id) }, status: "SUPPLEMENT_REQUESTED" }, data: { status: "SUPPLEMENT_EXPIRED", updatedAt: now } });
+    const rows = [...initial.map((item) => ({ item, status: "PENDING_REVIEW", comment: "Đã hết thời gian tự chấm, hệ thống khóa hồ sơ để chờ duyệt" })),
+      ...supplement.map((item) => ({ item, status: "SUPPLEMENT_EXPIRED", comment: "Đã hết thời gian bổ sung" }))];
+    await tx.statusHistory.createMany({ data: rows.map(({ item, status, comment }) => ({ id: randomUUID(), evaluationId: item.id, actorId: null, fromStatus: item.status, toStatus: status, comment, createdAt: now })) });
+    await this.audit.recordMany(rows.map(({ item, status }) => ({ actorId: null, action: "AUTO_STATUS", entity: "Evaluation", entityId: item.id,
+      before: { status: item.status }, after: status === "PENDING_REVIEW" ? { status, submittedAt: item.submittedAt?.toISOString() ?? null, autoLockedAt: now.toISOString() } : { status } })), tx);
+    const users = await tx.user.findMany({ where: { isActive: true, OR: [{ role: "ADMIN" }, { role: "UNIT", unitId: { in: supplement.map((item) => item.unitId) } }] }, select: { id: true, role: true, unitId: true } });
+    const admins = users.filter((user) => user.role === "ADMIN");
+    const unitUsers = new Map(users.filter((user) => user.unitId).map((user) => [user.unitId!, user]));
+    const formatter = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" });
+    await this.notifications.enqueueMany(tx, rows.flatMap(({ item, status, comment }) => {
+      const automatic = status === "PENDING_REVIEW";
+      const unitUser = unitUsers.get(item.unitId);
+      const recipients = automatic || !unitUser ? admins : [...admins, unitUser];
+      const window = item.supplementStartAt && item.supplementDeadline ? ` từ ${formatter.format(item.supplementStartAt)} đến trước ${formatter.format(item.supplementDeadline)} theo giờ Việt Nam` : "";
+      return recipients.map((user) => ({ userId: user.id, type: automatic ? "EVALUATION_AUTO_LOCKED" : "SUPPLEMENT_EXPIRED",
+        title: automatic ? "Hồ sơ đã được khóa theo hạn" : "Đã hết hạn bổ sung", body: automatic ? comment : `Hồ sơ kỳ ${period.name} đã hết thời gian bổ sung${window}`,
+        dedupeKey: automatic ? `EVALUATION_PENDING_REVIEW:${item.id}` : `SUPPLEMENT_EXPIRED:${item.id}`, refType: "EVALUATION", refId: item.id }));
+    }));
+  }
+
   /** Lấy giờ statement hiện tại từ DB sau khi chờ khóa, trả Date UTC cùng hệ quy chiếu trigger
    * Không dùng transaction_timestamp vì transaction có thể bắt đầu từ trước deadline
    * Chỉ dùng SQL hằng, không nhận thời gian client hoặc thay đổi đồng hồ hệ thống

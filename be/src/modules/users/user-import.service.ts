@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import ExcelJS from "exceljs";
 import { inflateRawSync } from "node:zlib";
 import { Prisma, type ImportSession } from "../../generated/prisma/client.js";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AuditService } from "../../common/services/audit.service.js";
 import { CredentialDispatchService } from "../notifications/credential-dispatch.service.js";

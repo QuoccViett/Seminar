@@ -11,6 +11,7 @@ import FeedbackPanel from "../../components/records/FeedbackPanel";
 import { usePeriodSelection } from "../../services/periodSelection";
 import { allPages } from "../../services/pagination";
 import EvaluationStatusTag from "../../components/common/EvaluationStatusTag";
+import { startVisiblePolling } from "../../services/visiblePolling";
 
 const phaseLabels = { SETUP: "Thiết lập", SELF_EVAL: "Tự chấm", FIRST_REVIEW: "Thẩm định lần đầu", SUPPLEMENT: "Bổ sung", FINAL_REVIEW: "Thẩm định cuối", CLOSED: "Đã đóng" };
 
@@ -81,14 +82,17 @@ export default function AdminRecords() {
   }, []);
 
   const detailId = detail?.record.id;
-  /** Đồng bộ quyền và trạng thái mỗi 15 giây, lỗi polling khóa thao tác nhưng giữ nháp */
+  /** Poll tab đang hiện, lỗi polling khóa thao tác nhưng giữ nháp */
   useEffect(() => {
     if (!detailId) return undefined;
-    const timer = setInterval(() => { if (!sending.current) void reloadDetail(detailId).catch(() => {}); }, 15000);
-    const onVisible = () => { if (document.visibilityState === "visible" && !sending.current) { void reloadDetail(detailId).catch(() => {}); setRefresh((value) => value + 1); } };
+    const stop = startVisiblePolling(async () => {
+      if (sending.current) return;
+      try { await reloadDetail(detailId); } catch { return false; }
+    }, { intervalMs: 30000, immediate: false });
+    const onVisible = () => { if (document.visibilityState === "visible" && !sending.current) setRefresh((value) => value + 1); };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
   }, [detailId, reloadDetail]);
 
   /** Chọn hồ sơ mới có chủ đích, xóa chi tiết cũ để không nhầm dữ liệu khi đang tải */

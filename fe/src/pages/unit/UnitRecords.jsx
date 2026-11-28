@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { startVisiblePolling } from "../../services/visiblePolling";
 import { Alert, Button, Card, ConfigProvider, Empty, Select, Space, Typography } from "antd";
 import viVN from "antd/locale/vi_VN";
 import { evaluationPeriodService } from "../../services/evaluationPeriodService";
@@ -29,7 +30,7 @@ export default function UnitRecords() {
      * Lỗi một request giữ snapshot đang chỉnh sửa và không hiển thị thành công giả
      */
     async function load() {
-      if (busy) return;
+      if (busy || document.visibilityState === "hidden") return;
       busy = true;
       try {
         const items = await allPages((params) => evaluationPeriodService.getEvaluationPeriods(params));
@@ -42,7 +43,7 @@ export default function UnitRecords() {
           const records = await listEvaluations({ periodId: selected.id, pageSize: 1 });
           if (records.items.length) {
             const record = await getEvaluation(records.items[0].id);
-            selectedRow = { ...selected, record, summary: record.criteriaVisible ? await getScoreSummary(record.id) : null };
+            selectedRow = { ...selected, record, summary: record.criteriaVisible ? record.summary ?? await getScoreSummary(record.id) : null };
           }
         }
         if (active) {
@@ -54,15 +55,11 @@ export default function UnitRecords() {
           if (futureDelays.length) openingTimer = setTimeout(load, Math.min(Math.min(...futureDelays), 2147483647));
           setCurrentPeriod(selectedRow);
         }
-      } catch (failure) { if (active) setError(failure.message || "Không thể tải hồ sơ tự chấm"); }
+      } catch (failure) { if (active) setError(failure.message || "Không thể tải hồ sơ tự chấm"); return false; }
       finally { busy = false; if (active) setLoading(false); }
     }
-    void load();
-    const timer = setInterval(load, 15000);
-    /** Khi trở lại tab hỏi lại quyền server, không mở ô nhập từ thời gian của thiết bị */
-    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
-    document.addEventListener("visibilitychange", onVisible); window.addEventListener("focus", onVisible);
-    return () => { active = false; clearInterval(timer); clearTimeout(openingTimer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", onVisible); };
+    const stop = startVisiblePolling(load, { intervalMs: 30000 });
+    return () => { active = false; stop(); clearTimeout(openingTimer); };
   }, [refresh]);
 
   /** Tạo bù idempotent bằng identity phiên, không gửi unitId hoặc trạng thái từ UNIT

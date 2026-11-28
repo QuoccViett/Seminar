@@ -30,7 +30,9 @@ export const evaluationMetadataSchema: SchemaObject = {
  * Minh chứng chỉ metadata, không mô tả storagePath hoặc credential vì API không trả các trường đó
  */
 export const evaluationDetailSchema: SchemaObject = {
-  ...evaluationMetadataSchema, properties: { ...evaluationMetadataSchema.properties, criteria: { type: "array", items: {
+  ...evaluationMetadataSchema, properties: { ...evaluationMetadataSchema.properties,
+  summary: { type: "object", description: "Tổng tự chấm theo evaluationSummarySchema, cùng snapshot với cây; chỉ có khi criteriaVisible=true" },
+  criteria: { type: "array", items: {
     type: "object", properties: {
       criterionId: { type: "string", format: "uuid" }, code: { type: "string" }, name: { type: "string" }, description: nullableText, maxScore: { type: "number" },
       evidenceRequirement: nullableText, evidenceRequired: { type: "boolean" }, allowText: { type: "boolean" }, allowFile: { type: "boolean" }, allowLink: { type: "boolean" },

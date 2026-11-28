@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Header, HttpCode, Inject, Param, ParseUU
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { GetCurrentUser, type CurrentUser } from "../../common/decorators/current-user.js";
 import { Roles } from "../../common/decorators/roles.decorator.js";
+import { RequireFreshUser } from "../../common/decorators/require-fresh-user.decorator.js";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards/jwt-auth.guard.js";
 import { EvidenceBatchDto, UploadBatchDto } from "./dto/evidence.dto.js";
 import { EvidencesService } from "./evidences.service.js";
@@ -16,6 +17,7 @@ import { EvidencesService } from "./evidences.service.js";
 @ApiResponse({ status: 404, description: "Không tìm thấy minh chứng trong phạm vi" })
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("ADMIN", "UNIT")
+@RequireFreshUser()
 @Controller("api/v1/evaluations/:evaluationId/evidences")
 export class EvidencesController {
   /** Inject tường minh giữ cấu trúc module mẫu và khả năng chạy ESM */

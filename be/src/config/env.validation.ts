@@ -12,6 +12,15 @@ export const envValidationSchema = Joi.object({
   RATE_LIMIT_ENABLED: Joi.when("NODE_ENV", { is: "production", then: Joi.boolean().valid(true).default(true), otherwise: Joi.boolean().default(true) }),
   SWAGGER_ENABLED: Joi.when("NODE_ENV", { is: "production", then: Joi.boolean().valid(false).default(false), otherwise: Joi.boolean().default(true) }),
   PORT: Joi.number().port().default(3000),
+  DB_POOL_MAX: Joi.number().integer().min(2).max(100).default(20),
+  AUTH_CACHE_TTL_MS: Joi.number().integer().min(0).max(5000).default(3000),
+  DASHBOARD_CACHE_TTL_MS: Joi.number().integer().min(0).max(10000).default(5000),
+  NOTIFICATION_WORKER_CONCURRENCY: Joi.number().integer().min(1).max(10).default(5),
+  CREDENTIAL_WORKER_CONCURRENCY: Joi.number().integer().min(1).max(10).default(5),
+  WORKER_BUDGET_MS: Joi.number().integer().min(100).max(10000).default(4000),
+  BACKGROUND_JOBS_ENABLED: Joi.boolean().default(true),
+  METRICS_ENABLED: Joi.boolean().default(false),
+  METRICS_TOKEN: Joi.when("METRICS_ENABLED", { is: true, then: Joi.string().min(32).required(), otherwise: Joi.string().allow("").optional() }),
   WEB_ORIGINS: Joi.string().optional(),
   CORS_ORIGINS: Joi.string().optional(),
   DATABASE_URL: Joi.string().required(),
@@ -31,7 +40,8 @@ export const envValidationSchema = Joi.object({
   WEB_PUSH_VAPID_PRIVATE_KEY: Joi.when("WEB_PUSH_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   WEB_PUSH_SUBJECT: Joi.when("WEB_PUSH_ENABLED", { is: true, then: Joi.string().required(), otherwise: Joi.string().allow("").optional() }),
   EMAIL_ENABLED: Joi.boolean().default(false),
-  EMAIL_PROVIDER: Joi.string().valid("smtp", "apps_script").default("smtp"),
+  EMAIL_PROVIDER: Joi.string().valid("smtp", "apps_script", "resend").default("smtp"),
+  RESEND_API_KEY: Joi.string().allow("").optional(),
   APPS_SCRIPT_URL: Joi.string().allow("").optional(),
   APPS_SCRIPT_SECRET: Joi.string().allow("").optional(),
   SMTP_HOST: Joi.string().allow("").optional(),
@@ -105,6 +115,7 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
   if (!normalized.SMTP_PASSWORD && normalized.SMTP_PASS) normalized.SMTP_PASSWORD = normalized.SMTP_PASS;
   if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "smtp" && !normalized.SMTP_HOST) throw new Error("SMTP_HOST là bắt buộc khi dùng SMTP");
   if (normalized.EMAIL_ENABLED && !normalized.MAIL_FROM) throw new Error("MAIL_FROM hoặc SMTP_FROM là bắt buộc khi bật xác thực Email");
+  if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "resend" && !normalized.RESEND_API_KEY) throw new Error("RESEND_API_KEY là bắt buộc khi dùng Resend");
   if (normalized.EMAIL_ENABLED && normalized.EMAIL_PROVIDER === "apps_script") {
     try {
       const url = new URL(String(normalized.APPS_SCRIPT_URL ?? ""));

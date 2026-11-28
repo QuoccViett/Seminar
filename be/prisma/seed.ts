@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { seedAssets } from "./seed-assets.js";

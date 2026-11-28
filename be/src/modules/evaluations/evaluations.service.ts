@@ -51,7 +51,7 @@ export class EvaluationsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const ref = await tx.evaluation.findFirst({ where: { id, ...this.scope(user) }, select: { periodId: true } });
       if (!ref) throw this.notFound();
-      await lockPeriod(tx, ref.periodId);
+      await lockPeriod(tx, ref.periodId, "shared");
       await tx.$queryRaw`SELECT id FROM evaluations WHERE id = ${id}::uuid FOR UPDATE`;
       const context = await tx.evaluation.findFirst({ where: { id, ...this.scope(user) }, include: contextInclude });
       if (!context) throw this.notFound();
@@ -161,7 +161,7 @@ export class EvaluationsService {
           } : {}),
         };
       });
-      return { ...metadata, criteria: tree(null) };
+      return { ...metadata, criteria: tree(null), summary: this.summarySnapshot(context) };
     });
   }
 
@@ -171,11 +171,15 @@ export class EvaluationsService {
   summary(id: string, user: CurrentUser) {
     return this.run(id, user, async (_tx, context, now) => {
       if (!this.metadata(context, now, user).criteriaVisible) return new ForbiddenException({ code: "NOT_OPEN_YET", message: "Chưa đến giờ mở tiêu chí và tổng điểm tự chấm" });
+      return this.summarySnapshot(context);
+    });
+  }
+
+  private summarySnapshot(context: Context) {
       const parents = new Set(context.period.criteria.map((criterion) => criterion.parentId));
-      return { ...selfSummary(id, context.period.maxTotalScore, context.period.criteria.filter((criterion) => !parents.has(criterion.id)), context.criterionScores, context.period.ratingThresholds),
+      return { ...selfSummary(context.id, context.period.maxTotalScore, context.period.criteria.filter((criterion) => !parents.has(criterion.id)), context.criterionScores, context.period.ratingThresholds),
         isFinal: context.status === "FINALIZED", ...(context.status === "FINALIZED" ? { finalResult: this.finalResult(context) } : {}),
       };
-    });
   }
 
   /** Lưu một lá sau kiểm sở hữu, lịch, trạng thái, khoảng điểm và loại diễn giải

@@ -143,14 +143,11 @@ export class EvaluationPeriodsService {
       }, transaction);
       if (scheduleChanged && before.publishedAt) {
         const units = await transaction.unit.findMany({ where: { isActive: true }, select: { user: { select: { id: true, isActive: true } } } });
-        for (const unit of units) {
-          if (!unit.user?.isActive) continue;
-          await this.notifications.notifyUser(transaction, {
-            userId: unit.user.id, type: "PERIOD_SCHEDULE_UPDATED", title: "Lịch tự chấm đã thay đổi",
+        await this.notifications.enqueueMany(transaction, units.filter((unit) => unit.user?.isActive).map((unit) => ({
+            userId: unit.user!.id, type: "PERIOD_SCHEDULE_UPDATED", title: "Lịch tự chấm đã thay đổi",
             body: `Kỳ ${after.name}: mở lúc ${this.formatVietnamTime(after.selfEvalStart!)}; kết thúc lúc ${this.formatVietnamTime(after.selfEvalDeadline!)}. Lý do: ${dto.changeReason!.trim()}`,
             dedupeKey: `PERIOD_SCHEDULE_UPDATED:${id}:${now.getTime()}`, refType: "EVALUATION_PERIOD", refId: id, channels: [],
-          });
-        }
+        })));
       }
       return after;
     });
@@ -161,8 +158,8 @@ export class EvaluationPeriodsService {
    * Từ chối nếu chưa có lịch hợp lệ, chưa đủ bốn ngưỡng chuẩn hoặc chưa có tiêu chí
    * Khóa kỳ trước khi đọc và kiểm cấu hình, tránh sửa đồng thời tạo snapshot không nhất quán
    * publishedAt được cấp theo đồng hồ máy chủ và audit được ghi cùng hồ sơ trong transaction
-   * Cho phép tối đa 30 giây để tạo đủ hồ sơ, điểm lá và thông báo của khoảng 34 đơn vị trong một lần công bố
-   * Ngân sách này bao gồm chờ khóa, không cấp quyền theo snapshot trước khóa hoặc chia nhỏ commit
+   * Tạo hồ sơ/điểm bằng bulk insert, ghi công việc fanout cùng transaction rồi nhả khóa.
+   * Không cấp quyền theo snapshot trước khóa hoặc chia nhỏ commit của cấu hình công bố.
    */
   async publish(id: string, actorId: string) {
     return this.prisma.$transaction(async (transaction) => {
@@ -195,15 +192,11 @@ export class EvaluationPeriodsService {
         if (scores.length) await transaction.criterionScore.createMany({ data: scores });
       }
       await this.audit.record({ actorId, action: "PUBLISH", entity: "EvaluationPeriod", entityId: id, before: this.periodSnapshot(period), after: this.periodSnapshot({ ...period, publishedAt: now, phase: now >= period.selfEvalStart! ? "SELF_EVAL" : "SETUP" }) }, transaction);
-      for (const unit of units) {
-        if (unit.user?.isActive) {
-          await this.notifications.notifyUser(transaction, {
-            userId: unit.user.id, type: "PERIOD_PUBLISHED", title: "Kỳ đánh giá đã được công bố",
+      await this.notifications.enqueueMany(transaction, units.filter((unit) => unit.user?.isActive).map((unit) => ({
+            userId: unit.user!.id, type: "PERIOD_PUBLISHED", title: "Kỳ đánh giá đã được công bố",
             body: `Kỳ ${period.name} mở tự chấm lúc ${this.formatVietnamTime(period.selfEvalStart!)} và kết thúc lúc ${this.formatVietnamTime(period.selfEvalDeadline!)}`,
             dedupeKey: `PERIOD_PUBLISHED:${id}`, refType: "EVALUATION_PERIOD", refId: id, channels: [],
-          });
-        }
-      }
+      })));
       return transaction.evaluationPeriod.findUniqueOrThrow({ where: { id } });
     }, { timeout: 30_000, maxWait: 10_000 });
   }

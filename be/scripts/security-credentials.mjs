@@ -5,7 +5,7 @@ import console from "node:console";
 import { execFileSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import pg from "pg";
 
 // Chỉ đọc credential đã lộ trong bộ nhớ, báo cáo tuyệt đối không chứa mật khẩu hoặc hash
