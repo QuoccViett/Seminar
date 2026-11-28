@@ -252,7 +252,7 @@ async function verify() {
     checks.push("realUnitEdit");
 
     // Tạo kỳ, ngưỡng mặc định, tiêu chí và công bố hoàn toàn qua giao diện để kiểm hợp đồng cấu hình
-    // Chọn lịch đã mở và hạn tương lai, không giới hạn ngày trong tuần hay giờ mở tự chấm
+    // Lịch quá khứ phải bị chặn ngay lúc lưu; sau đó chọn lịch tương lai để đi tiếp.
     stage = "cấu hình kỳ, tiêu chí và công bố bằng UI"; console.log(`VC16: ${stage}`);
     await admin.goto(`${origin}/admin/config`);
     await admin.getByRole("button", { name: /Tạo kỳ thi mới/u }).click();
@@ -270,13 +270,28 @@ async function verify() {
     }
     await admin.getByPlaceholder("Ngày giờ mở", { exact: true }).fill(vietnamPickerDate(Date.now() - 86400000));
     await admin.getByPlaceholder("Ngày giờ mở", { exact: true }).press("Enter");
-    await admin.getByPlaceholder("Ngày giờ kết thúc", { exact: true }).fill(vietnamPickerDate(Date.now() + 86400000));
+    await admin.getByPlaceholder("Ngày giờ kết thúc", { exact: true }).fill(vietnamPickerDate(Date.now() + 2 * 86400000));
     // Enter xác nhận giá trị picker nhưng không được gửi form khi khoảng ngày chưa commit
     // Chờ popup đóng để tránh đua với hiệu ứng chuyển cảnh, DB chưa được có kỳ trước khi bấm lưu
     await admin.getByPlaceholder("Ngày giờ kết thúc", { exact: true }).press("Enter");
     await admin.locator(".ant-picker-dropdown:visible").waitFor({ state: "hidden" });
     assert.equal(await prisma.evaluationPeriod.count({ where: { year: nextYear } }), 0);
     await admin.getByRole("button", { name: /Lưu và chuyển sang Tiêu chí/u }).click();
+    await admin.getByText("Thời gian bắt đầu phải sau thời gian hiện tại", { exact: true }).waitFor();
+    assert.equal(await prisma.evaluationPeriod.count({ where: { year: nextYear } }), 0);
+    checks.push("pastPeriodStartBlockedBeforeSave");
+
+    stage = "cấu hình: lưu lịch tương lai"; console.log(`VC16: ${stage}`);
+    await admin.getByPlaceholder("Ngày giờ mở", { exact: true }).fill(vietnamPickerDate(Date.now() + 86400000));
+    await admin.getByPlaceholder("Ngày giờ mở", { exact: true }).press("Enter");
+    await admin.getByPlaceholder("Ngày giờ kết thúc", { exact: true }).fill(vietnamPickerDate(Date.now() + 2 * 86400000));
+    await admin.getByPlaceholder("Ngày giờ kết thúc", { exact: true }).press("Enter");
+    await admin.locator(".ant-picker-dropdown:visible").waitFor({ state: "hidden" });
+    const [createdPeriod] = await Promise.all([
+      admin.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/evaluation-periods" && response.request().method() === "POST"),
+      admin.getByRole("button", { name: /Lưu và chuyển sang Tiêu chí/u }).click(),
+    ]);
+    assert.equal(createdPeriod.status(), 201);
     stage = "cấu hình: thêm tiêu chí"; console.log(`VC16: ${stage}`);
     await admin.getByRole("button", { name: /Thêm tiêu chí/u }).click();
     const criterionDialog = admin.getByRole("dialog");
@@ -293,8 +308,8 @@ async function verify() {
     await admin.locator(".ant-popconfirm:visible").getByRole("button", { name: "Công bố", exact: true }).click();
     await admin.getByText("Đã công bố kỳ đánh giá", { exact: true }).waitFor();
     const configuredPeriod = await prisma.evaluationPeriod.findUniqueOrThrow({ where: { year: nextYear }, include: { ratingThresholds: true, criteria: true } });
-    assert.ok(configuredPeriod.publishedAt); assert.equal(configuredPeriod.phase, "SELF_EVAL");
-    assert.ok(configuredPeriod.selfEvalStart < new Date() && configuredPeriod.selfEvalDeadline > new Date());
+    assert.ok(configuredPeriod.publishedAt); assert.equal(configuredPeriod.phase, "SETUP");
+    assert.ok(configuredPeriod.selfEvalStart > new Date() && configuredPeriod.selfEvalDeadline > configuredPeriod.selfEvalStart);
     assert.equal(configuredPeriod.ratingThresholds.length, 4); assert.equal(configuredPeriod.criteria.length, 1);
     checks.push("realPeriodCriteriaThresholdsAndPublish");
 

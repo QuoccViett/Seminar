@@ -117,7 +117,7 @@ test("thêm/sửa chặn vượt điểm cha, tổng anh em, giảm cha và chuy
       findUnique: async ({ where }: { where: { id: string } }) => nodes.find((node) => node.id === where.id) ?? null,
       update: async (args: Record<string, unknown>) => { writes.push(args); return {}; },
     });
-    const saving = id ? service.update(periodId, id, dto, "admin") : service.create(periodId, { code: "new", name: "Con mới", sortOrder: 1, maxScore: 1, ...dto }, "admin");
+    const saving = id ? service.update(periodId, id, dto, "admin") : service.create(periodId, { code: "new", name: "Con mới", sortOrder: 1, ...dto }, "admin");
     await assert.rejects(saving, (error: unknown) => {
       const failure = error as { getStatus(): number; getResponse(): { details: Array<{ field: string }> } };
       return failure.getStatus() === 400 && failure.getResponse().details[0]?.field === "maxScore";
