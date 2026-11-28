@@ -54,3 +54,20 @@ test("validation và vai trò bảo vệ đầu vào thẩm định", async () =
   await assert.rejects(service.review("evaluation", "criterion", { adminScore: 8 }, { id: "unit", role: "UNIT", unitId: "unit" }));
   assert.equal(writes.length, 0);
 });
+
+test("trao đổi yêu cầu bổ sung lưu đúng mã cho từng ghi chú", async () => {
+  const now = new Date("2026-11-18T00:00:00Z");
+  const scores = ["1.1.2", "1.1.1"].map((code) => ({ id: `score-${code}`, criterionId: code, criterion: { code }, evidences: [], selfScore: null, selfNote: null, adminScore: null, adminComment: null, reviewedById: null, reviewedAt: null }));
+  let content = "";
+  const tx = {
+    $queryRaw: async () => [],
+    evaluation: { findUnique: async (args: { select?: unknown }) => args.select ? { periodId: "period" } : { period: { phase: "SUPPLEMENT", name: "Kỳ" }, status: "PENDING_REVIEW", firstReviewedAt: now, unitId: "unit" }, update: async () => ({}) },
+    criterionScore: { findMany: async () => scores, update: async () => ({}) },
+    evaluationFeedback: { create: async ({ data }: { data: { content: string } }) => { content = data.content; return { id: "feedback" }; } },
+    statusHistory: { create: async () => ({}) }, user: { findMany: async () => [] },
+  };
+  const prisma = { $transaction: async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx) };
+  const service = new ReviewService(prisma as never, { record: async () => {} } as never, { databaseNow: async () => now } as never, {} as never, { supplementDeadline: (_start: Date, deadline: Date) => deadline } as never, {} as never);
+  await service.requestSupplement("evaluation", { supplementStartAt: "2026-11-19T00:00:00Z", supplementDeadline: "2026-11-20T00:00:00Z", items: [{ criterionId: "1.1.1", note: " cần bổ sung minh chứng " }, { criterionId: "1.1.2", note: "Cần giải trình\nthêm chi tiết" }] }, { id: "admin", role: "ADMIN", unitId: null });
+  assert.equal(content, "Mã 1.1.1 - cần bổ sung minh chứng\nMã 1.1.2 - Cần giải trình\nthêm chi tiết");
+});

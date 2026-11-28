@@ -22,3 +22,13 @@ test("giữ tùy chọn cá nhân nhưng báo kênh server chưa cấu hình và
   await assert.rejects(service.test("user", "WEB_PUSH"), missingChannel);
   assert.equal(queued, false);
 });
+
+test("delivery đã xếp hàng vẫn được xử lý khi fanout gặp lỗi", async () => {
+  const service = new NotificationsService({} as never, new ConfigService({ NOTIFICATION_WORKER_CONCURRENCY: 1, WORKER_BUDGET_MS: 4000 }), [], {} as never);
+  let claimed = false; let processed = false;
+  service.flushOutbox = async () => { throw new Error("fanout unavailable"); };
+  service.claimOne = async () => { if (claimed) return null; claimed = true; return { id: "delivery", claim_token: "claim" }; };
+  service.processClaim = async () => { processed = true; };
+  assert.equal(await service.dispatchPending(), 1);
+  assert.equal(processed, true);
+});
